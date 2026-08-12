@@ -3,7 +3,7 @@ name = "zecret"
 version = "0.1.0"
 description = "A modern, encrypted terminal diary."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 license = "MIT"
 authors = [{ name = "Zecret" }]
 dependencies = [
@@ -36,8 +36,9 @@ packages = ["src/zecret"]
 [tool.mypy]
 files = ["src"]
 strict = true
-# Check against the oldest supported interpreter, not just the newest.
-python_version = "3.11"
+# Zecret targets exactly one interpreter (see .python-version); there is no
+# older version to stay compatible with.
+python_version = "3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,6 +53,12 @@ filterwarnings = ["error"]
 [tool.ruff]
 src = ["src", "tests"]
 line-length = 100
+# Deliberately one below requires-python. Ruff would otherwise apply PEP 758
+# and rewrite `except (A, B):` as `except A, B:` — which is valid in 3.14 but
+# reads exactly like Python 2's `except A, b:`, where the second name bound
+# the exception instead of adding to the catch list. The parentheses cost
+# nothing and remove that ambiguity. Raise this to py314 to opt in.
+target-version = "py313"
 
 [tool.ruff.lint]
 select = [

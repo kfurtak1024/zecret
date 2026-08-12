@@ -17,8 +17,10 @@ concrete reason to (if you do, update this file to match).
 
 ## Tech stack (fixed — do not substitute)
 
-- Python 3.11+, managed with `uv` (`uv sync`, `uv run`, `uv add <pkg>`).
-  Development targets the latest CPython, pinned in `.python-version`.
+- Python 3.14, managed with `uv` (`uv sync`, `uv run`, `uv add <pkg>`) and
+  pinned in `.python-version`. Zecret is an application, not a library, so
+  it targets exactly one interpreter rather than a support range: uv
+  provisions it, so nothing depends on what a user's system ships.
 - **Textual** for the TUI — use widgets/screens/CSS idiomatically; don't
   hand-roll ANSI escape codes or use `curses` directly
 - **argon2-cffi** for key derivation (Argon2id specifically, not Argon2i/d)
@@ -26,8 +28,7 @@ concrete reason to (if you do, update this file to match).
 - **pytest** (+ `pytest-asyncio` for Textual screen tests) for testing
 - **ruff** for linting and formatting (`uv run ruff check .`,
   `uv run ruff format .`) — config lives in `pyproject.toml`
-- **mypy** in strict mode over `src/` (`uv run mypy`), checked against the
-  3.11 floor rather than the newest interpreter
+- **mypy** in strict mode over `src/` (`uv run mypy`)
 
 Dependency floors track current releases rather than the oldest version
 that happens to work; `cryptography` in particular should not be allowed to
@@ -137,13 +138,12 @@ solid and tested — bugs there are the ones that actually matter.
 - Run `uv run pytest` before considering any module done, and
   `uv run ruff check . && uv run ruff format . && uv run mypy` before
   calling it clean. CI (`.github/workflows/ci.yml`) runs exactly those
-  three, plus the test suite on every Python from 3.11 to 3.14 — so a
-  change that only works on the newest interpreter fails there, not here.
-- CI installs with `uv sync --locked`, so `uv.lock` is committed and must
-  be regenerated (and committed) whenever `pyproject.toml` changes.
-  Otherwise every job fails on a stale lockfile.
-  `filterwarnings = ["error"]` is set: a deprecation warning fails the
+  three, on the single interpreter named in `.python-version`.
+- `filterwarnings = ["error"]` is set: a deprecation warning fails the
   suite rather than accumulating silently.
+- CI sets `UV_LOCKED=1`, so `uv.lock` is committed and must be regenerated
+  (and committed) whenever `pyproject.toml` changes. Otherwise every job
+  fails on a stale lockfile.
 - For `storage.py`, use `tmp_path` (pytest fixture) for all file I/O in
   tests — never touch a real `~/.zecret/` during tests.
 - Textual screens can be tested with Textual's `App.run_test()` /

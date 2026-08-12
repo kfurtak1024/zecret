@@ -65,31 +65,24 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      # mypy pins python_version = "3.11" in pyproject.toml, so this checks
-      # against the support floor whatever interpreter runs it.
       - name: mypy
         run: uv run mypy
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      # Report every version's result, not just the first to fail.
-      fail-fast: false
-      matrix:
-        # Every version allowed by requires-python, oldest and newest first
-        # since those are where breakage shows up.
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # No version matrix: Zecret is an application, not a library, so it
+      # targets exactly one interpreter. uv reads it from .python-version
+      # and installs it, keeping that file the single source of truth.
       - name: Install uv
         uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync
@@ -102,8 +95,8 @@ jobs:
       - name: Smoke-test the entry point
         run: uv run zecret --help
 
-  # A single required check to protect the branch with, so the matrix can
-  # grow or shrink without editing branch protection rules.
+  # A single required check to protect the branch with, so jobs can be
+  # added or removed without editing branch protection rules.
   ci:
     name: CI
     if: always()
