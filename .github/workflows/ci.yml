@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Actions are pinned to full commit SHAs, with the version in a trailing
+# comment. Tags are mutable and not every action publishes a floating major
+# tag, so a SHA is both the reproducible choice and the one that cannot be
+# repointed under us. Dependabot bumps these and rewrites the comment.
+
 # Least privilege: nothing here writes to the repository.
 permissions:
   contents: read
@@ -16,8 +21,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Fail rather than silently resolve if the lockfile is out of date.
-  UV_FROZEN: "1"
+  # Every uv command asserts uv.lock is present and current, and fails if
+  # pyproject.toml changed without re-locking. Set here rather than as a
+  # --locked flag so it covers `uv run` too, not just `uv sync`.
+  UV_LOCKED: "1"
 
 jobs:
   lint:
@@ -25,16 +32,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync
 
       - name: Ruff lint
         run: uv run ruff check --output-format=github .
@@ -47,16 +54,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync
 
       # mypy pins python_version = "3.11" in pyproject.toml, so this checks
       # against the support floor whatever interpreter runs it.
@@ -75,17 +82,17 @@ jobs:
         # since those are where breakage shows up.
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync
 
       - name: Run tests
         run: uv run pytest -q
