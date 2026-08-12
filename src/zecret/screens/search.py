@@ -1,0 +1,105 @@
+"""Full-text search over decrypted entries already held in memory.
+
+Since app.diary.entries are already decrypted for the session, search is a
+simple in-memory substring/case-insensitive filter over title + body as the
+query changes (live filtering, no separate "submit" step needed). No
+plaintext is ever written to disk as part of search.
+
+Selecting a result opens it in the editor, so search is a way into an entry
+rather than a dead end; the results refresh on return, since the entry may
+have been edited or its text may no longer match.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import ClassVar
+
+from textual.app import ComposeResult
+from textual.binding import Binding, BindingType
+from textual.widgets import Footer, Header, Input, Label, ListItem, ListView
+
+from zecret.models import Entry
+from zecret.screens.base import ZecretScreen, entry_summary
+from zecret.screens.editor import EditorScreen
+
+NO_MATCHES = "No entries match."
+
+
+def matches(entry: Entry, query: str) -> bool:
+    """Case-insensitive substring match over an entry's title and body."""
+    # casefold() rather than lower(): correct for non-ASCII text, which
+    # diary entries are as likely to contain as anything else.
+    return query in entry.title.casefold() or query in entry.body.casefold()
+
+
+class SearchScreen(ZecretScreen):
+    """Live full-text search over the in-memory decrypted entries."""
+
+    SUB_TITLE = "Search"
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "back", "Back", priority=True),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[Entry] = []
+        # See EntryListScreen: resume and query-changed can both rebuild the
+        # list, and interleaved rebuilds duplicate rows.
+        self.refresh_lock = asyncio.Lock()
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Input(placeholder="Search entries", id="query")
+        yield Label(NO_MATCHES, id="search-empty")
+        yield ListView(id="results")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#query", Input).focus()
+
+    async def on_screen_resume(self) -> None:
+        """Re-filter on return from the editor: the entry may have changed."""
+        await self.refresh_results()
+
+    async def on_input_changed(self, _event: Input.Changed) -> None:
+        """Live filtering -- no submit step."""
+        await self.refresh_results()
+
+    def on_input_submitted(self, _event: Input.Submitted) -> None:
+        """Enter in the query box moves to the results to pick one."""
+        if self.results:
+            self.query_one("#results", ListView).focus()
+
+    async def refresh_results(self) -> None:
+        diary, _ = self.zecret.unlocked
+        query = self.query_one("#query", Input).value.strip().casefold()
+
+        async with self.refresh_lock:
+            # An empty query lists everything, so opening search shows the
+            # whole diary rather than a blank screen.
+            self.results = sorted(
+                (entry for entry in diary.entries.values() if not query or matches(entry, query)),
+                key=lambda entry: entry.created_at,
+                reverse=True,
+            )
+
+            results = self.query_one("#results", ListView)
+            await results.clear()
+            for entry in self.results:
+                await results.append(ListItem(Label(entry_summary(entry))))
+
+            found = bool(self.results)
+            self.query_one("#search-empty", Label).display = not found
+            results.display = found
+            if found:
+                results.index = 0
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        index = event.list_view.index
+        if index is not None and 0 <= index < len(self.results):
+            self.app.push_screen(EditorScreen(self.results[index]))
+
+    def action_back(self) -> None:
+        self.dismiss()

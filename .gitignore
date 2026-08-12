@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+# Diary files -- never commit one, encrypted or not.
+*.enc
+.zecret/
+
+# uv.lock is deliberately NOT ignored: Zecret is an application, not a
+# library, so the lockfile is committed to pin exact dependency versions.
+# CI installs with `uv sync --locked`, which needs it present and current.

@@ -1,0 +1,171 @@
+/* Zecret Textual stylesheet.
+
+   Conventions, so the screens stay consistent as they grow:
+
+   - Colors come from Textual's theme variables ($surface, $accent, $error,
+     $text-muted, ...), never hard-coded. The app then follows whichever
+     theme the user picks, light or dark, with no second palette to keep in
+     sync.
+   - $accent frames anything you are working in; $error is reserved for
+     errors and destructive actions and is used nowhere else.
+   - Spacing is 1 cell vertically, 2 horizontally. Terminal cells are about
+     twice as tall as they are wide, so that pair reads as even.
+   - Rules are grouped by the role a widget plays (panel, title, hint,
+     error, list), not by the screen it happens to live on -- which is why
+     selectors here list several ids at once.
+*/
+
+/* --- Panels: the centred card used by unlock and settings --------------- */
+
+UnlockScreen,
+SettingsScreen {
+    align: center middle;
+}
+
+#unlock-box,
+#settings-box {
+    width: 62;
+    height: auto;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+
+#unlock-title,
+#settings-title {
+    width: 100%;
+    content-align: center middle;
+    text-style: bold;
+    color: $text-accent;
+    padding-bottom: 1;
+}
+
+#unlock-hint,
+#settings-hint {
+    width: 100%;
+    color: $text-muted;
+    padding-bottom: 1;
+}
+
+#unlock-box Input,
+#settings-box Input {
+    margin-bottom: 1;
+}
+
+/* --- Error lines -------------------------------------------------------- */
+
+/* Reserve the row whether or not there is a message, so showing one never
+   shifts the fields under the user's cursor. */
+#unlock-error,
+#settings-error,
+#editor-error {
+    width: 100%;
+    height: 1;
+    color: $text-error;
+}
+
+/* --- Lists: entry list and search results ------------------------------- */
+
+#entries,
+#results {
+    height: 1fr;
+    /* Same 2-cell gutter as the search box above it and the editor's
+       fields, so text lines up down the left edge of every screen. */
+    margin: 0 2;
+    background: $surface;
+    border: none;
+
+    & > ListItem {
+        padding: 0 2;
+        background: transparent;
+    }
+
+    /* The selected row is the one thing the eye should find instantly. */
+    & > ListItem.-highlight {
+        background: $accent-muted;
+        text-style: bold;
+    }
+
+    &:focus > ListItem.-highlight {
+        background: $accent;
+        color: $block-cursor-foreground;
+    }
+}
+
+/* --- Empty states ------------------------------------------------------- */
+
+#entries-empty,
+#search-empty {
+    height: 1fr;
+    width: 100%;
+    content-align: center middle;
+    color: $text-muted;
+}
+
+/* --- SearchScreen ------------------------------------------------------- */
+
+#query {
+    margin: 0 2;
+    border: round $border-blurred;
+
+    &:focus {
+        border: round $accent;
+    }
+}
+
+/* --- EditorScreen ------------------------------------------------------- */
+
+#editor-box {
+    height: 1fr;
+    padding: 1 2;
+}
+
+#editor-box #title {
+    margin-bottom: 1;
+    border: round $border-blurred;
+
+    &:focus {
+        border: round $accent;
+    }
+}
+
+#editor-box #body {
+    height: 1fr;
+    margin-bottom: 1;
+    border: round $border-blurred;
+
+    &:focus {
+        border: round $accent;
+    }
+}
+
+/* --- ConfirmScreen (modal) ---------------------------------------------- */
+
+/* Dim what is behind it: the question is the only thing to answer. */
+ConfirmScreen {
+    align: center middle;
+    background: $background 60%;
+}
+
+#confirm-box {
+    width: 60;
+    height: auto;
+    padding: 1 2;
+    /* Red framing, because every use of this modal is destructive. */
+    border: round $error;
+    background: $surface;
+}
+
+#confirm-question {
+    width: 100%;
+    padding-bottom: 1;
+}
+
+#confirm-buttons {
+    height: auto;
+    align-horizontal: right;
+}
+
+#confirm-buttons Button {
+    margin-left: 2;
+}

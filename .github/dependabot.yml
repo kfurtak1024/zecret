@@ -1,0 +1,30 @@
+version: 2
+
+updates:
+  # Keep the workflow's actions current. Security fixes to actions land
+  # here, and pinned major versions otherwise drift out of support.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+
+  # Keep uv.lock current. This matters more than usual for Zecret: a
+  # cryptography or argon2-cffi advisory should surface as a pull request,
+  # not wait for someone to notice.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"
+    groups:
+      # One PR for routine dev-tool bumps; crypto dependencies stay
+      # separate so they get looked at on their own.
+      dev-tools:
+        patterns:
+          - ruff
+          - mypy
+          - pytest*
+          - textual-dev
