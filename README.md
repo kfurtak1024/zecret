@@ -7,6 +7,8 @@
 One entry a day, in your terminal, kept in a single encrypted file that only
 you can open.
 
+[**Website**](https://kfurtak1024.github.io/zecret/) · [Install](#install) · [How it works](#how-it-works)
+
 [![CI](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml/badge.svg)](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

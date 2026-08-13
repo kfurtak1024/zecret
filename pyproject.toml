@@ -5,7 +5,7 @@ description = "A modern, encrypted terminal diary."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
-authors = [{ name = "Zecret" }]
+authors = [{ name = "Krzysztof Furtak" }]
 dependencies = [
     "textual>=8.2",
     "cryptography>=50.0",

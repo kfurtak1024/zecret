@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zecret — an encrypted terminal diary</title>
+<meta name="description" content="Zecret is an encrypted terminal diary. One entry a day, kept in a single encrypted file that only you can open. No server, no sync, no telemetry.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1014" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfc" media="(prefers-color-scheme: light)">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Zecret — an encrypted terminal diary">
+<meta property="og:description" content="One entry a day, kept in a single encrypted file that only you can open. Argon2id, AES-256-GCM, and nowhere for your writing to go.">
+<!-- Where the page actually lives. Change to https://zecret.krfu.dev/ once
+     the custom domain is pointed at Pages, or social cards will link here. -->
+<meta property="og:url" content="https://kfurtak1024.github.io/zecret/">
+<meta property="og:image" content="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/entries-dark.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📓</text></svg>">
+
+<style>
+:root {
+  --bg: #fbfbfc;
+  --surface: #ffffff;
+  --panel: #f2f3f5;
+  --text: #16181d;
+  --muted: #5b6069;
+  --accent: #a75f00;
+  --accent-soft: #ffe9c9;
+  --line: #e2e4e8;
+  --shadow: 0 1px 2px rgb(16 18 29 / .06), 0 12px 32px -12px rgb(16 18 29 / .18);
+  --term-bg: #14161b;
+  --term-text: #d7dae0;
+  --term-muted: #8b929e;
+  --term-accent: #ffb454;
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1014;
+    --surface: #16181d;
+    --panel: #1b1e25;
+    --text: #e6e8ec;
+    --muted: #9aa0aa;
+    --accent: #ffb454;
+    --accent-soft: #2a2419;
+    --line: #262a33;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 18px 40px -18px rgb(0 0 0 / .7);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono, pre, code, kbd {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.wrap { width: min(100% - 2.5rem, 62rem); margin-inline: auto; }
+
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+/* --- top bar ------------------------------------------------------------ */
+
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.topbar .wrap {
+  display: flex; align-items: center; gap: 1.25rem;
+  height: 3.5rem;
+}
+.brand {
+  font-weight: 650; letter-spacing: -0.01em; color: var(--text);
+  text-decoration: none; margin-right: auto;
+}
+.brand span { color: var(--accent); }
+.topbar nav { display: flex; gap: 1.25rem; font-size: 0.94rem; }
+.topbar nav a { color: var(--muted); text-decoration: none; }
+.topbar nav a:hover { color: var(--text); }
+@media (max-width: 34rem) { .topbar nav a.hide-sm { display: none; } }
+
+/* --- hero --------------------------------------------------------------- */
+
+.hero { padding: clamp(3rem, 9vw, 6rem) 0 1rem; text-align: center; }
+
+.logo {
+  color: var(--accent);
+  font-size: clamp(0.34rem, 1.55vw, 0.86rem);
+  line-height: 1.12;
+  /* The hero centres its text, and centring a <pre> centres every line
+     on its own width -- which slides the shorter rows of the art out of
+     column. Centre the block instead and keep the lines flush left, so
+     the drawing holds together whatever its rows happen to measure. */
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto 1.75rem;
+  text-align: left;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.hero h1 {
+  font-size: clamp(1.9rem, 4.4vw, 3rem);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  margin: 0 0 1rem;
+  font-weight: 660;
+}
+.hero p.lede {
+  color: var(--muted);
+  font-size: clamp(1.02rem, 1.6vw, 1.18rem);
+  max-width: 40rem;
+  margin: 0 auto 2rem;
+}
+
+.cta { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; align-items: center; }
+
+.copy {
+  display: inline-flex; align-items: center; gap: 0.75rem;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; padding: 0.6rem 0.7rem 0.6rem 1rem;
+  box-shadow: var(--shadow); font-size: 0.94rem;
+}
+.copy code { color: var(--text); }
+.copy code::before { content: "$ "; color: var(--muted); }
+.copy button {
+  font: inherit; font-size: 0.82rem;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  border-radius: 7px; padding: 0.28rem 0.6rem; cursor: pointer;
+}
+.copy button:hover { color: var(--text); border-color: var(--muted); }
+
+.button {
+  display: inline-block; text-decoration: none;
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 0.66rem 1.15rem; font-size: 0.94rem; font-weight: 550;
+  color: var(--text); background: var(--surface);
+}
+.button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- terminal ----------------------------------------------------------- */
+
+.term {
+  background: var(--term-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  border: 1px solid #22252d;
+  margin: 2.5rem 0;
+}
+.term-bar {
+  display: flex; align-items: center; gap: 0.45rem;
+  padding: 0.7rem 0.95rem;
+  background: #1b1e25; border-bottom: 1px solid #22252d;
+}
+.term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f4a; }
+.term-bar i:nth-child(1) { background: #ec6a5e; }
+.term-bar i:nth-child(2) { background: #f4bf4f; }
+.term-bar i:nth-child(3) { background: #61c554; }
+.term-bar span { margin-left: auto; margin-right: auto; color: var(--term-muted); font-size: 0.8rem; }
+
+.term pre {
+  margin: 0; padding: 1.1rem 1.25rem 1.35rem;
+  color: var(--term-text);
+  font-size: clamp(0.66rem, 1.35vw, 0.86rem);
+  line-height: 1.62;
+  overflow-x: auto;
+}
+.term .head { color: var(--term-accent); font-weight: 700; }
+.term .row-on { background: var(--term-accent); color: #14161b; font-weight: 700; display: inline-block; width: 100%; }
+.term .dim { color: var(--term-muted); }
+.term .key { color: var(--term-accent); font-weight: 700; }
+.term .bar { display: block; margin-top: 0.9rem; padding-top: 0.55rem; border-top: 1px solid #262a33; }
+
+/* --- sections ----------------------------------------------------------- */
+
+section { padding: clamp(2.5rem, 6vw, 4.5rem) 0; }
+section + section { border-top: 1px solid var(--line); }
+
+h2 {
+  font-size: clamp(1.35rem, 2.6vw, 1.75rem);
+  letter-spacing: -0.02em; margin: 0 0 0.6rem; font-weight: 640;
+}
+h2 + p.sub { color: var(--muted); margin: 0 0 2.25rem; max-width: 44rem; }
+
+.grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
+}
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.3rem 1.4rem;
+}
+.card h3 {
+  margin: 0 0 0.4rem; font-size: 1rem; font-weight: 620;
+  display: flex; align-items: center; gap: 0.55rem;
+}
+.card h3 svg { width: 17px; height: 17px; color: var(--accent); flex: none; }
+.card p { margin: 0; color: var(--muted); font-size: 0.94rem; }
+
+/* --- security ----------------------------------------------------------- */
+
+.facts { display: grid; gap: 0.9rem; margin: 0; padding: 0; }
+.facts div {
+  display: grid; grid-template-columns: 11rem 1fr; gap: 0.35rem 1.5rem;
+  padding-bottom: 0.9rem; border-bottom: 1px solid var(--line);
+}
+.facts div:last-child { border-bottom: 0; padding-bottom: 0; }
+.facts dt { font-weight: 600; font-size: 0.94rem; }
+.facts dd { margin: 0; color: var(--muted); font-size: 0.94rem; }
+@media (max-width: 40rem) { .facts div { grid-template-columns: 1fr; } }
+
+.note {
+  margin-top: 2rem; padding: 1.1rem 1.3rem;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface);
+}
+.note p { margin: 0; color: var(--muted); font-size: 0.94rem; }
+.note strong { color: var(--text); }
+
+/* --- install ------------------------------------------------------------ */
+
+.steps { display: grid; gap: 1.5rem; }
+.steps h3 { margin: 0 0 0.5rem; font-size: 0.98rem; font-weight: 620; }
+.steps p { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.9rem; }
+pre.block {
+  margin: 0; padding: 0.95rem 1.15rem;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; overflow-x: auto; font-size: 0.88rem; line-height: 1.7;
+}
+pre.block .p { color: var(--muted); }
+
+/* --- keys --------------------------------------------------------------- */
+
+table { border-collapse: collapse; width: 100%; font-size: 0.94rem; }
+th, td { text-align: left; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
+th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+td:first-child { width: 8rem; }
+kbd {
+  display: inline-block; padding: 0.1rem 0.45rem; font-size: 0.82rem;
+  background: var(--panel); border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 6px; color: var(--text);
+}
+td.what { color: var(--muted); }
+
+/* --- footer ------------------------------------------------------------- */
+
+footer { border-top: 1px solid var(--line); padding: 2.5rem 0 3.5rem; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; }
+footer p { margin: 0; color: var(--muted); font-size: 0.88rem; }
+footer p.right { margin-left: auto; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top">zecret<span>.</span></a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#security" class="hide-sm">Security</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/kfurtak1024/zecret">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<div class="hero wrap">
+<pre class="logo mono" role="img" aria-label="Zecret">
+███████╗███████╗ ██████╗██████╗ ███████╗████████╗
+╚══███╔╝██╔════╝██╔════╝██╔══██╗██╔════╝╚══██╔══╝
+  ███╔╝ █████╗  ██║     ██████╔╝█████╗     ██║   
+ ███╔╝  ██╔══╝  ██║     ██╔══██╗██╔══╝     ██║   
+███████╗███████╗╚██████╗██║  ██║███████╗   ██║   
+╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
+</pre>
+
+  <h1>An encrypted terminal diary</h1>
+  <p class="lede">
+    One entry a day, kept in a single encrypted file that only you can open.
+    No server, no account, no sync, no telemetry — there is nowhere for your
+    writing to go.
+  </p>
+
+  <div class="cta">
+    <div class="copy">
+      <code id="install-cmd" class="mono">uv tool install git+https://github.com/kfurtak1024/zecret</code>
+      <button type="button" data-copy="#install-cmd">Copy</button>
+    </div>
+    <a class="button" href="https://github.com/kfurtak1024/zecret">Source on GitHub</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="term">
+    <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret — 8 entries</span></div>
+<pre>
+<span class="head">  August 2026 · 5 entries</span>
+<span class="row-on">  Thu 13   First frost on the windscreen. Scraped it off with a librar…</span>
+  Wed 12   Notes on rereading Bachelard: the drawer chapter still does…
+  Tue 11   Kitchen notes. The sourdough finally behaved — less water,…
+  Mon 10   A letter I did not send. Wrote it out anyway, which is most…
+  Sun 09   Tuesday. Nothing happened and I am writing that down on pur…
+
+<span class="head">  July 2026 · 3 entries</span>
+  Fri 31   Walked the long way back along the canal. The herons have w…
+  Tue 28   Finished the tax forms, badly. Rewarded myself with an appl…
+  Sat 25   Rain all day. Read two chapters and slept like something hi…
+<span class="bar"><span class="key">n</span> Today  <span class="key">g</span> Another day  <span class="key">d</span> Delete  <span class="key">/</span> Search  <span class="key">s</span> Settings  <span class="key">?</span> Help  <span class="key">q</span> Quit</span>
+</pre>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <h2>A diary, not a note app</h2>
+    <p class="sub">
+      The date is the entry. Open a day you have already written and you
+      continue it, rather than starting a second page about the same
+      afternoon.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>One entry a day</h3>
+        <p>Each day is a page, named by its date. Reopening a day continues it; there is no way to file two entries against one afternoon.</p>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Encrypted at rest</h3>
+        <p>Argon2id key derivation and AES-256-GCM, with every day's entry encrypted independently under its own nonce.</p>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Instant search</h3>
+        <p>Your entries are already decrypted in memory for the session, so filtering happens as you type and nothing touches the disk.</p>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z"/><path d="M14 4v6h6"/></svg>One portable file</h3>
+        <p>Back it up by copying it. Without your password it is useless to whoever ends up holding it.</p>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 000 18z"/><circle cx="12" cy="12" r="9"/></svg>Light and dark</h3>
+        <p>Eight themes, chosen in settings and remembered — including the lock screen, before the diary is even open.</p>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12h20"/><path d="M12 2a15 15 0 010 20 15 15 0 010-20z"/><circle cx="12" cy="12" r="10"/><path d="M4 4l16 16"/></svg>Offline by design</h3>
+        <p>No networking of any kind, in any code path. Nothing to opt out of, and nothing to audit for leaks.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <h2>What protects it</h2>
+    <p class="sub">
+      The parts worth checking before you trust anything with a diary.
+    </p>
+
+    <dl class="facts">
+      <div>
+        <dt>Key derivation</dt>
+        <dd>Argon2id — <span class="mono">time_cost 3</span>, <span class="mono">64 MiB</span>, <span class="mono">parallelism 4</span> — with a random 16-byte salt per diary. Your password is never stored; the derived key never touches disk.</dd>
+      </div>
+      <div>
+        <dt>Encryption</dt>
+        <dd>AES-256-GCM with a fresh random nonce for every single encryption. Each day is encrypted independently, so editing one never re-encrypts the others.</dd>
+      </div>
+      <div>
+        <dt>Integrity</dt>
+        <dd>Tampering with a stored entry, or a wrong password, fails authentication and is reported as an error — never as an empty or partial diary. The header carries an encrypted verifier, so that holds even for a diary with no entries yet.</dd>
+      </div>
+      <div>
+        <dt>Durability</dt>
+        <dd>Saves are atomic: temp file, <span class="mono">fsync</span>, then rename over the original. An interrupted write cannot leave a half-written diary, and the file is created <span class="mono">0600</span>.</dd>
+      </div>
+      <div>
+        <dt>Two windows open</dt>
+        <dd>A second Zecret on the same file is detected before anything is written, so one session cannot silently overwrite what the other just saved.</dd>
+      </div>
+      <div>
+        <dt>Plaintext</dt>
+        <dd>Never written to disk — not as temp files, not as logs, not for crash recovery.</dd>
+      </div>
+    </dl>
+
+    <div class="note">
+      <p>
+        <strong>Two things it does not do.</strong> Anyone holding the file can
+        see <em>which days</em> you wrote on, though not a word of what they
+        say — the dates are the index, and indexes have to be readable to be
+        used. And there is no password recovery, by design: nobody, including
+        you, can open the file without the password.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="sub">
+      Zecret needs Python 3.14. <a href="https://github.com/astral-sh/uv">uv</a>
+      installs the right interpreter for you, so nothing depends on what your
+      system happens to ship.
+    </p>
+
+    <div class="steps">
+      <div>
+        <h3>As a tool</h3>
+<pre class="block mono"><span class="p">$</span> uv tool install git+https://github.com/kfurtak1024/zecret
+<span class="p">$</span> zecret</pre>
+        <p>Not on PyPI yet — until then, install straight from the repository.</p>
+      </div>
+
+      <div>
+        <h3>From a checkout</h3>
+<pre class="block mono"><span class="p">$</span> git clone https://github.com/kfurtak1024/zecret
+<span class="p">$</span> cd zecret
+<span class="p">$</span> uv sync
+<span class="p">$</span> uv run zecret</pre>
+      </div>
+
+      <div>
+        <h3>Where the diary lives</h3>
+<pre class="block mono"><span class="p">$</span> zecret --path /some/where.enc</pre>
+        <p>
+          By default <span class="mono">~/.zecret/diary.enc</span>, overridable
+          with <span class="mono">--path</span> or
+          <span class="mono">ZECRET_DIARY_PATH</span>. On first launch Zecret
+          asks you to choose a master password and creates the file.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="keys">
+  <div class="wrap">
+    <h2>Keys</h2>
+    <p class="sub">Press <kbd>?</kbd> in the app for the same list, always current.</p>
+
+    <table>
+      <thead><tr><th>Key</th><th>Where</th><th>Does</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>n</kbd></td><td>entry list</td><td class="what">Write about today</td></tr>
+        <tr><td><kbd>g</kbd></td><td>entry list</td><td class="what">Write about another day</td></tr>
+        <tr><td><kbd>enter</kbd></td><td>entry list</td><td class="what">Open the selected day</td></tr>
+        <tr><td><kbd>d</kbd></td><td>entry list</td><td class="what">Delete the selected day's entry</td></tr>
+        <tr><td><kbd>/</kbd></td><td>entry list</td><td class="what">Search</td></tr>
+        <tr><td><kbd>s</kbd></td><td>entry list</td><td class="what">Settings: theme and master password</td></tr>
+        <tr><td><kbd>?</kbd></td><td>entry list</td><td class="what">Help</td></tr>
+        <tr><td><kbd>q</kbd></td><td>entry list</td><td class="what">Quit</td></tr>
+        <tr><td><kbd>ctrl</kbd> + <kbd>s</kbd></td><td>editor</td><td class="what">Save and return</td></tr>
+        <tr><td><kbd>esc</kbd></td><td>anywhere</td><td class="what">Back</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      Made by <a href="https://github.com/kfurtak1024">Krzysztof Furtak</a>.
+      MIT licensed, built with <a href="https://textual.textualize.io">Textual</a>.
+    </p>
+    <p class="right">No analytics on this page, in keeping with the thing it is selling.</p>
+  </div>
+</footer>
+
+<script>
+// Progressive enhancement only: without JS the command is still selectable.
+for (const button of document.querySelectorAll("[data-copy]")) {
+  button.addEventListener("click", async () => {
+    const text = document.querySelector(button.dataset.copy).textContent.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      const previous = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = previous; }, 1600);
+    } catch {
+      button.textContent = "Press ⌘C";
+    }
+  });
+}
+</script>
+
+</body>
+</html>

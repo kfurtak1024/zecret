@@ -218,6 +218,15 @@ actually matter.
   is off (`ENABLE_COMMAND_PALETTE = False`), which also removes `ctrl+p`
   and the footer's palette entry. Don't reintroduce either; a setting that
   belongs to the user goes on the settings screen, where it can be saved.
+- **The product page is part of the app's surface.** `docs/index.html`
+  describes the keys, the theme count, the Argon2 parameters, the default
+  diary path and the Python version. Change any of those in the code and
+  the page changes in the same commit — it is user-facing documentation
+  that happens to live in HTML, not decoration. `tests/test_docs_page.py`
+  fails if the keys, counts or parameters drift, so this is enforced
+  rather than remembered; the prose around them is on you. The page also
+  promises no third-party requests and no analytics, and that is tested
+  too — keep it a single self-contained file.
 - The help popup (`screens/help.py`) is a `ModalScreen` — Textual's
   pattern for a dialog, and what the app's other popups already are. It is
   not Textual's `HelpPanel`, which documents whichever widget has focus
