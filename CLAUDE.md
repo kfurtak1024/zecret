@@ -124,6 +124,13 @@ Do not weaken any of these for convenience:
 7. **Fail closed.** Any decryption failure surfaces as
    `ZecretDecryptError` and is caught at the UI layer to show "incorrect
    password" — never swallowed, never defaults to an empty diary.
+8. **Never overwrite a diary this session did not last write.** A
+   `DiaryFile` holds the whole diary in memory, so a second Zecret open on
+   the same file would otherwise write its copy over the first's entries
+   with no error at all. `save()` compares the file's mtime and size
+   against what they were when it last read or wrote it, and raises
+   `ZecretConflictError` instead. Every screen that saves rolls its
+   in-memory change back and says so.
 
 ## File format
 
@@ -161,6 +168,15 @@ actually matter.
   `uv run ruff check . && uv run ruff format . && uv run mypy` before
   calling it clean. CI (`.github/workflows/ci.yml`) runs exactly those
   three, on the single interpreter named in `.python-version`.
+- CI runs the suite as `pytest --cov`, with the threshold in
+  `[tool.coverage.report]`. It is set to where the suite stands, so it only
+  ever ratchets up. Coverage is deliberately not in `addopts`: a local
+  `uv run pytest` should stay fast enough to run constantly.
+- Any test that opens a diary must request the `cheap_kdf` fixture
+  (`pytestmark = pytest.mark.usefixtures("cheap_kdf")` at the top of the
+  module). It keeps real Argon2id at test cost factors. It is not autouse
+  on purpose: `tests/test_crypto.py` asserts the real OWASP parameters,
+  and a blanket patch would leave that assertion passing against nothing.
 - `filterwarnings = ["error"]` is set: a deprecation warning fails the
   suite rather than accumulating silently.
 - CI sets `UV_LOCKED=1`, so `uv.lock` is committed and must be regenerated

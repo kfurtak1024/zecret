@@ -38,6 +38,12 @@ class Entry:
     date: dt.date
     body: str
     created_at: dt.datetime
+    # None is a construction-time placeholder that __post_init__ replaces,
+    # so no Entry anyone holds ever has it. Annotated as the datetime it
+    # will be rather than `datetime | None`: the union would be honest for
+    # the microsecond before __post_init__ runs, and would then force a
+    # None check on every reader of a field that is never None. The ignore
+    # keeps the lie to this one line.
     updated_at: dt.datetime = field(default=None)  # type: ignore[assignment]
 
     def __post_init__(self) -> None:

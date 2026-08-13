@@ -87,8 +87,11 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # --cov here rather than in addopts: a local `uv run pytest` stays
+      # quick, while the number cannot quietly erode on main. The threshold
+      # lives in pyproject.toml under [tool.coverage.report].
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest -q --cov
 
       # Catches packaging breakage the test suite cannot: the console
       # script is only wired up when the project is actually installed.

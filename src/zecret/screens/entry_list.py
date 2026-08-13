@@ -44,6 +44,7 @@ from textual.widgets import Footer, Label, ListItem, ListView
 
 from zecret.models import Entry
 from zecret.screens.base import (
+    DIARY_CHANGED,
     ZecretScreen,
     count_entries,
     day_summary,
@@ -58,6 +59,7 @@ from zecret.screens.header import DiaryHeader
 from zecret.screens.help import HelpScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
+from zecret.storage import ZecretConflictError
 
 EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
 
@@ -71,8 +73,11 @@ class EntryListScreen(ZecretScreen):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("n", "today", "Today"),
         Binding("g", "another_day", "Another day"),
-        # ListView handles Enter itself and posts Selected; this binding is
-        # what puts "Open" in the footer, and covers the empty-list case.
+        # ListView has focus and handles Enter itself, posting Selected --
+        # which on_list_view_selected turns into the same call. This binding
+        # is what puts "Open" in the footer; the action behind it is a
+        # second door onto the same room rather than the one you walk
+        # through, and guards its own selection accordingly.
         Binding("enter", "open_entry", "Open"),
         Binding("d", "delete_entry", "Delete"),
         Binding("slash", "search", "Search", key_display="/"),
@@ -230,12 +235,14 @@ class EntryListScreen(ZecretScreen):
         diary.delete_entry(entry.date)
         try:
             diary.save(key)
-        except OSError as error:
+        except (OSError, ZecretConflictError) as error:
             # The file still holds the entry, so put it back in memory too
             # rather than let the user believe the deletion stuck.
             diary.add_entry(entry)
             self.notify(
-                f"Could not save: {error.strerror or error}.",
+                DIARY_CHANGED
+                if isinstance(error, ZecretConflictError)
+                else f"Could not save: {error.strerror or error}.",
                 severity="error",
             )
         self.run_worker(self.refresh_entries())

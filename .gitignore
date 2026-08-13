@@ -15,3 +15,10 @@ build/
 # uv.lock is deliberately NOT ignored: Zecret is an application, not a
 # library, so the lockfile is committed to pin exact dependency versions.
 # CI installs with `uv sync --locked`, which needs it present and current.
+
+# IDE and coverage artifacts
+.idea/
+.vscode/
+.coverage
+coverage.xml
+htmlcov/

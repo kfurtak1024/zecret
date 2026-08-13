@@ -27,6 +27,11 @@ PASSWORD = "correct horse battery staple"
 TODAY = dt.date.today()
 
 
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
+
+
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
@@ -129,3 +134,16 @@ async def test_the_footer_does_not_advertise_the_palette(diary_path):
         await unlock(pilot)
         described = " ".join(key.description for key in app.screen.query("FooterKey"))
         assert "palette" not in described.lower()
+
+
+# --- app-level guards ------------------------------------------------------
+
+
+async def test_reaching_the_diary_before_unlocking_is_a_programming_error(diary_path):
+    """Screens rely on app.unlocked being real. A half-open state would be
+    a routing bug, so it raises rather than returning None."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        with pytest.raises(RuntimeError):
+            _ = app.unlocked

@@ -30,9 +30,14 @@ from pathlib import Path
 
 import pytest
 
-from zecret.crypto import KdfParams, ZecretDecryptError
+from zecret.crypto import KdfParams, ZecretDecryptError, derive_key, encrypt
 from zecret.models import Entry
-from zecret.storage import DEFAULT_DIARY_PATH, FORMAT_VERSION, DiaryFile
+from zecret.storage import (
+    DEFAULT_DIARY_PATH,
+    FORMAT_VERSION,
+    DiaryFile,
+    ZecretConflictError,
+)
 
 PASSWORD = "correct horse battery staple"
 WRONG_PASSWORD = "Correct horse battery staple"
@@ -42,20 +47,8 @@ DAYS = [dt.date(2026, 8, 11), dt.date(2026, 8, 12), dt.date(2026, 8, 13)]
 UNWRITTEN_DAY = dt.date(2019, 4, 1)
 
 # Argon2 at the real defaults costs ~30ms per derivation, and these tests
-# unlock constantly. Patch the cost factors down; the code path is
-# identical, only the work factor changes.
-CHEAP_KDF = {"time_cost": 1, "memory_cost": 8, "parallelism": 1}
-
-
-@pytest.fixture(autouse=True)
-def cheap_kdf(monkeypatch):
-    """Keep real Argon2id, but at test-speed cost factors."""
-    original = KdfParams.generate
-
-    def generate() -> KdfParams:
-        return KdfParams(salt=original().salt, **CHEAP_KDF)
-
-    monkeypatch.setattr(KdfParams, "generate", staticmethod(generate))
+# unlock constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
 
 
 @pytest.fixture
@@ -493,6 +486,116 @@ def test_entries_are_written_newest_day_first(diary_path):
     assert written == [day.isoformat() for day in reversed(DAYS)]
 
 
+# --- a second session on the same file --------------------------------------
+
+
+def test_save_refuses_when_the_file_changed_underneath(diary_path):
+    """Two Zecrets on one diary: the second to save would otherwise write
+    its whole in-memory copy over the first's entries, silently."""
+    populated(diary_path)
+    first, first_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second, second_key = DiaryFile.unlock(diary_path, PASSWORD)
+
+    second.add_entry(Entry.new(UNWRITTEN_DAY, "Written by the other session"))
+    second.save(second_key)
+
+    first.add_entry(Entry.new(dt.date(2026, 7, 1), "Written by this one"))
+    with pytest.raises(ZecretConflictError):
+        first.save(first_key)
+
+
+def test_a_refused_save_leaves_the_other_sessions_work_alone(diary_path):
+    populated(diary_path)
+    first, first_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second, second_key = DiaryFile.unlock(diary_path, PASSWORD)
+
+    second.add_entry(Entry.new(UNWRITTEN_DAY, "Written by the other session"))
+    second.save(second_key)
+    after_second = diary_path.read_bytes()
+
+    first.add_entry(Entry.new(dt.date(2026, 7, 1), "Written by this one"))
+    with pytest.raises(ZecretConflictError):
+        first.save(first_key)
+
+    assert diary_path.read_bytes() == after_second
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert UNWRITTEN_DAY in reopened.entries
+    assert dt.date(2026, 7, 1) not in reopened.entries
+
+
+def test_a_refused_save_leaves_no_temp_file_behind(diary_path):
+    """The check runs before anything is written."""
+    populated(diary_path)
+    first, first_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second, second_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
+    second.save(second_key)
+
+    with pytest.raises(ZecretConflictError):
+        first.save(first_key)
+
+    leftovers = [p.name for p in diary_path.parent.iterdir() if p != diary_path]
+    assert leftovers == []
+
+
+def test_reopening_clears_the_conflict(diary_path):
+    """The way out is to reopen the diary, which is what unlock re-stamps."""
+    populated(diary_path)
+    first, first_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second, second_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
+    second.save(second_key)
+
+    with pytest.raises(ZecretConflictError):
+        first.save(first_key)
+
+    reopened, key = DiaryFile.unlock(diary_path, PASSWORD)
+    reopened.add_entry(Entry.new(dt.date(2026, 7, 1), "Now it lands"))
+    reopened.save(key)
+
+    final, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert set(final.entries) == set(DAYS) | {UNWRITTEN_DAY, dt.date(2026, 7, 1)}
+
+
+def test_repeated_saves_from_one_session_never_conflict(diary_path):
+    """Each save re-stamps, or a session would trip over its own writes."""
+    diary, key, _ = populated(diary_path)
+    for day in (dt.date(2026, 7, 1), dt.date(2026, 7, 2), dt.date(2026, 7, 3)):
+        diary.add_entry(Entry.new(day, f"Body {day}"))
+        diary.save(key)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert len(reopened.entries) == 6
+
+
+def test_a_deleted_diary_is_written_back_rather_than_refused(diary_path):
+    """Nothing to overwrite, so nothing to lose: this restores the file."""
+    diary, key, entries = populated(diary_path)
+    diary_path.unlink()
+
+    diary.save(key)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries == {entry.date: entry for entry in entries}
+
+
+def test_an_interrupted_save_does_not_look_like_a_conflict(diary_path, monkeypatch):
+    """A failed write leaves the file untouched, so the next attempt must
+    still be allowed through."""
+    diary, key, _ = populated(diary_path)
+
+    monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("boom")))
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
+    with pytest.raises(OSError):
+        diary.save(key)
+
+    monkeypatch.undo()
+    diary.save(key)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert UNWRITTEN_DAY in reopened.entries
+
+
 # --- atomic writes ---------------------------------------------------------
 
 
@@ -720,3 +823,111 @@ def test_verify_password_rejects_a_key_from_another_diary(tmp_path):
     _, second_key = DiaryFile.create_new(tmp_path / "b.enc", PASSWORD)
     assert first.verify_password(PASSWORD, first_key) is True
     assert first.verify_password(PASSWORD, second_key) is False
+
+
+# --- malformed files, past the shapes already covered above ------------------
+
+
+@pytest.mark.parametrize(
+    "content",
+    ['"a string"', "[]", "42", "null"],
+    ids=["string", "list", "number", "null"],
+)
+def test_unlock_rejects_json_that_is_not_an_object(diary_path, content):
+    diary_path.write_text(content)
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
+@pytest.mark.parametrize("section", ["kdf", "entries"])
+def test_unlock_rejects_a_missing_section(diary_path, section):
+    populated(diary_path)
+    document = read_document(diary_path)
+    del document[section]
+    diary_path.write_text(json.dumps(document))
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
+@pytest.mark.parametrize("section", ["kdf", "verifier", "entries"])
+def test_unlock_rejects_a_section_of_the_wrong_type(diary_path, section):
+    populated(diary_path)
+    document = read_document(diary_path)
+    document[section] = "not what belongs here"
+    diary_path.write_text(json.dumps(document))
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
+def test_unlock_rejects_a_verifier_that_is_not_base64(diary_path):
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["verifier"]["nonce"] = "not base64!"
+    diary_path.write_text(json.dumps(document))
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
+def test_unlock_rejects_a_record_that_is_not_an_object(diary_path):
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["entries"][0] = "not a record"
+    diary_path.write_text(json.dumps(document))
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
+def test_a_directory_that_cannot_be_opened_does_not_fail_the_save(diary_path, monkeypatch):
+    """The directory fsync is a durability nicety, not a correctness one:
+    the file itself is already fsynced and renamed into place."""
+    diary, key, _ = populated(diary_path)
+    real_open = os.open
+
+    def guarded_open(path, flags, *args, **kwargs):
+        # Only the directory handle fails; the temp file still needs to open.
+        if os.path.isdir(path):
+            raise OSError("cannot open directory")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", guarded_open)
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
+    diary.save(key)
+
+    monkeypatch.undo()
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert UNWRITTEN_DAY in reopened.entries
+
+
+def test_a_failing_directory_fsync_does_not_fail_the_save(diary_path, monkeypatch):
+    diary, key, _ = populated(diary_path)
+    real_fsync = os.fsync
+
+    def fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError("directory fsync unsupported")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
+    diary.save(key)
+
+    monkeypatch.undo()
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert UNWRITTEN_DAY in reopened.entries
+
+
+def test_unlock_rejects_a_verifier_holding_the_wrong_plaintext(diary_path):
+    """Fail closed even when the verifier decrypts cleanly: only the exact
+    known plaintext counts as proof that this is the diary's key."""
+    populated(diary_path)
+    document = read_document(diary_path)
+    key = derive_key(PASSWORD, KdfParams.from_dict(document["kdf"]))
+    nonce, ciphertext = encrypt(key, b"not the verifier plaintext")
+    document["verifier"] = {
+        "nonce": base64.b64encode(nonce).decode(),
+        "ciphertext": base64.b64encode(ciphertext).decode(),
+    }
+    diary_path.write_text(json.dumps(document))
+
+    with pytest.raises(ZecretDecryptError):
+        DiaryFile.unlock(diary_path, PASSWORD)

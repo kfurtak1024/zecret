@@ -25,6 +25,10 @@ if TYPE_CHECKING:
 
 EMPTY_BODY = "(empty)"
 
+#: Shared wording for a refused save: the cause is the same wherever it
+#: happens, and each screen adds what it means for what you were doing.
+DIARY_CHANGED = "The diary changed on disk — another Zecret may have it open."
+
 #: How much of an entry's first line the list shows before trimming.
 SNIPPET_LENGTH = 60
 

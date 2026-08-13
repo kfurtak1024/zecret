@@ -1,18 +1,22 @@
 """Password entry screen: unlocks an existing diary or creates a new one.
 
-If app.diary_path does not exist, this screen should instead prompt to
-create a new diary (set password + confirm), calling DiaryFile.create_new().
-Otherwise it prompts for the password and calls DiaryFile.unlock(),
-catching ZecretDecryptError to show an inline "incorrect password" message
-without leaking whether the failure was due to a wrong password vs. a
-corrupted file.
+In the create flow it asks for a password and a confirmation and calls
+DiaryFile.create_new(). In the unlock flow it asks for the password and
+calls DiaryFile.unlock(), reporting ZecretDecryptError and a malformed
+file identically -- an inline "incorrect password" -- so that nothing here
+tells an attacker whether a given path holds a real, intact diary.
 
-A short artificial delay (e.g. 300-500ms) should be added after a failed
-attempt to mildly slow down brute-force guessing in an interactive session.
+Every failed attempt pauses for FAILED_ATTEMPT_DELAY before the fields
+come back, which takes the edge off interactive brute-forcing. Key
+derivation itself runs off the event loop: Argon2id is deliberately slow,
+and the UI would otherwise freeze for the length of every attempt.
 
 Which of the two flows to present is decided by ZecretApp and passed in as
 `creating`, keeping the "does the file exist" question with the app that
-owns the path (and letting tests drive either flow directly).
+owns the path (and letting tests drive either flow directly). Because that
+decision is made when the screen is built, the file can still turn out to
+be missing or already there by the time the password is submitted; both
+are handled as ordinary failures rather than crashes.
 """
 
 from __future__ import annotations

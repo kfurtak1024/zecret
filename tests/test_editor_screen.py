@@ -26,7 +26,7 @@ from textual.widgets import Input, Label, ListView, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.base import format_day_long
+from zecret.screens.base import DIARY_CHANGED, format_day_long
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.editor import EMPTY_ENTRY, EditorScreen
 from zecret.screens.entry_list import EntryListScreen
@@ -38,6 +38,11 @@ PASSWORD = "correct horse battery staple"
 TODAY = dt.date.today()
 YESTERDAY = TODAY - dt.timedelta(days=1)
 LAST_WEEK = TODAY - dt.timedelta(days=7)
+
+
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
 
 
 @pytest.fixture(autouse=True)
@@ -370,6 +375,34 @@ async def test_a_failed_save_keeps_you_on_the_editor(diary_path, monkeypatch):
         assert "No space left" in str(app.screen.query_one("#editor-error", Label).content)
 
 
+async def test_a_diary_changed_underneath_refuses_the_save_and_says_so(diary_path):
+    """A second Zecret saved while this one was writing. The text stays on
+    screen, and nothing of the other session's is overwritten."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Written here.")
+
+        # Stand in for the other session: same file, its own DiaryFile.
+        other, other_key = DiaryFile.unlock(diary_path, PASSWORD)
+        other.add_entry(Entry.new(YESTERDAY, "Written by the other session"))
+        other.save(other_key)
+        after_other = diary_path.read_bytes()
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen), "must not leave"
+        assert app.screen.body_text == "Written here."
+        assert DIARY_CHANGED in str(app.screen.query_one("#editor-error", Label).content)
+        assert app.diary.entries == {}, "the refused entry must not linger in memory"
+
+    assert diary_path.read_bytes() == after_other
+
+
 async def test_saving_again_after_a_failure_succeeds(diary_path, monkeypatch):
     """The failed attempt must leave the diary as it was: with the day's
     entry already added in memory, the retry would hit 'an entry already
@@ -400,3 +433,31 @@ async def test_saving_again_after_a_failure_succeeds(diary_path, monkeypatch):
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert reopened.entry_for(TODAY).body == "Do not lose this."
+
+
+async def test_a_failed_save_of_an_edit_restores_the_previous_text(diary_path, monkeypatch):
+    """The rollback has two halves. This is the one for a day that already
+    had an entry: memory must go back to what is still on disk, not to
+    nothing."""
+    original = Entry.new(YESTERDAY, "What was there before")
+    seed(diary_path, original)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "An edit that will not land")
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(type(app.diary), "save", boom)
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "An edit that will not land", "the text stays"
+        assert app.diary.entries[YESTERDAY].body == "What was there before"
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[YESTERDAY].body == "What was there before"

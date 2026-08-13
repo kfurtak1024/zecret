@@ -34,6 +34,11 @@ TODAY = dt.date.today()
 WRONG_PASSWORD = "Correct horse battery staple"
 
 
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
+
+
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     """The 400ms anti-brute-force pause is real behavior, but waiting for it
@@ -256,3 +261,66 @@ async def test_inputs_are_re_enabled_after_a_failed_attempt(diary_path):
     async with app.run_test() as pilot:
         await submit(pilot, WRONG_PASSWORD)
         assert all(not widget.disabled for widget in app.screen.query(Input))
+
+
+# --- the file moving under the screen --------------------------------------
+
+
+async def test_a_diary_appearing_before_create_is_reported_not_overwritten(diary_path):
+    """The create-or-unlock decision is made when the screen is built. If a
+    diary shows up in between, creating over it would destroy a file whose
+    password we never checked."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.screen.creating is True
+
+        existing_diary(diary_path)  # another session got there first
+        before = diary_path.read_bytes()
+
+        await submit(pilot, PASSWORD, confirm=PASSWORD)
+        assert app.diary is None
+        assert "already exists" in error_text(app)
+
+    assert diary_path.read_bytes() == before, "the existing diary must be untouched"
+
+
+async def test_a_diary_vanishing_before_unlock_is_reported(diary_path):
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        diary_path.unlink()
+
+        await submit(pilot, PASSWORD)
+        assert app.diary is None
+        assert "gone missing" in error_text(app)
+
+
+async def test_an_unreadable_diary_is_reported(diary_path, monkeypatch):
+    """A permissions problem is not a wrong password, and saying so is not
+    a leak: the file's existence is already implied by the prompt."""
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        def boom(*_args, **_kwargs):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(DiaryFile, "unlock", boom)
+        await submit(pilot, PASSWORD)
+        assert app.diary is None
+        assert "Permission denied" in error_text(app)
+
+
+async def test_the_password_is_cleared_after_a_file_level_failure(diary_path):
+    """Every failure path goes through fail(), so none of them leaves the
+    typed password sitting in the widget."""
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        diary_path.unlink()
+        await submit(pilot, PASSWORD)
+        assert app.screen.query_one("#password", Input).value == ""

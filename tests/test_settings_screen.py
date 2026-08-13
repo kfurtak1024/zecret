@@ -45,6 +45,11 @@ YESTERDAY = TODAY - dt.timedelta(days=1)
 NEW_PASSWORD = "an entirely different passphrase"
 
 
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
+
+
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
@@ -373,3 +378,22 @@ async def test_a_failed_save_leaves_the_diary_openable(diary_path, monkeypatch):
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert len(reopened.entries) == 2
+
+
+@pytest.mark.parametrize(
+    "new,confirm",
+    [("", ""), ("a new password", "a different one")],
+    ids=["empty", "mismatch"],
+)
+async def test_a_refused_change_leaves_no_password_in_the_fields(diary_path, new, confirm):
+    """Every failure path clears, so an unattended terminal never holds a
+    typed password in a widget."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        await submit_change(pilot, PASSWORD, new, confirm)
+
+        assert isinstance(app.screen, SettingsScreen), "must not leave"
+        assert error_of(app.screen)
+        assert [field.value for field in app.screen.query(Input)] == ["", "", ""]

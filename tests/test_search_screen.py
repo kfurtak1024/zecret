@@ -34,6 +34,11 @@ YESTERDAY = TODAY - dt.timedelta(days=1)
 LAST_WEEK = TODAY - dt.timedelta(days=7)
 
 
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
+
+
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
@@ -249,3 +254,20 @@ async def test_searching_does_not_touch_the_file(stocked):
         await type_query(pilot, "coffee")
         await type_query(pilot, "walk")
     assert stocked.read_bytes() == before
+
+
+# --- selecting nothing -----------------------------------------------------
+
+
+async def test_enter_on_an_empty_result_list_stays_put(stocked):
+    """Enter in the query box moves focus to the results, but only when
+    there are results to move to."""
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        await type_query(pilot, "kangaroo")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, SearchScreen)
+        assert app.screen.focused is app.screen.query_one("#query", Input)

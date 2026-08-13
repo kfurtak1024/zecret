@@ -51,6 +51,11 @@ MARCH = [dt.date(2026, 3, 4), dt.date(2026, 3, 17), dt.date(2026, 3, 28)]
 FEBRUARY = [dt.date(2026, 2, 9), dt.date(2026, 2, 22)]
 
 
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
+
+
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
@@ -508,3 +513,50 @@ async def test_list_refreshes_when_the_screen_resumes(diary_path):
 
         assert app.screen is entry_list
         assert "Added elsewhere" in " ".join(row_labels(app))
+
+
+# --- acting on nothing -----------------------------------------------------
+
+
+async def test_open_on_an_empty_list_does_nothing(diary_path):
+    """Pressing enter is already swallowed by the focused (empty) ListView,
+    so the action is invoked directly: its guard is what keeps a stale or
+    absent selection from opening the editor on nothing."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert app.screen.selected_entry is None
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+
+        app.screen.action_open_entry()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_the_open_action_opens_the_highlighted_day(diary_path):
+    """The footer advertises enter as Open. The key itself is handled by
+    the ListView, so this covers the action the binding names."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.screen.action_open_entry()
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.date == YESTERDAY
+
+
+async def test_entry_at_ignores_a_row_that_is_not_there(diary_path):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        screen = app.screen
+        assert screen.entry_at(None) is None
+        assert screen.entry_at(-1) is None
+        assert screen.entry_at(len(screen.rows)) is None
+        assert screen.entry_at(0) is None, "row 0 is a month heading"

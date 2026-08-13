@@ -75,9 +75,12 @@ class SearchScreen(ZecretScreen):
 
     async def refresh_results(self) -> None:
         diary, _ = self.zecret.unlocked
-        query = self.query_one("#query", Input).value.strip().casefold()
 
         async with self.refresh_lock:
+            # Read inside the lock, like the entry list does: whoever gets
+            # to render last then renders what is in the box now, with no
+            # reasoning needed about the order refreshes were queued in.
+            query = self.query_one("#query", Input).value.strip().casefold()
             # An empty query lists everything, so opening search shows the
             # whole diary rather than a blank screen.
             self.results = sorted(

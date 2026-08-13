@@ -44,6 +44,13 @@ Writes are always atomic: content is written to a temp file in the same
 directory, fsync'd, then renamed over the target path. This guarantees the
 diary file is never left half-written if the process is interrupted.
 
+A save also refuses to overwrite a file that changed since this DiaryFile
+last read or wrote it. Two Zecrets open on the same diary each hold the
+whole thing in memory, so without that check the second one to save would
+write its own copy over the first's and take those entries with it --
+silently, since neither would have any reason to complain. The check turns
+that into ZecretConflictError.
+
 No plaintext ever touches this module -- it only ever handles the encrypted
 JSON structure plus opaque nonce/ciphertext bytes.
 """
@@ -74,6 +81,16 @@ DIR_MODE = 0o700
 # Known plaintext encrypted under the derived key, so a wrong password is
 # detectable even when the diary holds no entries.
 VERIFIER_PLAINTEXT = b"zecret-key-check-v1"
+
+
+class ZecretConflictError(Exception):
+    """Raised when the diary file changed since this session read it.
+
+    Almost always a second Zecret open on the same file. Distinct from an
+    OSError: nothing is wrong with the disk, and the save is refused rather
+    than failed -- the entries are still in memory, and the file on disk is
+    still whatever the other session wrote.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +125,10 @@ class DiaryFile:
     # key they were produced with. Private: callers work with `entries`.
     _records: dict[dt.date, _Record] = field(default_factory=dict, repr=False)
     _records_key: bytes | None = field(default=None, repr=False)
+    # What the file looked like when this session last read or wrote it, so
+    # save() can tell whether anyone else has been at it. None until the
+    # first successful write.
+    _file_stamp: tuple[int, int] | None = field(default=None, repr=False)
 
     @classmethod
     def create_new(cls, path: Path, password: str) -> tuple[Self, bytes]:
@@ -177,6 +198,7 @@ class DiaryFile:
         diary = cls(path=path, kdf_params=kdf_params, entries=entries)
         diary._records = records
         diary._records_key = _key_fingerprint(key)
+        diary._file_stamp = _file_stamp(path)
         return diary, key
 
     def save(self, key: bytes) -> None:
@@ -192,7 +214,14 @@ class DiaryFile:
 
         Called after any add/edit/delete, and after a password change (with
         the new key and new self.kdf_params already set).
+
+        Raises:
+            ZecretConflictError: if the file changed since this session
+                read or wrote it. In-memory state is left untouched, so the
+                caller can report it and keep whatever the user typed.
+            OSError: if the write itself fails.
         """
+        self._check_unchanged()
         fingerprint = _key_fingerprint(key)
         reusable = self._records if fingerprint == self._records_key else {}
 
@@ -233,6 +262,33 @@ class DiaryFile:
         # a failed save leaves the cache describing what is really on disk.
         self._records = records
         self._records_key = fingerprint
+        self._file_stamp = _file_stamp(self.path)
+
+    def _check_unchanged(self) -> None:
+        """Refuse to write over a file someone else has written.
+
+        Compares the file's modification time and size against what they
+        were when this session last read or wrote it. Not a lock: two
+        saves in the same filesystem timestamp tick, at the same size,
+        would slip through. That needs two Zecrets saving the same diary
+        within one clock granularity of each other, which human typing
+        does not produce -- and the alternative, holding a lock across an
+        interactive session, would leave a stale lockfile behind every
+        time the terminal was closed.
+
+        A file that has since been deleted is not a conflict: there is
+        nothing to overwrite, and writing it back restores the diary.
+
+        Raises:
+            ZecretConflictError: if the file no longer matches.
+        """
+        if self._file_stamp is None:
+            return
+        current = _file_stamp(self.path)
+        if current is not None and current != self._file_stamp:
+            raise ZecretConflictError(
+                f"{self.path} changed since it was opened; another Zecret may have it open"
+            )
 
     def entry_for(self, date: dt.date) -> Entry | None:
         """The entry written for `date`, or None if that day is unwritten.
@@ -299,6 +355,19 @@ class DiaryFile:
         """
         self.kdf_params = KdfParams.generate()
         return derive_key(new_password, self.kdf_params)
+
+
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    """(mtime, size) for `path`, or None if it is not there to stat.
+
+    Enough to notice another process rewriting the diary, without reading
+    it back in full on every save.
+    """
+    try:
+        status = path.stat()
+    except OSError:
+        return None
+    return status.st_mtime_ns, status.st_size
 
 
 def _key_fingerprint(key: bytes) -> bytes:

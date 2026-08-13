@@ -9,6 +9,8 @@ Required coverage:
       an edit must not move it.
     - to_json_bytes() / from_json_bytes() round-trips an Entry exactly,
       including datetime precision and the date as a date (not a datetime).
+    - body_snippet() picks the first line worth showing and trims it, since
+      it is what stands in for a title everywhere an entry is listed.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ import time
 import pytest
 
 from zecret.models import Entry
+from zecret.screens.base import EMPTY_BODY, body_snippet
 
 DAY = dt.date(2026, 8, 13)
 
@@ -249,3 +252,31 @@ def test_from_json_bytes_rejects_malformed_timestamp(entry):
 def test_from_json_bytes_rejects_non_utf8_bytes():
     with pytest.raises(ValueError):
         Entry.from_json_bytes(b"\xff\xfe\x00garbage")
+
+
+# --- body snippets (shared by every list that shows an entry) ---------------
+
+
+def test_snippet_returns_a_short_first_line_unchanged():
+    assert body_snippet("A short line\nand more") == "A short line"
+
+
+def test_snippet_trims_a_long_first_line_and_marks_it():
+    snippet = body_snippet("x" * 200, length=20)
+    assert len(snippet) == 20
+    assert snippet.endswith("…")
+
+
+def test_snippet_does_not_leave_a_space_before_the_ellipsis():
+    """When the cut lands just after a word, the ellipsis follows the word
+    rather than floating a space away from it."""
+    assert body_snippet("word " * 10, length=11) == "word word…"
+
+
+def test_snippet_skips_leading_blank_lines():
+    assert body_snippet("\n\n   \nThe real first line") == "The real first line"
+
+
+def test_snippet_of_an_empty_body_is_labelled():
+    assert body_snippet("") == EMPTY_BODY
+    assert body_snippet("   \n\n  ") == EMPTY_BODY

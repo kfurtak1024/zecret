@@ -43,6 +43,11 @@ PASSWORD = "correct horse battery staple"
 TODAY = dt.date.today()
 
 
+# Argon2 at test cost, and no pause after a failed unlock: this suite
+# opens diaries constantly (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("cheap_kdf")
+
+
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)

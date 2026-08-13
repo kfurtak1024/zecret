@@ -24,6 +24,7 @@ dev = [
     "textual-dev>=1.8",
     "ruff>=0.16",
     "mypy>=1.18",
+    "pytest-cov>=7",
 ]
 
 [build-system]
@@ -42,6 +43,8 @@ python_version = "3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Coverage is not in addopts: a plain `uv run pytest` stays fast for the
+# edit-run loop. CI asks for it explicitly, with the threshold below.
 addopts = ["--strict-markers", "--strict-config"]
 xfail_strict = true
 asyncio_mode = "auto"
@@ -49,6 +52,24 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # Crypto code must not be allowed to pass tests while emitting deprecations.
 filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["zecret"]
+branch = true
+
+[tool.coverage.report]
+# The bar is where the suite already stands, so it can only be raised. What
+# is left uncovered is two guards against events the widgets above them
+# cannot actually produce -- a click on a disabled row, an out-of-range
+# selection -- kept because they are what makes those handlers total.
+fail_under = 99
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    # The console script is what runs main() in anger; CI smoke-tests it.
+    'if __name__ == "__main__":',
+]
 
 [tool.ruff]
 src = ["src", "tests"]

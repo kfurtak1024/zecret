@@ -27,9 +27,10 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Label, TextArea
 
 from zecret.models import Entry
-from zecret.screens.base import ZecretScreen, format_day_long
+from zecret.screens.base import DIARY_CHANGED, ZecretScreen, format_day_long
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.header import DiaryHeader
+from zecret.storage import ZecretConflictError
 
 DISCARD_QUESTION = "Discard your unsaved changes?"
 EMPTY_ENTRY = "Nothing to save — write something first."
@@ -114,7 +115,7 @@ class EditorScreen(ZecretScreen):
 
         try:
             diary.save(key)
-        except OSError as error:
+        except (OSError, ZecretConflictError) as error:
             # Put the in-memory diary back as it was, so it still matches
             # the file and pressing save again is a clean second attempt --
             # otherwise the retry would hit "an entry already exists".
@@ -124,7 +125,11 @@ class EditorScreen(ZecretScreen):
                 diary.update_entry(existing)
             # Stay put: popping now would throw away text that never
             # reached disk.
-            self.set_error(f"Could not save: {error.strerror or error}.")
+            self.set_error(
+                DIARY_CHANGED
+                if isinstance(error, ZecretConflictError)
+                else f"Could not save: {error.strerror or error}."
+            )
             self.notify("The entry was not saved.", severity="error")
             return
 

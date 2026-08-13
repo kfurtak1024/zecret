@@ -36,8 +36,9 @@ from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Input, Label, Select
 
-from zecret.screens.base import ZecretScreen
+from zecret.screens.base import DIARY_CHANGED, ZecretScreen
 from zecret.screens.header import DiaryHeader
+from zecret.storage import ZecretConflictError
 
 WRONG_CURRENT = "That is not your current password."
 EMPTY_NEW = "Choose a new password."
@@ -130,11 +131,17 @@ class SettingsScreen(ZecretScreen):
         current, new, confirm = (self.value_of(f) for f in ("current", "new", "confirm"))
         diary, key = self.zecret.unlocked
 
+        # Both of these clear the fields, like every other failure here and
+        # on the unlock screen: a rejected attempt should not leave a
+        # password sitting in a widget on an unattended terminal. It costs
+        # retyping a password you got wrong anyway.
         if not new:
             self.set_error(EMPTY_NEW)
+            self.clear_inputs()
             return
         if new != confirm:
             self.set_error(MISMATCH)
+            self.clear_inputs()
             return
 
         # Argon2id, off the event loop -- once to check the old password and
@@ -149,11 +156,15 @@ class SettingsScreen(ZecretScreen):
         new_key = await asyncio.to_thread(diary.change_password, new)
         try:
             await asyncio.to_thread(diary.save, new_key)
-        except OSError as error:
+        except (OSError, ZecretConflictError) as error:
             # Undo the re-key so memory and disk agree again; app.key is
             # deliberately still the old key at this point.
             diary.kdf_params = previous_params
-            self.set_error(f"Could not save: {error.strerror or error}.")
+            self.set_error(
+                DIARY_CHANGED
+                if isinstance(error, ZecretConflictError)
+                else f"Could not save: {error.strerror or error}."
+            )
             self.notify("Your password was not changed.", severity="error")
             return
 
