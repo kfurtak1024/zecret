@@ -1,7 +1,11 @@
-"""Main screen: the diary, one row per day, most recent first.
+"""Main screen: the diary, one row per day, most recent first, grouped
+into months.
 
 Responsibilities:
-    - Render entries from app.diary.entries, sorted by date descending.
+    - Render entries from app.diary.entries, sorted by date descending,
+      under a heading per month ("August 2026 · 12 entries"). Because the
+      heading names the month, the rows under it need only the weekday and
+      day of the month.
     - Keybindings: 'n' write today -> EditorScreen, 'g' pick another day
       -> DatePromptScreen -> EditorScreen, 'enter' open selected day
       -> EditorScreen, 'd' delete selected (with confirmation modal),
@@ -14,6 +18,14 @@ Responsibilities:
 opens whatever that day holds, so writing more about today just continues
 today's entry instead of starting a second one.
 
+Grouping is presentation only -- nothing about it reaches models.py or
+storage.py, which know only about individual dated entries. The month
+headings share the ListView with the entries as disabled rows, which
+Textual's cursor navigation steps over and its clicks ignore. That leaves
+one thing to get right: a row index is no longer an index into the
+entries, so everything that maps a selection back to an entry goes through
+self.rows.
+
 The delete confirmation uses the shared ConfirmScreen modal (screens/
 confirm.py), as does discarding unsaved edits in the editor.
 """
@@ -23,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 from collections.abc import Callable
+from itertools import groupby
 from typing import ClassVar
 
 from textual.app import ComposeResult
@@ -30,7 +43,14 @@ from textual.binding import Binding, BindingType
 from textual.widgets import Footer, Header, Label, ListItem, ListView
 
 from zecret.models import Entry
-from zecret.screens.base import ZecretScreen, entry_summary, format_day, today
+from zecret.screens.base import (
+    ZecretScreen,
+    count_entries,
+    day_summary,
+    format_day,
+    format_month,
+    today,
+)
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
@@ -38,6 +58,9 @@ from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
 
 EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
+
+#: Marks the rows that are month headings rather than entries.
+HEADING_CLASS = "group-heading"
 
 
 class EntryListScreen(ZecretScreen):
@@ -60,8 +83,10 @@ class EntryListScreen(ZecretScreen):
 
     def __init__(self) -> None:
         super().__init__()
-        # Entries in display order, so a list index maps back to an entry.
-        self.ordered: list[Entry] = []
+        # One element per row of the ListView, in display order: the entry
+        # that row shows, or None where the row is a month heading. This is
+        # the only thing that maps a highlighted row back to a day.
+        self.rows: list[Entry | None] = []
         # Rebuilding the list is a sequence of awaits, and two rebuilds can
         # be in flight at once -- deleting an entry refreshes, and popping
         # the confirmation modal resumes this screen, which also refreshes.
@@ -80,41 +105,64 @@ class EntryListScreen(ZecretScreen):
         await self.refresh_entries()
 
     async def refresh_entries(self) -> None:
-        """Rebuild the list from the in-memory diary, most recent day first."""
+        """Rebuild the list from the in-memory diary, most recent day first,
+        with a heading above each month."""
         async with self.refresh_lock:
             diary, _ = self.zecret.unlocked
-            self.ordered = sorted(
-                diary.entries.values(), key=lambda entry: entry.date, reverse=True
-            )
+            entries = sorted(diary.entries.values(), key=lambda entry: entry.date, reverse=True)
 
             list_view = self.query_one("#entries", ListView)
             await list_view.clear()
-            for entry in self.ordered:
-                await list_view.append(ListItem(Label(entry_summary(entry))))
+            self.rows = []
+            # Sorted by date, so each month's entries are already adjacent.
+            for first_of_month, group in groupby(
+                entries, key=lambda entry: entry.date.replace(day=1)
+            ):
+                month = list(group)
+                self.rows.append(None)
+                heading = f"{format_month(first_of_month)} · {count_entries(len(month))}"
+                # Disabled, so the cursor steps over it and clicks on it do
+                # nothing -- it is a signpost, not somewhere to be.
+                await list_view.append(
+                    ListItem(Label(heading), disabled=True, classes=HEADING_CLASS)
+                )
+                for entry in month:
+                    self.rows.append(entry)
+                    await list_view.append(ListItem(Label(day_summary(entry))))
 
-            count = len(self.ordered)
-            self.sub_title = (
-                "no entries" if not count else f"{count} entr{'y' if count == 1 else 'ies'}"
-            )
+            self.sub_title = "no entries" if not entries else count_entries(len(entries))
 
-            has_entries = bool(self.ordered)
+            has_entries = bool(entries)
             self.query_one("#entries-empty", Label).display = not has_entries
             list_view.display = has_entries
             if has_entries:
-                list_view.index = 0
+                # Not index 0: that is a month heading, and assigning an
+                # index is not filtered by the skip-disabled rule that
+                # cursor movement follows -- Enter would then open nothing.
+                list_view.index = self.first_entry_row
                 list_view.focus()
+
+    @property
+    def first_entry_row(self) -> int | None:
+        """The row of the newest entry, past the heading it sits under."""
+        return next((row for row, entry in enumerate(self.rows) if entry is not None), None)
+
+    def entry_at(self, row: int | None) -> Entry | None:
+        """The entry a row shows, or None for a heading or a missing row."""
+        if row is None or not 0 <= row < len(self.rows):
+            return None
+        return self.rows[row]
 
     @property
     def selected_entry(self) -> Entry | None:
         """The highlighted entry, or None when the list is empty."""
-        index = self.query_one("#entries", ListView).index
-        if index is None or not 0 <= index < len(self.ordered):
-            return None
-        return self.ordered[index]
+        return self.entry_at(self.query_one("#entries", ListView).index)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Enter (or a click) on a row opens it."""
-        self.open_day(self.ordered[event.list_view.index or 0].date)
+        entry = self.entry_at(event.list_view.index)
+        if entry is not None:
+            self.open_day(entry.date)
 
     # --- actions -----------------------------------------------------------
 

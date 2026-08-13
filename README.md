@@ -18,7 +18,7 @@ you can open.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/entries-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/entries-light.png">
-  <img alt="The Zecret entry list, showing five days of diary entries, most recent first" src="assets/entries-dark.png" width="820">
+  <img alt="The Zecret entry list, showing days of diary entries grouped under month headings, most recent first" src="assets/entries-dark.png" width="820">
 </picture>
 
 </div>
@@ -33,6 +33,7 @@ writing to go. It is one encrypted file on your own disk, opened by a
 password only you know, in a terminal you already have open.
 
 - 📅 **One entry a day** — each day is a page, named by its date; come back and it is the same page
+- 🗓️ **Grouped by month** — the diary reads as months, each headed with how much of it you wrote
 - 🔐 **Encrypted at rest** — Argon2id key derivation, AES-256-GCM per entry
 - ✍️ **Keyboard-driven** — a fast Textual TUI, no mouse required
 - 🔎 **Instant search** — live filtering across everything you have written

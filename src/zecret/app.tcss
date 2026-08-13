@@ -91,6 +91,15 @@ SettingsScreen {
         background: $accent;
         color: $block-cursor-foreground;
     }
+
+    /* Month headings. Disabled so the cursor skips them, which is a
+       navigation decision, not a visual one -- they read as headings, not
+       as something unavailable. */
+    & > ListItem.group-heading {
+        padding: 1 2 0 2;
+        color: $text-accent;
+        text-style: bold;
+    }
 }
 
 /* --- Empty states ------------------------------------------------------- */

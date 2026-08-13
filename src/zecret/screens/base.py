@@ -39,11 +39,31 @@ def today() -> dt.date:
 
 
 def format_day(date: dt.date) -> str:
-    """A day in list form: 'Thu 13 Aug 2026'.
+    """A day in full: 'Thu 13 Aug 2026'.
 
-    Fixed width, so the dates line up as a column down the entry list.
+    Fixed width, so the dates line up as a column. Used where a row stands
+    on its own -- search results, which are not grouped by month.
     """
     return f"{date:%a %d %b %Y}"
+
+
+def format_day_short(date: dt.date) -> str:
+    """A day within a month that is already named above it: 'Thu 13'."""
+    return f"{date:%a %d}"
+
+
+def format_month(date: dt.date) -> str:
+    """The month a day falls in: 'August 2026'.
+
+    Carries the year, so grouping the diary by month needs only one level
+    of heading rather than a year above a month.
+    """
+    return f"{date:%B %Y}"
+
+
+def count_entries(count: int) -> str:
+    """'1 entry' / '12 entries', for headings and the header's subtitle."""
+    return f"{count} entr{'y' if count == 1 else 'ies'}"
 
 
 def format_day_long(date: dt.date) -> str:
@@ -66,12 +86,15 @@ def body_snippet(body: str, length: int = SNIPPET_LENGTH) -> str:
 
 
 def entry_summary(entry: Entry) -> str:
-    """One-line label for an entry: its day, then a glimpse of the text.
-
-    Shared by the entry list and search results so a given entry looks the
-    same wherever it appears.
-    """
+    """One-line label for an entry standing on its own: full day, then a
+    glimpse of the text. Used by search, whose results are ungrouped."""
     return f"{format_day(entry.date)}   {body_snippet(entry.body)}"
+
+
+def day_summary(entry: Entry) -> str:
+    """One-line label for an entry under a month heading, which already
+    says which month and year this is."""
+    return f"{format_day_short(entry.date)}   {body_snippet(entry.body)}"
 
 
 class ZecretScreen(Screen[None]):

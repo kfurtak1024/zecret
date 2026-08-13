@@ -4,6 +4,10 @@ Required coverage:
     - Unlocking routes to the entry list.
     - Days render most-recent-first, with an empty state when there are
       none.
+    - Days are grouped under a heading per month, carrying that month's
+      entry count. Headings are rows too, so: the highlight never rests on
+      one, the cursor steps over them, and everything that maps a
+      selection back to a day (open, delete) lands on the right day.
     - 'g' offers another day to write about and opens the editor on it;
       backing out of the prompt changes nothing.
     - Delete asks for confirmation first; cancelling changes nothing.
@@ -22,10 +26,15 @@ from textual.widgets import Input, Label, ListView, MaskedInput
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.base import EMPTY_BODY, format_day
+from zecret.screens.base import EMPTY_BODY, format_day, format_day_short, format_month
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
-from zecret.screens.entry_list import EMPTY_MESSAGE, ConfirmScreen, EntryListScreen
+from zecret.screens.entry_list import (
+    EMPTY_MESSAGE,
+    HEADING_CLASS,
+    ConfirmScreen,
+    EntryListScreen,
+)
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
@@ -35,6 +44,11 @@ TODAY = dt.date.today()
 YESTERDAY = TODAY - dt.timedelta(days=1)
 LAST_WEEK = TODAY - dt.timedelta(days=7)
 LAST_YEAR = TODAY - dt.timedelta(days=365)
+
+# Two fixed months, so grouping assertions do not depend on where in the
+# month the suite happens to run.
+MARCH = [dt.date(2026, 3, 4), dt.date(2026, 3, 17), dt.date(2026, 3, 28)]
+FEBRUARY = [dt.date(2026, 2, 9), dt.date(2026, 2, 22)]
 
 
 @pytest.fixture(autouse=True)
@@ -63,10 +77,29 @@ async def unlock(pilot) -> None:
 
 
 def row_labels(app: ZecretApp) -> list[str]:
+    """Every row, month headings included, in display order."""
     return [
         str(item.query_one(Label).content)
         for item in app.screen.query_one("#entries", ListView).children
     ]
+
+
+def entry_labels(app: ZecretApp) -> list[str]:
+    """Only the rows that are entries."""
+    return [
+        str(item.query_one(Label).content)
+        for item in app.screen.query_one("#entries", ListView).children
+        if not item.has_class(HEADING_CLASS)
+    ]
+
+
+def snippets(app: ZecretApp) -> list[str]:
+    return [label.split("   ")[-1] for label in entry_labels(app)]
+
+
+def month_entries(diary_path: Path) -> None:
+    """Five entries across two months, seeded newest last."""
+    seed(diary_path, *(Entry.new(day, f"Body for {day}") for day in FEBRUARY + MARCH))
 
 
 # --- routing and rendering -------------------------------------------------
@@ -90,19 +123,16 @@ async def test_days_render_most_recent_first(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        assert [label.split("   ")[-1] for label in row_labels(app)] == [
-            "Newest",
-            "Middle",
-            "Oldest",
-        ]
+        assert snippets(app) == ["Newest", "Middle", "Oldest"]
 
 
 async def test_rows_show_the_day_then_a_glimpse_of_the_text(diary_path):
+    """Short day form: the month heading above already names the month."""
     seed(diary_path, Entry.new(YESTERDAY, "First line\nsecond line"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        assert row_labels(app) == [f"{format_day(YESTERDAY)}   First line"]
+        assert entry_labels(app) == [f"{format_day_short(YESTERDAY)}   First line"]
 
 
 async def test_an_entry_with_no_text_still_shows_its_day(diary_path):
@@ -110,7 +140,96 @@ async def test_an_entry_with_no_text_still_shows_its_day(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        assert row_labels(app) == [f"{format_day(YESTERDAY)}   {EMPTY_BODY}"]
+        assert entry_labels(app) == [f"{format_day_short(YESTERDAY)}   {EMPTY_BODY}"]
+
+
+# --- grouping by month -----------------------------------------------------
+
+
+async def test_each_month_gets_a_heading_with_its_count(diary_path):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert row_labels(app) == [
+            f"{format_month(MARCH[0])} · 3 entries",
+            f"{format_day_short(MARCH[2])}   Body for {MARCH[2]}",
+            f"{format_day_short(MARCH[1])}   Body for {MARCH[1]}",
+            f"{format_day_short(MARCH[0])}   Body for {MARCH[0]}",
+            f"{format_month(FEBRUARY[0])} · 2 entries",
+            f"{format_day_short(FEBRUARY[1])}   Body for {FEBRUARY[1]}",
+            f"{format_day_short(FEBRUARY[0])}   Body for {FEBRUARY[0]}",
+        ]
+
+
+async def test_a_single_entry_month_is_counted_in_the_singular(diary_path):
+    seed(diary_path, Entry.new(FEBRUARY[0], "Alone"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert row_labels(app)[0] == f"{format_month(FEBRUARY[0])} · 1 entry"
+
+
+async def test_the_same_month_in_different_years_gets_its_own_heading(diary_path):
+    """Grouping is by month *and* year -- March 2026 is not March 2025."""
+    seed(
+        diary_path,
+        Entry.new(dt.date(2025, 3, 4), "Older March"),
+        Entry.new(dt.date(2026, 3, 4), "Newer March"),
+    )
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert [label for label in row_labels(app) if "·" in label] == [
+            "March 2026 · 1 entry",
+            "March 2025 · 1 entry",
+        ]
+
+
+async def test_an_empty_diary_has_no_headings(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert row_labels(app) == []
+
+
+async def test_the_highlight_starts_on_an_entry_not_a_heading(diary_path):
+    """Row 0 is always a heading, and assigning an index is not subject to
+    the skip-disabled rule that cursor movement follows."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert app.screen.query_one("#entries", ListView).index == 1
+        assert app.screen.selected_entry.date == MARCH[2]
+
+
+async def test_the_cursor_steps_over_a_heading_between_months(diary_path):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for _ in range(3):  # to the last March entry, then across the heading
+            await pilot.press("down")
+            await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[1]
+
+
+async def test_enter_opens_the_highlighted_day_after_crossing_a_heading(diary_path):
+    """The row index is no longer an index into the entries; a slip here
+    would open the wrong day."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for _ in range(4):
+            await pilot.press("down")
+            await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.date == FEBRUARY[0]
 
 
 async def test_empty_diary_shows_the_empty_state(diary_path):
@@ -258,7 +377,7 @@ async def test_cancelling_the_confirmation_keeps_the_entry(diary_path):
         await pilot.press("escape")
         await pilot.pause()
         assert app.diary.entries == {YESTERDAY: entry}
-        assert row_labels(app) == [f"{format_day(YESTERDAY)}   Keep me"]
+        assert entry_labels(app) == [f"{format_day_short(YESTERDAY)}   Keep me"]
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert reopened.entries == {YESTERDAY: entry}
@@ -277,11 +396,32 @@ async def test_confirmed_delete_removes_the_entry_everywhere(diary_path):
         await pilot.pause()
 
         assert set(app.diary.entries) == {LAST_WEEK}
-        assert [label.split("   ")[-1] for label in row_labels(app)] == ["Keep me"]
+        assert snippets(app) == ["Keep me"]
 
     # Persisted, not just dropped from memory.
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert set(reopened.entries) == {LAST_WEEK}
+
+
+async def test_delete_removes_the_highlighted_day_across_a_heading(diary_path):
+    """Deleting by row index rather than by the mapped entry would take out
+    the wrong day once headings shift everything down."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for _ in range(3):  # first February entry, one heading down the list
+            await pilot.press("down")
+            await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[1]
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert set(app.diary.entries) == set(MARCH) | {FEBRUARY[0]}
+        assert row_labels(app)[-2] == f"{format_month(FEBRUARY[0])} · 1 entry"
 
 
 async def test_deleting_the_last_entry_restores_the_empty_state(diary_path):
@@ -341,7 +481,7 @@ async def test_a_failed_delete_keeps_the_entry_visible(diary_path, monkeypatch):
         await pilot.pause()
 
         assert app.diary.entries == {YESTERDAY: entry}
-        assert row_labels(app) == [f"{format_day(YESTERDAY)}   Keep me"]
+        assert entry_labels(app) == [f"{format_day_short(YESTERDAY)}   Keep me"]
 
 
 # --- refresh on resume -----------------------------------------------------

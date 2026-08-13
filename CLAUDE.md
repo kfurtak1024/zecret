@@ -68,6 +68,11 @@ Keep this layering strict:
   needs something crypto-shaped, storage grows the method: this is why
   `DiaryFile.verify_password()` exists, for the settings screen's re-check
   of the current password.
+- Presentation belongs to the screens, and stays there. The entry list
+  groups days under a month heading; `DiaryFile.entries` is an unordered
+  mapping and knows nothing about it. Sorting, grouping and wording are the
+  screen's business — don't push them down into storage to save the screen
+  a `sorted()`.
 
 Interface note: `DiaryFile.create_new()` and `DiaryFile.unlock()` return
 `(DiaryFile, key)`, not just the `DiaryFile`. The derived key has to reach
