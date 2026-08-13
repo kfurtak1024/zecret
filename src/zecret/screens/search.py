@@ -1,8 +1,8 @@
 """Full-text search over decrypted entries already held in memory.
 
 Since app.diary.entries are already decrypted for the session, search is a
-simple in-memory substring/case-insensitive filter over title + body as the
-query changes (live filtering, no separate "submit" step needed). No
+simple in-memory substring/case-insensitive filter over the entry text as
+the query changes (live filtering, no separate "submit" step needed). No
 plaintext is ever written to disk as part of search.
 
 Selecting a result opens it in the editor, so search is a way into an entry
@@ -27,10 +27,10 @@ NO_MATCHES = "No entries match."
 
 
 def matches(entry: Entry, query: str) -> bool:
-    """Case-insensitive substring match over an entry's title and body."""
+    """Case-insensitive substring match over an entry's text."""
     # casefold() rather than lower(): correct for non-ASCII text, which
     # diary entries are as likely to contain as anything else.
-    return query in entry.title.casefold() or query in entry.body.casefold()
+    return query in entry.body.casefold()
 
 
 class SearchScreen(ZecretScreen):
@@ -81,7 +81,7 @@ class SearchScreen(ZecretScreen):
             # whole diary rather than a blank screen.
             self.results = sorted(
                 (entry for entry in diary.entries.values() if not query or matches(entry, query)),
-                key=lambda entry: entry.created_at,
+                key=lambda entry: entry.date,
                 reverse=True,
             )
 
@@ -99,7 +99,7 @@ class SearchScreen(ZecretScreen):
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         index = event.list_view.index
         if index is not None and 0 <= index < len(self.results):
-            self.app.push_screen(EditorScreen(self.results[index]))
+            self.app.push_screen(EditorScreen(self.results[index].date))
 
     def action_back(self) -> None:
         self.dismiss()

@@ -1,19 +1,24 @@
-"""Tests for EditorScreen: creating and editing entries.
+"""Tests for EditorScreen: writing and revising a day's entry.
 
 Required coverage:
-    - 'n' from the list opens an empty editor; Enter opens the selected
-      entry prefilled.
-    - Saving a new entry persists it to disk and shows it in the list.
-    - Saving an edit updates the entry in place: same id and created_at,
+    - 'n' from the list opens today: empty if the day is unwritten,
+      prefilled if it is not -- never a second entry for the same day.
+    - Enter opens the selected day prefilled.
+    - Saving a new entry persists it to disk under its date and shows it
+      in the list.
+    - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
       unchanged leaves immediately.
-    - An entry with neither title nor body is refused.
-    - A save that fails keeps the user on the screen with their text.
+    - An empty entry is refused.
+    - A save that fails keeps the user on the screen with their text, and
+      leaves the diary able to retry.
 """
 
 from __future__ import annotations
 
+import datetime as dt
+import json
 from pathlib import Path
 
 import pytest
@@ -21,6 +26,7 @@ from textual.widgets import Input, Label, ListView, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
+from zecret.screens.base import format_day_long
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.editor import EMPTY_ENTRY, EditorScreen
 from zecret.screens.entry_list import EntryListScreen
@@ -28,6 +34,10 @@ from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
+
+TODAY = dt.date.today()
+YESTERDAY = TODAY - dt.timedelta(days=1)
+LAST_WEEK = TODAY - dt.timedelta(days=7)
 
 
 @pytest.fixture(autouse=True)
@@ -54,9 +64,8 @@ async def unlock(pilot) -> None:
     await pilot.pause()
 
 
-async def type_entry(pilot, title: str, body: str) -> None:
-    """Fill the open editor's fields."""
-    pilot.app.screen.query_one("#title", Input).value = title
+async def type_body(pilot, body: str) -> None:
+    """Fill the open editor's text."""
     pilot.app.screen.query_one("#body", TextArea).text = body
     await pilot.pause()
 
@@ -68,10 +77,15 @@ def row_labels(app: ZecretApp) -> list[str]:
     ]
 
 
+def ciphertexts(path: Path) -> dict[str, str]:
+    document = json.loads(path.read_bytes())
+    return {rec["date"]: rec["ciphertext"] for rec in document["entries"]}
+
+
 # --- opening the editor ----------------------------------------------------
 
 
-async def test_n_opens_an_empty_editor(diary_path):
+async def test_n_opens_today_empty_when_the_day_is_unwritten(diary_path):
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -79,36 +93,67 @@ async def test_n_opens_an_empty_editor(diary_path):
         await pilot.press("n")
         await pilot.pause()
         assert isinstance(app.screen, EditorScreen)
+        assert app.screen.date == TODAY
         assert app.screen.creating is True
-        assert app.screen.title_text == ""
         assert app.screen.body_text == ""
 
 
-async def test_enter_opens_the_selected_entry_prefilled(diary_path):
-    entry = Entry.new("A title", "A body\nover two lines")
-    seed(diary_path, entry)
+async def test_n_opens_todays_existing_entry_rather_than_a_second_one(diary_path):
+    """One entry per day: coming back to today continues what is there."""
+    seed(diary_path, Entry.new(TODAY, "Written this morning."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        assert app.screen.creating is False
+        assert app.screen.body_text == "Written this morning."
+
+
+async def test_enter_opens_the_selected_day_prefilled(diary_path):
+    seed(diary_path, Entry.new(LAST_WEEK, "A body\nover two lines"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, EditorScreen)
+        assert app.screen.date == LAST_WEEK
         assert app.screen.creating is False
-        assert app.screen.title_text == "A title"
         assert app.screen.body_text == "A body\nover two lines"
 
 
-# --- creating --------------------------------------------------------------
+async def test_the_header_names_the_day_being_written(diary_path):
+    seed(diary_path, Entry.new(LAST_WEEK, "Body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen.sub_title == format_day_long(LAST_WEEK)
 
 
-async def test_saving_a_new_entry_persists_it(diary_path):
+async def test_the_text_is_focused_so_writing_can_start_immediately(diary_path):
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("n")
         await pilot.pause()
-        await type_entry(pilot, "Morning walk", "It was cold.")
+        assert app.screen.focused is app.screen.query_one("#body", TextArea)
+
+
+# --- writing ---------------------------------------------------------------
+
+
+async def test_saving_a_new_entry_persists_it_under_today(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "It was cold.")
         await pilot.press("ctrl+s")
         await pilot.pause()
         await pilot.pause()
@@ -117,8 +162,8 @@ async def test_saving_a_new_entry_persists_it(diary_path):
         assert len(app.diary.entries) == 1
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    saved = next(iter(reopened.entries.values()))
-    assert saved.title == "Morning walk"
+    saved = reopened.entry_for(TODAY)
+    assert saved is not None
     assert saved.body == "It was cold."
 
 
@@ -129,28 +174,35 @@ async def test_a_new_entry_appears_in_the_list(diary_path):
         await unlock(pilot)
         await pilot.press("n")
         await pilot.pause()
-        await type_entry(pilot, "Morning walk", "It was cold.")
+        await type_body(pilot, "Morning walk. It was cold.")
         await pilot.press("ctrl+s")
         await pilot.pause()
         await pilot.pause()
-        assert "Morning walk" in " ".join(row_labels(app))
+        assert "Morning walk. It was cold." in " ".join(row_labels(app))
 
 
-async def test_an_entry_with_only_a_body_is_allowed(diary_path):
+async def test_writing_today_twice_edits_the_same_entry(diary_path):
+    """The end-to-end version of one-entry-per-day: two rounds of writing
+    on the same day leave one entry, not two."""
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("n")
-        await pilot.pause()
-        await type_entry(pilot, "", "Just some thoughts.")
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        await pilot.pause()
-        assert len(app.diary.entries) == 1
+        for text in ("First thoughts.", "First thoughts. And more."):
+            await pilot.press("n")
+            await pilot.pause()
+            await type_body(pilot, text)
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            await pilot.pause()
+
+        assert set(app.diary.entries) == {TODAY}
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entry_for(TODAY).body == "First thoughts. And more."
 
 
-async def test_a_wholly_empty_entry_is_refused(diary_path):
+async def test_an_empty_entry_is_refused(diary_path):
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -168,67 +220,55 @@ async def test_a_wholly_empty_entry_is_refused(diary_path):
 
 
 async def test_saving_an_edit_updates_the_entry_in_place(diary_path):
-    entry = Entry.new("Original", "Original body")
+    entry = Entry.new(YESTERDAY, "Original body")
     seed(diary_path, entry)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("enter")
         await pilot.pause()
-        await type_entry(pilot, "Edited", "Edited body")
+        await type_body(pilot, "Edited body")
         await pilot.press("ctrl+s")
         await pilot.pause()
         await pilot.pause()
         assert len(app.diary.entries) == 1, "an edit must not add a second entry"
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    saved = reopened.entries[entry.id]
-    assert saved.title == "Edited"
+    saved = reopened.entries[YESTERDAY]
     assert saved.body == "Edited body"
-    assert saved.id == entry.id
+    assert saved.date == entry.date
     assert saved.created_at == entry.created_at
     assert saved.updated_at > entry.updated_at
 
 
-async def test_editing_one_entry_leaves_others_ciphertext_alone(diary_path):
+async def test_editing_one_day_leaves_other_ciphertexts_alone(diary_path):
     """The UI path must preserve the per-entry independence that storage
     guarantees (CLAUDE.md requirement 6)."""
-    import json
-
-    edited = Entry.new("Edit me", "Body")
-    untouched = Entry.new("Leave me", "Body")
-    seed(diary_path, edited, untouched)
-
-    def ciphertexts() -> dict[str, str]:
-        document = json.loads(diary_path.read_bytes())
-        return {rec["id"]: rec["ciphertext"] for rec in document["entries"]}
-
-    before = ciphertexts()
+    seed(diary_path, Entry.new(YESTERDAY, "Edit me"), Entry.new(LAST_WEEK, "Leave me"))
+    before = ciphertexts(diary_path)
 
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        # Select "Edit me" wherever it landed in the list.
-        while app.screen.selected_entry.id != edited.id:
-            await pilot.press("down")
-            await pilot.pause()
+        # Yesterday sorts above last week, so it is the first row.
         await pilot.press("enter")
         await pilot.pause()
-        await type_entry(pilot, "Edited", "Edited body")
+        assert app.screen.date == YESTERDAY
+        await type_body(pilot, "Edited body")
         await pilot.press("ctrl+s")
         await pilot.pause()
         await pilot.pause()
 
-    after = ciphertexts()
-    assert after[str(untouched.id)] == before[str(untouched.id)]
-    assert after[str(edited.id)] != before[str(edited.id)]
+    after = ciphertexts(diary_path)
+    assert after[LAST_WEEK.isoformat()] == before[LAST_WEEK.isoformat()]
+    assert after[YESTERDAY.isoformat()] != before[YESTERDAY.isoformat()]
 
 
 # --- backing out -----------------------------------------------------------
 
 
 async def test_escape_with_no_changes_returns_immediately(diary_path):
-    seed(diary_path, Entry.new("A title", "A body"))
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
@@ -241,54 +281,54 @@ async def test_escape_with_no_changes_returns_immediately(diary_path):
 
 
 async def test_escape_with_unsaved_changes_asks_first(diary_path):
-    seed(diary_path, Entry.new("A title", "A body"))
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("enter")
         await pilot.pause()
-        await type_entry(pilot, "Changed", "A body")
+        await type_body(pilot, "Changed")
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, ConfirmScreen)
 
 
 async def test_cancelling_the_discard_keeps_you_editing(diary_path):
-    seed(diary_path, Entry.new("A title", "A body"))
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("enter")
         await pilot.pause()
-        await type_entry(pilot, "Changed", "A body")
+        await type_body(pilot, "Changed")
         await pilot.press("escape")
         await pilot.pause()
         await pilot.press("escape")  # dismisses the modal as "cancel"
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EditorScreen)
-        assert app.screen.title_text == "Changed", "the edit must survive"
+        assert app.screen.body_text == "Changed", "the edit must survive"
 
 
 async def test_confirming_the_discard_drops_the_changes(diary_path):
-    entry = Entry.new("A title", "A body")
+    entry = Entry.new(YESTERDAY, "A body")
     seed(diary_path, entry)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("enter")
         await pilot.pause()
-        await type_entry(pilot, "Changed", "A body")
+        await type_body(pilot, "Changed")
         await pilot.press("escape")
         await pilot.pause()
         await pilot.click("#confirm-yes")
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
-        assert app.diary.entries == {entry.id: entry}, "nothing may be persisted"
+        assert app.diary.entries == {entry.date: entry}, "nothing may be persisted"
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert reopened.entries[entry.id].title == "A title"
+    assert reopened.entries[YESTERDAY].body == "A body"
 
 
 async def test_a_new_empty_editor_backs_out_without_asking(diary_path):
@@ -316,7 +356,7 @@ async def test_a_failed_save_keeps_you_on_the_editor(diary_path, monkeypatch):
         await unlock(pilot)
         await pilot.press("n")
         await pilot.pause()
-        await type_entry(pilot, "Important", "Do not lose this.")
+        await type_body(pilot, "Do not lose this.")
 
         def boom(*_args, **_kwargs):
             raise OSError(28, "No space left on device")
@@ -328,3 +368,35 @@ async def test_a_failed_save_keeps_you_on_the_editor(diary_path, monkeypatch):
         assert isinstance(app.screen, EditorScreen)
         assert app.screen.body_text == "Do not lose this."
         assert "No space left" in str(app.screen.query_one("#editor-error", Label).content)
+
+
+async def test_saving_again_after_a_failure_succeeds(diary_path, monkeypatch):
+    """The failed attempt must leave the diary as it was: with the day's
+    entry already added in memory, the retry would hit 'an entry already
+    exists for today' instead of saving."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Do not lose this.")
+
+        real_save = type(app.diary).save
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(type(app.diary), "save", boom)
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.diary.entries == {}, "a failed save must not linger in memory"
+
+        monkeypatch.setattr(type(app.diary), "save", real_save)
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entry_for(TODAY).body == "Do not lose this."

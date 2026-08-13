@@ -17,6 +17,7 @@ Required coverage:
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,8 @@ from zecret.screens.unlock import UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
+
+TODAY = dt.date.today()
 WRONG_PASSWORD = "Correct horse battery staple"
 
 
@@ -101,6 +104,16 @@ async def test_app_starts_locked(diary_path):
         assert app.key is None
 
 
+async def test_ctrl_q_quits_from_the_lock_screen(diary_path):
+    """Someone who cannot get in needs the advertised way out to work."""
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert app._exit is True
+
+
 # --- creating a diary ------------------------------------------------------
 
 
@@ -155,7 +168,7 @@ async def test_create_recovers_after_a_mismatch(diary_path):
 
 
 async def test_correct_password_unlocks_and_exposes_entries(diary_path):
-    entry = Entry.new("A title", "A body")
+    entry = Entry.new(TODAY, "A body")
     existing_diary(diary_path, entry)
 
     app = ZecretApp(diary_path=diary_path)
@@ -163,11 +176,11 @@ async def test_correct_password_unlocks_and_exposes_entries(diary_path):
         await submit(pilot, PASSWORD)
         assert app.diary is not None
         assert app.key is not None
-        assert app.diary.entries == {entry.id: entry}
+        assert app.diary.entries == {entry.date: entry}
 
 
 async def test_wrong_password_shows_an_error_and_stays_locked(diary_path):
-    existing_diary(diary_path, Entry.new("A title", "A body"))
+    existing_diary(diary_path, Entry.new(TODAY, "A body"))
 
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:

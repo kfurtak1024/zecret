@@ -12,6 +12,7 @@ Required coverage:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
+
+TODAY = dt.date.today()
+YESTERDAY = TODAY - dt.timedelta(days=1)
 NEW_PASSWORD = "an entirely different passphrase"
 
 
@@ -39,7 +43,7 @@ def instant_failure_delay(monkeypatch):
 def diary_path(tmp_path: Path) -> Path:
     path = tmp_path / "diary.enc"
     diary, key = DiaryFile.create_new(path, PASSWORD)
-    diary.add_entry(Entry.new("A title", "A body"))
+    diary.add_entry(Entry.new(YESTERDAY, "A body"))
     diary.save(key)
     return path
 
@@ -131,11 +135,14 @@ async def test_the_session_still_works_after_a_change(diary_path):
         await open_settings(pilot)
         await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
 
-        app.diary.add_entry(Entry.new("Written after", "the change"))
+        app.diary.add_entry(Entry.new(TODAY, "Written after the change"))
         app.diary.save(app.key)
 
     reopened, _ = DiaryFile.unlock(diary_path, NEW_PASSWORD)
-    assert {entry.title for entry in reopened.entries.values()} == {"A title", "Written after"}
+    assert {entry.body for entry in reopened.entries.values()} == {
+        "A body",
+        "Written after the change",
+    }
 
 
 async def test_change_uses_a_fresh_salt(diary_path):
@@ -220,7 +227,7 @@ async def test_a_failed_save_leaves_the_diary_openable(diary_path, monkeypatch):
         assert app.diary.verify_password(PASSWORD, app.key)
 
         # A later save must still produce a file the old password opens.
-        app.diary.add_entry(Entry.new("After the failure", "body"))
+        app.diary.add_entry(Entry.new(TODAY, "After the failure"))
         app.diary.save(app.key)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)

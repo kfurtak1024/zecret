@@ -58,7 +58,8 @@ SettingsScreen {
    shifts the fields under the user's cursor. */
 #unlock-error,
 #settings-error,
-#editor-error {
+#editor-error,
+#date-error {
     width: 100%;
     height: 1;
     color: $text-error;
@@ -120,15 +121,6 @@ SettingsScreen {
     padding: 1 2;
 }
 
-#editor-box #title {
-    margin-bottom: 1;
-    border: round $border-blurred;
-
-    &:focus {
-        border: round $accent;
-    }
-}
-
 #editor-box #body {
     height: 1fr;
     margin-bottom: 1;
@@ -139,10 +131,11 @@ SettingsScreen {
     }
 }
 
-/* --- ConfirmScreen (modal) ---------------------------------------------- */
+/* --- Modals: confirm and date prompt ------------------------------------ */
 
-/* Dim what is behind it: the question is the only thing to answer. */
-ConfirmScreen {
+/* Dim what is behind them: the question is the only thing to answer. */
+ConfirmScreen,
+DatePromptScreen {
     align: center middle;
     background: $background 60%;
 }
@@ -168,4 +161,36 @@ ConfirmScreen {
 
 #confirm-buttons Button {
     margin-left: 2;
+}
+
+/* --- DatePromptScreen (modal) ------------------------------------------- */
+
+/* $accent, not $error: picking a day is where you start writing, not a
+   destructive step. */
+#date-box {
+    width: 44;
+    height: auto;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+
+#date-title {
+    width: 100%;
+    text-style: bold;
+    color: $text-accent;
+    padding-bottom: 1;
+}
+
+#date-hint {
+    width: 100%;
+    color: $text-muted;
+}
+
+#date-box MaskedInput {
+    border: round $border-blurred;
+
+    &:focus {
+        border: round $accent;
+    }
 }

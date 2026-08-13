@@ -1,12 +1,13 @@
 """Tests for zecret.storage.
 
-Required coverage (fill in as storage.py is implemented):
+Required coverage:
     - create_new() writes a valid, parseable diary file with zero entries.
     - unlock() with the correct password returns all entries decrypted
       correctly (round-trip through create_new -> add -> save -> unlock).
     - unlock() with the wrong password raises ZecretDecryptError.
     - unlock() on a nonexistent path raises FileNotFoundError.
-    - add_entry() + save() + unlock() persists the new entry.
+    - add_entry() + save() + unlock() persists the new entry, and a second
+      entry for a day that already has one is refused.
     - update_entry() + save() + unlock() reflects the edit, and confirms
       OTHER entries' ciphertexts are unchanged (proves independent
       per-entry encryption -- edit one entry without touching others).
@@ -21,11 +22,11 @@ Required coverage (fill in as storage.py is implemented):
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json
 import os
 import stat
 from pathlib import Path
-from uuid import UUID, uuid4
 
 import pytest
 
@@ -36,6 +37,9 @@ from zecret.storage import DEFAULT_DIARY_PATH, FORMAT_VERSION, DiaryFile
 PASSWORD = "correct horse battery staple"
 WRONG_PASSWORD = "Correct horse battery staple"
 NEW_PASSWORD = "an entirely different passphrase"
+
+DAYS = [dt.date(2026, 8, 11), dt.date(2026, 8, 12), dt.date(2026, 8, 13)]
+UNWRITTEN_DAY = dt.date(2019, 4, 1)
 
 # Argon2 at the real defaults costs ~30ms per derivation, and these tests
 # unlock constantly. Patch the cost factors down; the code path is
@@ -63,18 +67,18 @@ def read_document(path: Path) -> dict:
     return json.loads(path.read_bytes().decode("utf-8"))
 
 
-def ciphertexts_by_id(path: Path) -> dict[str, str]:
-    return {rec["id"]: rec["ciphertext"] for rec in read_document(path)["entries"]}
+def ciphertexts_by_date(path: Path) -> dict[str, str]:
+    return {rec["date"]: rec["ciphertext"] for rec in read_document(path)["entries"]}
 
 
-def nonces_by_id(path: Path) -> dict[str, str]:
-    return {rec["id"]: rec["nonce"] for rec in read_document(path)["entries"]}
+def nonces_by_date(path: Path) -> dict[str, str]:
+    return {rec["date"]: rec["nonce"] for rec in read_document(path)["entries"]}
 
 
 def populated(diary_path: Path) -> tuple[DiaryFile, bytes, list[Entry]]:
-    """A saved diary with three entries."""
+    """A saved diary with an entry on each of three consecutive days."""
     diary, key = DiaryFile.create_new(diary_path, PASSWORD)
-    entries = [Entry.new(f"Title {i}", f"Body of entry {i}") for i in range(3)]
+    entries = [Entry.new(day, f"Body written on {day}") for day in DAYS]
     for entry in entries:
         diary.add_entry(entry)
     diary.save(key)
@@ -147,19 +151,25 @@ def test_default_diary_path_is_under_home():
 def test_unlock_with_correct_password_returns_entries(diary_path):
     _, _, entries = populated(diary_path)
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert reopened.entries == {entry.id: entry for entry in entries}
+    assert reopened.entries == {entry.date: entry for entry in entries}
+
+
+def test_unlock_keys_entries_by_date(diary_path):
+    populated(diary_path)
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert set(reopened.entries) == set(DAYS)
+    assert all(isinstance(day, dt.date) for day in reopened.entries)
 
 
 def test_unlock_round_trips_entry_content_exactly(diary_path):
     diary, key = DiaryFile.create_new(diary_path, PASSWORD)
-    entry = Entry.new("Título ✨", 'Multi-line\nbody with 日本語 and "quotes"')
+    entry = Entry.new(DAYS[0], 'Multi-line\nbody with 日本語 ✨ and "quotes"')
     diary.add_entry(entry)
     diary.save(key)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    restored = reopened.entries[entry.id]
+    restored = reopened.entries[entry.date]
     assert restored == entry
-    assert restored.title == entry.title
     assert restored.body == entry.body
     assert restored.created_at == entry.created_at
     assert restored.updated_at == entry.updated_at
@@ -214,7 +224,7 @@ def test_verifier_uses_a_fresh_nonce_each_save(diary_path):
     key would be exactly the reuse crypto.encrypt() exists to prevent."""
     diary, key, _ = populated(diary_path)
     first = read_document(diary_path)["verifier"]["nonce"]
-    diary.add_entry(Entry.new("Another", "Body"))
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
     diary.save(key)
     assert read_document(diary_path)["verifier"]["nonce"] != first
 
@@ -246,6 +256,17 @@ def test_unlock_rejects_unknown_format_version(diary_path):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
+def test_unlock_rejects_the_retired_version_1_format(diary_path):
+    """Version 1 was UUID-and-title keyed. It is not migrated, so it must
+    be refused outright rather than half-read as if it were version 2."""
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["version"] = 1
+    diary_path.write_text(json.dumps(document))
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
 def test_unlock_rejects_non_json_file(diary_path):
     diary_path.write_bytes(b"this is not a diary")
     with pytest.raises(ValueError):
@@ -266,12 +287,12 @@ def test_unlock_rejects_tampered_ciphertext(diary_path):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
-def test_unlock_rejects_record_id_that_disagrees_with_ciphertext(diary_path):
-    """The record id is outside the AEAD; the id inside the entry is not.
-    Repointing a record must not silently relabel an entry."""
+def test_unlock_rejects_record_date_that_disagrees_with_ciphertext(diary_path):
+    """The record date is outside the AEAD; the date inside the entry is
+    not. Refiling a record must not silently move an entry to another day."""
     populated(diary_path)
     document = read_document(diary_path)
-    document["entries"][0]["id"] = str(uuid4())
+    document["entries"][0]["date"] = UNWRITTEN_DAY.isoformat()
     diary_path.write_text(json.dumps(document))
 
     with pytest.raises(ValueError):
@@ -298,124 +319,178 @@ def test_unlock_rejects_malformed_record(diary_path):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
+def test_unlock_rejects_malformed_record_date(diary_path):
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["entries"][0]["date"] = "the day before yesterday"
+    diary_path.write_text(json.dumps(document))
+
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
 # --- add / update / delete -------------------------------------------------
 
 
 def test_add_entry_then_save_then_unlock_persists_it(diary_path):
     diary, key = DiaryFile.create_new(diary_path, PASSWORD)
-    entry = Entry.new("A new entry", "Body text")
+    entry = Entry.new(DAYS[0], "Body text")
     diary.add_entry(entry)
     diary.save(key)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert reopened.entries == {entry.id: entry}
+    assert reopened.entries == {entry.date: entry}
 
 
 def test_add_entry_does_not_touch_disk_until_save(diary_path):
     diary, _ = DiaryFile.create_new(diary_path, PASSWORD)
-    diary.add_entry(Entry.new("Unsaved", "Body"))
+    diary.add_entry(Entry.new(DAYS[0], "Body"))
     assert read_document(diary_path)["entries"] == []
 
 
-def test_add_entry_rejects_duplicate_id(diary_path):
+def test_add_entry_rejects_a_second_entry_for_the_same_day(diary_path):
+    """One entry per day is the whole model: a second one must be refused,
+    not silently replace the first."""
     diary, _ = DiaryFile.create_new(diary_path, PASSWORD)
-    entry = Entry.new("Title", "Body")
-    diary.add_entry(entry)
+    diary.add_entry(Entry.new(DAYS[0], "Morning thoughts"))
     with pytest.raises(ValueError):
-        diary.add_entry(entry)
+        diary.add_entry(Entry.new(DAYS[0], "Evening thoughts"))
+    assert diary.entries[DAYS[0]].body == "Morning thoughts"
+
+
+def test_entry_for_returns_the_day_s_entry(diary_path):
+    diary, _, entries = populated(diary_path)
+    assert diary.entry_for(DAYS[1]) == entries[1]
+
+
+def test_entry_for_returns_none_for_an_unwritten_day(diary_path):
+    diary, _, _ = populated(diary_path)
+    assert diary.entry_for(UNWRITTEN_DAY) is None
+
+
+def test_entry_for_survives_a_round_trip(diary_path):
+    populated(diary_path)
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entry_for(DAYS[2]).body == f"Body written on {DAYS[2]}"
 
 
 def test_update_entry_then_save_then_unlock_reflects_the_edit(diary_path):
     diary, key, entries = populated(diary_path)
-    edited = entries[1].edited(title="Edited title", body="Edited body")
+    edited = entries[1].edited("Edited body")
     diary.update_entry(edited)
     diary.save(key)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert reopened.entries[edited.id] == edited
-    assert reopened.entries[edited.id].title == "Edited title"
+    assert reopened.entries[edited.date] == edited
+    assert reopened.entries[edited.date].body == "Edited body"
     assert len(reopened.entries) == 3
 
 
 def test_update_entry_leaves_other_ciphertexts_byte_identical(diary_path):
     """CLAUDE.md requirement 6: per-entry independent encryption. Editing
-    one entry must not re-encrypt any other entry's record."""
+    one day must not re-encrypt any other day's record."""
     diary, key, entries = populated(diary_path)
-    before = ciphertexts_by_id(diary_path)
-    before_nonces = nonces_by_id(diary_path)
+    before = ciphertexts_by_date(diary_path)
+    before_nonces = nonces_by_date(diary_path)
 
-    diary.update_entry(entries[1].edited(body="Edited body"))
+    diary.update_entry(entries[1].edited("Edited body"))
     diary.save(key)
 
-    after = ciphertexts_by_id(diary_path)
-    after_nonces = nonces_by_id(diary_path)
-    untouched = [str(entries[0].id), str(entries[2].id)]
-    for entry_id in untouched:
-        assert after[entry_id] == before[entry_id], "unrelated ciphertext was rewritten"
-        assert after_nonces[entry_id] == before_nonces[entry_id]
-    assert after[str(entries[1].id)] != before[str(entries[1].id)], "edit was not encrypted"
+    after = ciphertexts_by_date(diary_path)
+    after_nonces = nonces_by_date(diary_path)
+    for day in (DAYS[0].isoformat(), DAYS[2].isoformat()):
+        assert after[day] == before[day], "unrelated ciphertext was rewritten"
+        assert after_nonces[day] == before_nonces[day]
+    edited_day = DAYS[1].isoformat()
+    assert after[edited_day] != before[edited_day], "edit was not encrypted"
 
 
 def test_repeated_save_without_changes_rewrites_no_ciphertext(diary_path):
     diary, key, _ = populated(diary_path)
-    before = ciphertexts_by_id(diary_path)
+    before = ciphertexts_by_date(diary_path)
     diary.save(key)
-    assert ciphertexts_by_id(diary_path) == before
+    assert ciphertexts_by_date(diary_path) == before
 
 
 def test_update_entry_reencrypts_with_a_fresh_nonce(diary_path):
     """The edited entry itself must get a new nonce -- never reuse the old
     one with the same key."""
     diary, key, entries = populated(diary_path)
-    before = nonces_by_id(diary_path)[str(entries[1].id)]
-    diary.update_entry(entries[1].edited(body="Edited body"))
+    before = nonces_by_date(diary_path)[DAYS[1].isoformat()]
+    diary.update_entry(entries[1].edited("Edited body"))
     diary.save(key)
-    assert nonces_by_id(diary_path)[str(entries[1].id)] != before
+    assert nonces_by_date(diary_path)[DAYS[1].isoformat()] != before
 
 
-def test_update_entry_rejects_unknown_id(diary_path):
+def test_update_entry_rejects_an_unwritten_day(diary_path):
     diary, _, _ = populated(diary_path)
     with pytest.raises(KeyError):
-        diary.update_entry(Entry.new("Never added", "Body"))
+        diary.update_entry(Entry.new(UNWRITTEN_DAY, "Body"))
 
 
 def test_delete_entry_then_save_then_unlock_removes_only_that_entry(diary_path):
     diary, key, entries = populated(diary_path)
-    diary.delete_entry(entries[1].id)
+    diary.delete_entry(DAYS[1])
     diary.save(key)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert entries[1].id not in reopened.entries
-    assert reopened.entries == {entries[0].id: entries[0], entries[2].id: entries[2]}
+    assert DAYS[1] not in reopened.entries
+    assert reopened.entries == {entries[0].date: entries[0], entries[2].date: entries[2]}
 
 
 def test_delete_entry_leaves_other_ciphertexts_byte_identical(diary_path):
-    diary, key, entries = populated(diary_path)
-    before = ciphertexts_by_id(diary_path)
+    diary, key, _ = populated(diary_path)
+    before = ciphertexts_by_date(diary_path)
 
-    diary.delete_entry(entries[1].id)
+    diary.delete_entry(DAYS[1])
     diary.save(key)
 
-    after = ciphertexts_by_id(diary_path)
-    assert str(entries[1].id) not in after
-    for entry_id in (str(entries[0].id), str(entries[2].id)):
-        assert after[entry_id] == before[entry_id], "unrelated ciphertext was rewritten"
+    after = ciphertexts_by_date(diary_path)
+    assert DAYS[1].isoformat() not in after
+    for day in (DAYS[0].isoformat(), DAYS[2].isoformat()):
+        assert after[day] == before[day], "unrelated ciphertext was rewritten"
 
 
-def test_delete_entry_rejects_unknown_id(diary_path):
+def test_delete_entry_rejects_an_unwritten_day(diary_path):
     diary, _, _ = populated(diary_path)
     with pytest.raises(KeyError):
-        diary.delete_entry(uuid4())
+        diary.delete_entry(UNWRITTEN_DAY)
 
 
 def test_deleted_entry_does_not_come_back_after_reunlock(diary_path):
-    diary, key, entries = populated(diary_path)
-    diary.delete_entry(entries[0].id)
+    diary, key, _ = populated(diary_path)
+    diary.delete_entry(DAYS[0])
     diary.save(key)
     reopened, reopened_key = DiaryFile.unlock(diary_path, PASSWORD)
     reopened.save(reopened_key)
     final, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert entries[0].id not in final.entries
+    assert DAYS[0] not in final.entries
+
+
+def test_a_day_can_be_rewritten_after_being_deleted(diary_path):
+    """Deleting frees the day: adding it again is a new entry, not a
+    duplicate-day error."""
+    diary, key, _ = populated(diary_path)
+    diary.delete_entry(DAYS[0])
+    diary.add_entry(Entry.new(DAYS[0], "Second attempt at that day"))
+    diary.save(key)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[DAYS[0]].body == "Second attempt at that day"
+    assert len(reopened.entries) == 3
+
+
+# --- on-disk ordering ------------------------------------------------------
+
+
+def test_entries_are_written_newest_day_first(diary_path):
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+    for day in (DAYS[1], DAYS[2], DAYS[0]):  # added out of order
+        diary.add_entry(Entry.new(day, f"Body {day}"))
+    diary.save(key)
+
+    written = [rec["date"] for rec in read_document(diary_path)["entries"]]
+    assert written == [day.isoformat() for day in reversed(DAYS)]
 
 
 # --- atomic writes ---------------------------------------------------------
@@ -433,7 +508,7 @@ def test_save_uses_a_temp_file_and_renames_it(diary_path, monkeypatch):
         return real_replace(src, dst, *args, **kwargs)
 
     monkeypatch.setattr(os, "replace", spy)
-    diary.add_entry(Entry.new("Another", "Body"))
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
     diary.save(key)
 
     assert len(calls) == 1, "expected exactly one atomic rename"
@@ -452,7 +527,7 @@ def test_save_fsyncs_before_renaming(diary_path, monkeypatch):
     monkeypatch.setattr(
         os, "replace", lambda s, d: (order.append("replace"), real_replace(s, d))[1]
     )
-    diary.add_entry(Entry.new("Another", "Body"))
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Body"))
     diary.save(key)
 
     assert order.index("fsync") < order.index("replace")
@@ -466,20 +541,20 @@ def test_interrupted_save_leaves_the_original_file_intact(diary_path, monkeypatc
         raise OSError("simulated crash during rename")
 
     monkeypatch.setattr(os, "replace", boom)
-    diary.add_entry(Entry.new("Doomed", "Body"))
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Doomed"))
     with pytest.raises(OSError):
         diary.save(key)
 
     assert diary_path.read_bytes() == before, "diary was damaged by a failed save"
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert reopened.entries == {entry.id: entry for entry in entries}
+    assert reopened.entries == {entry.date: entry for entry in entries}
 
 
 def test_interrupted_save_leaves_no_temp_file_behind(diary_path, monkeypatch):
     diary, key, _ = populated(diary_path)
 
     monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("boom")))
-    diary.add_entry(Entry.new("Doomed", "Body"))
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Doomed"))
     with pytest.raises(OSError):
         diary.save(key)
 
@@ -491,7 +566,7 @@ def test_failed_save_does_not_poison_the_ciphertext_cache(diary_path, monkeypatc
     """After a failed save the cache must still describe what is on disk,
     so the next successful save writes a complete, consistent file."""
     diary, key, entries = populated(diary_path)
-    new_entry = Entry.new("Added during failure", "Body")
+    new_entry = Entry.new(UNWRITTEN_DAY, "Added during failure")
 
     monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("boom")))
     diary.add_entry(new_entry)
@@ -502,18 +577,16 @@ def test_failed_save_does_not_poison_the_ciphertext_cache(diary_path, monkeypatc
     diary.save(key)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert set(reopened.entries) == {entry.id for entry in entries} | {new_entry.id}
+    assert set(reopened.entries) == {entry.date for entry in entries} | {new_entry.date}
 
 
 def test_save_never_writes_plaintext_into_the_file(diary_path):
     """Requirement 4: no plaintext on disk, in any field."""
     diary, key = DiaryFile.create_new(diary_path, PASSWORD)
-    entry = Entry.new("UNIQUETITLEMARKER", "UNIQUEBODYMARKER")
-    diary.add_entry(entry)
+    diary.add_entry(Entry.new(DAYS[0], "UNIQUEBODYMARKER"))
     diary.save(key)
 
     raw = diary_path.read_bytes()
-    assert b"UNIQUETITLEMARKER" not in raw
     assert b"UNIQUEBODYMARKER" not in raw
     assert PASSWORD.encode() not in raw
 
@@ -527,7 +600,7 @@ def test_change_password_then_save_then_unlock_with_new_password(diary_path):
     diary.save(new_key)
 
     reopened, _ = DiaryFile.unlock(diary_path, NEW_PASSWORD)
-    assert reopened.entries == {entry.id: entry for entry in entries}
+    assert reopened.entries == {entry.date: entry for entry in entries}
 
 
 def test_change_password_makes_the_old_password_fail(diary_path):
@@ -557,14 +630,14 @@ def test_change_password_reencrypts_every_entry(diary_path):
     """The one case where all ciphertexts must change: they are now under a
     different key."""
     diary, _, _ = populated(diary_path)
-    before = ciphertexts_by_id(diary_path)
+    before = ciphertexts_by_date(diary_path)
     new_key = diary.change_password(NEW_PASSWORD)
     diary.save(new_key)
 
-    after = ciphertexts_by_id(diary_path)
+    after = ciphertexts_by_date(diary_path)
     assert set(after) == set(before)
-    for entry_id, ciphertext in after.items():
-        assert ciphertext != before[entry_id], "entry still encrypted under the old key"
+    for day, ciphertext in after.items():
+        assert ciphertext != before[day], "entry still encrypted under the old key"
 
 
 def test_change_password_does_not_persist_until_save(diary_path):
@@ -592,14 +665,14 @@ def test_saving_with_the_wrong_key_after_rekey_is_not_silently_mixed(diary_path)
 def test_full_lifecycle(diary_path):
     """create -> add -> save -> unlock -> edit -> delete -> rekey -> unlock."""
     diary, key = DiaryFile.create_new(diary_path, PASSWORD)
-    keep, edit, drop = (Entry.new(f"T{i}", f"B{i}") for i in range(3))
+    keep, edit, drop = (Entry.new(day, f"Body {day}") for day in DAYS)
     for entry in (keep, edit, drop):
         diary.add_entry(entry)
     diary.save(key)
 
     diary, key = DiaryFile.unlock(diary_path, PASSWORD)
-    diary.update_entry(diary.entries[edit.id].edited(title="Edited"))
-    diary.delete_entry(drop.id)
+    diary.update_entry(diary.entries[edit.date].edited("Edited"))
+    diary.delete_entry(drop.date)
     diary.save(key)
 
     diary, _ = DiaryFile.unlock(diary_path, PASSWORD)
@@ -607,10 +680,10 @@ def test_full_lifecycle(diary_path):
     diary.save(new_key)
 
     final, _ = DiaryFile.unlock(diary_path, NEW_PASSWORD)
-    assert set(final.entries) == {keep.id, edit.id}
-    assert final.entries[edit.id].title == "Edited"
-    assert final.entries[keep.id] == keep
-    assert isinstance(next(iter(final.entries)), UUID)
+    assert set(final.entries) == {keep.date, edit.date}
+    assert final.entries[edit.date].body == "Edited"
+    assert final.entries[keep.date] == keep
+    assert isinstance(next(iter(final.entries)), dt.date)
 
 
 # --- verify_password -------------------------------------------------------

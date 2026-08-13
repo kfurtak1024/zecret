@@ -40,8 +40,11 @@ class UnlockScreen(ZecretScreen):
 
     # ctrl+q already quits app-wide, but it is hidden by default. Someone
     # who cannot get in needs an obvious way out, so show it here.
+    # "app.quit" rather than "quit": the action is dispatched on this
+    # screen, which has no action_quit, and would fall through to the app's
+    # own ctrl+q binding by luck alone.
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("ctrl+q", "quit", "Quit", show=True, priority=True)
+        Binding("ctrl+q", "app.quit", "Quit", show=True, priority=True)
     ]
 
     #: Pause after a failed attempt, to take the edge off interactive

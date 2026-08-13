@@ -4,7 +4,8 @@
 
 **A modern, encrypted terminal diary.**
 
-Write in your terminal. Keep it in one encrypted file that only you can open.
+One entry a day, in your terminal, kept in a single encrypted file that only
+you can open.
 
 [![CI](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml/badge.svg)](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://www.python.org)
@@ -17,7 +18,7 @@ Write in your terminal. Keep it in one encrypted file that only you can open.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/entries-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/entries-light.png">
-  <img alt="The Zecret entry list, showing five diary entries newest first" src="assets/entries-dark.png" width="820">
+  <img alt="The Zecret entry list, showing five days of diary entries, most recent first" src="assets/entries-dark.png" width="820">
 </picture>
 
 </div>
@@ -31,6 +32,7 @@ server, no account, no sync and no telemetry — there is nowhere for your
 writing to go. It is one encrypted file on your own disk, opened by a
 password only you know, in a terminal you already have open.
 
+- 📅 **One entry a day** — each day is a page, named by its date; come back and it is the same page
 - 🔐 **Encrypted at rest** — Argon2id key derivation, AES-256-GCM per entry
 - ✍️ **Keyboard-driven** — a fast Textual TUI, no mouse required
 - 🔎 **Instant search** — live filtering across everything you have written
@@ -75,13 +77,26 @@ password to unlock it.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/editor-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/editor-light.png">
-  <img alt="Editing an entry: a title field above a multi-line body" src="assets/editor-dark.png" width="760">
+  <img alt="Writing a day's entry: the date in the header above a full-height text area" src="assets/editor-dark.png" width="760">
 </picture>
 </div>
 
-Press <kbd>n</kbd> to start writing, <kbd>ctrl</kbd>+<kbd>s</kbd> to save.
-Every save re-writes the diary file atomically, so there is no draft state
-to lose track of.
+Press <kbd>n</kbd> to write about today, <kbd>ctrl</kbd>+<kbd>s</kbd> to
+save. A day holds one entry, so pressing <kbd>n</kbd> again later opens what
+you already wrote rather than starting a second page — the evening simply
+continues the morning. Every save re-writes the diary file atomically, so
+there is no draft state to lose track of.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/date-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/date-light.png">
+  <img alt="A modal asking which day to write about, prefilled with a date" src="assets/date-dark.png" width="760">
+</picture>
+</div>
+
+Missed a day? Press <kbd>g</kbd> and type the date. Anything up to today is
+fair game; days that have not happened yet are refused.
 
 <div align="center">
 <picture>
@@ -98,9 +113,10 @@ for the session, so filtering is instant and nothing touches the disk.
 
 | Key | Where | Does |
 | --- | --- | --- |
-| <kbd>n</kbd> | entry list | Write a new entry |
-| <kbd>enter</kbd> | entry list | Open the selected entry |
-| <kbd>d</kbd> | entry list | Delete the selected entry (asks first) |
+| <kbd>n</kbd> | entry list | Write about today |
+| <kbd>g</kbd> | entry list | Write about another day (asks which) |
+| <kbd>enter</kbd> | entry list | Open the selected day |
+| <kbd>d</kbd> | entry list | Delete the selected day's entry (asks first) |
 | <kbd>/</kbd> | entry list | Search |
 | <kbd>s</kbd> | entry list | Change your master password |
 | <kbd>q</kbd> | entry list | Quit |
@@ -114,8 +130,9 @@ for the session, so filtering is instant and nothing touches the disk.
   16-byte salt generated per diary and stored in the file header. Your
   password is never stored; the derived key never touches disk.
 - **Encryption** — AES-256-GCM with a fresh random nonce for every
-  encryption. Each entry is encrypted independently, so editing one entry
-  never re-encrypts the others.
+  encryption. Each day's entry is encrypted independently, so editing one
+  day never re-encrypts the others. Only the dates are visible in the file;
+  every word you write is inside the ciphertext.
 - **Integrity** — tampering with a stored entry, or a wrong password, fails
   the AEAD authentication check and is reported as an error, never as an
   empty or partial diary. The header carries an encrypted verifier, so this

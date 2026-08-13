@@ -1,9 +1,11 @@
-"""Screen for creating or editing a single entry (title + multi-line body).
+"""Screen for writing one day's entry.
 
-Two modes, selected by whether an existing Entry is passed in:
-    - Create mode: on save, build Entry.new(title, body), call
+Opened on a date, never on an entry: a day holds at most one entry, so the
+date is the whole question and the screen looks up whether that day has
+been written yet.
+    - Unwritten day: on save, build Entry.new(date, body), call
       app.diary.add_entry(...), then app.diary.save(app.key).
-    - Edit mode: on save, build entry.edited(title=..., body=...), call
+    - Written day: on save, build entry.edited(body), call
       app.diary.update_entry(...), then app.diary.save(app.key).
 
 Every save persists immediately (writes the full diary file atomically) —
@@ -16,48 +18,53 @@ first. A save that fails keeps you on the screen with your text intact.
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
-from textual.widgets import Footer, Header, Input, Label, TextArea
+from textual.widgets import Footer, Header, Label, TextArea
 
 from zecret.models import Entry
-from zecret.screens.base import ZecretScreen
+from zecret.screens.base import ZecretScreen, format_day_long
 from zecret.screens.confirm import ConfirmScreen
 
 DISCARD_QUESTION = "Discard your unsaved changes?"
-EMPTY_ENTRY = "Nothing to save — write a title or some text first."
+EMPTY_ENTRY = "Nothing to save — write something first."
 
 
 class EditorScreen(ZecretScreen):
-    """Create or edit a single diary entry."""
+    """Write or revise the entry for a single day."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+s", "save", "Save", priority=True),
         Binding("escape", "back", "Back", priority=True),
     ]
 
-    def __init__(self, entry: Entry | None = None) -> None:
+    def __init__(self, date: dt.date) -> None:
         """Args:
-        entry: The entry to edit, or None to create a new one.
+        date: The day to write about. Whether it already has an entry is
+            looked up from the diary, so callers never have to decide
+            between "new" and "edit".
         """
         super().__init__()
-        self.entry = entry
+        self.date = date
+        self.entry: Entry | None = None
 
     @property
     def creating(self) -> bool:
         return self.entry is None
 
     def compose(self) -> ComposeResult:
+        # Resolved here rather than in __init__ because the diary is
+        # reached through the running app, which a screen only has once it
+        # is mounted.
+        diary, _ = self.zecret.unlocked
+        self.entry = diary.entry_for(self.date)
+
         yield Header()
         with Vertical(id="editor-box"):
-            yield Input(
-                value="" if self.entry is None else self.entry.title,
-                placeholder="Title",
-                id="title",
-            )
             yield TextArea(
                 "" if self.entry is None else self.entry.body,
                 soft_wrap=True,
@@ -67,55 +74,60 @@ class EditorScreen(ZecretScreen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.sub_title = "New entry" if self.creating else "Editing"
-        # New entries start at the title; existing ones at the text, which
-        # is what you usually came back to change.
-        target = "#title" if self.creating else "#body"
-        self.query_one(target).focus()
+        day = format_day_long(self.date)
+        self.sub_title = f"{day} — new" if self.creating else day
+        self.query_one("#body", TextArea).focus()
 
     # --- current state -----------------------------------------------------
-
-    @property
-    def title_text(self) -> str:
-        return self.query_one("#title", Input).value
 
     @property
     def body_text(self) -> str:
         return self.query_one("#body", TextArea).text
 
     @property
+    def original_body(self) -> str:
+        """What the day held when the screen opened -- nothing, if unwritten."""
+        return "" if self.entry is None else self.entry.body
+
+    @property
     def modified(self) -> bool:
-        """Whether the fields differ from what was opened."""
-        if self.entry is None:
-            return bool(self.title_text or self.body_text)
-        return self.title_text != self.entry.title or self.body_text != self.entry.body
+        """Whether the text differs from what was opened."""
+        return self.body_text != self.original_body
 
     # --- actions -----------------------------------------------------------
 
     def action_save(self) -> None:
-        title, body = self.title_text, self.body_text
-        if not title and not body:
+        body = self.body_text
+        if not body:
             self.set_error(EMPTY_ENTRY)
             return
 
         diary, key = self.zecret.unlocked
-        if self.entry is None:
-            entry = Entry.new(title, body)
+        existing = self.entry
+        if existing is None:
+            entry = Entry.new(self.date, body)
             diary.add_entry(entry)
         else:
-            entry = self.entry.edited(title=title, body=body)
+            entry = existing.edited(body)
             diary.update_entry(entry)
 
         try:
             diary.save(key)
         except OSError as error:
+            # Put the in-memory diary back as it was, so it still matches
+            # the file and pressing save again is a clean second attempt --
+            # otherwise the retry would hit "an entry already exists".
+            if existing is None:
+                diary.delete_entry(self.date)
+            else:
+                diary.update_entry(existing)
             # Stay put: popping now would throw away text that never
             # reached disk.
             self.set_error(f"Could not save: {error.strerror or error}.")
             self.notify("The entry was not saved.", severity="error")
             return
 
-        # Now the edit is the entry, so leaving is no longer "unsaved".
+        # Now the edit is the day's entry, so leaving is no longer "unsaved".
         self.entry = entry
         self.dismiss()
 

@@ -9,11 +9,17 @@ Zecret is an encrypted terminal diary. A single user, locally, protects
 their diary entries with a master password. The app is a Textual-based TUI
 — no web server, no sync, no multi-user concerns.
 
-The repository is currently **scaffolded but not implemented**: module
-files exist with docstrings, type signatures, and `raise
-NotImplementedError` bodies. Your job is to fill them in, in the order
-described below, without changing the public interfaces unless you find a
-concrete reason to (if you do, update this file to match).
+**One entry per calendar day.** The date is the entry's identity: there is
+no id and no title, a day holds at most one entry, and opening a day means
+writing it or continuing what is already there. The date is the *local*
+day, so an entry written at 23:50 belongs to the day the writer would name.
+Screens ask for a date and hand it to the editor, which looks up whether
+that day has been written — nothing in the UI decides between "new" and
+"edit" for itself.
+
+The repository is **implemented and tested**. Keep the public interfaces
+as they are unless you find a concrete reason to change one; if you do,
+update this file to match.
 
 ## Tech stack (fixed — do not substitute)
 
@@ -41,12 +47,14 @@ bare checkout can run `uv run pytest` with no extra flags.
 ```
 src/zecret/
 ├── crypto.py     # KDF (Argon2id) + AEAD encrypt/decrypt. No file I/O, no entry semantics.
-├── models.py     # Entry dataclass + JSON (de)serialization. No crypto, no file I/O.
+├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
 ├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
 ├── app.py        # ZecretApp (Textual App subclass): screen routing, holds session state.
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings.
-│                 # Plus two shared helpers: base.py (ZecretScreen, typed
-│                 # access to the app) and confirm.py (yes/no modal).
+│                 # Plus three shared helpers: base.py (ZecretScreen, typed
+│                 # access to the app, and the date/snippet formatting every
+│                 # screen shares), confirm.py (yes/no modal) and
+│                 # date_prompt.py (which-day modal).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -93,8 +101,8 @@ Do not weaken any of these for convenience:
 5. **Atomic writes only.** `DiaryFile.save()` must write to a temp file in
    the same directory, `fsync()`, then `os.replace()` over the real path.
    Never write directly to the live diary file in place.
-6. **Per-entry independent encryption.** Editing or deleting one entry
-   must never require decrypting or re-encrypting any other entry's
+6. **Per-entry independent encryption.** Editing or deleting one day's
+   entry must never require decrypting or re-encrypting any other entry's
    ciphertext. This is what the storage tests check for explicitly.
 7. **Fail closed.** Any decryption failure surfaces as
    `ZecretDecryptError` and is caught at the UI layer to show "incorrect
@@ -103,38 +111,35 @@ Do not weaken any of these for convenience:
 ## File format
 
 See the module docstring in `storage.py` for the authoritative JSON shape.
-Treat `version: 1` in the header as load-bearing — if you ever need to
+Treat `version: 2` in the header as load-bearing — if you ever need to
 change the format, add a migration path keyed off that field rather than
-breaking old files.
+breaking old files. Version 1 (UUID-keyed entries with titles) predates
+the one-entry-per-day model and is refused outright rather than migrated;
+that was a deliberate call taken while no real diary used it, and it is not
+a precedent for the next change.
 
-## Build order
+Known and accepted: the record dates are outside the ciphertext, so the
+file reveals *which days* have entries, though not a word of what they say.
+That is what lets a record be named without decrypting it, which in turn is
+what the outer-vs-authenticated date check depends on. Don't "fix" it by
+moving the date inside without replacing that check with something equally
+strong.
 
-Implement in this order; each step should be fully tested before moving on.
+## Working on it
 
-1. **`crypto.py`** — KDF + AEAD. This is the foundation; get it right and
-   well-tested first. Run `uv add cryptography argon2-cffi` if not already
-   present.
-2. **`models.py`** — `Entry` dataclass, JSON (de)serialization.
-3. **`storage.py`** — `DiaryFile`: create/unlock/save/add/update/delete/
-   change_password, atomic writes. This is the module most worth
-   over-testing (see `tests/test_storage.py` for required coverage).
-4. **`app.py` + `screens/unlock.py`** — get a working unlock/create-diary
-   flow end to end before building out the rest of the UI.
-5. **`screens/entry_list.py`** — list + navigation.
-6. **`screens/editor.py`** — create/edit flow, wired to the list.
-7. **`screens/search.py`** — live in-memory filter.
-8. **`screens/settings.py`** — password change flow.
-9. **`app.tcss`** — polish the visual design once functionality is complete.
-
-Don't jump ahead to UI polish before `crypto.py` and `storage.py` are
-solid and tested — bugs there are the ones that actually matter.
+The build order the project was first written in — `crypto.py`, then
+`models.py`, `storage.py`, `app.py` + `unlock.py`, `entry_list.py`,
+`editor.py`, `search.py`, `settings.py`, and `app.tcss` last — is still the
+right order of priorities for a change that spans layers: get storage right
+and tested before touching the UI, and leave visual polish until the
+behavior is settled. Bugs in `crypto.py` and `storage.py` are the ones that
+actually matter.
 
 ## Testing
 
-- Every module's test file already lists required coverage in its
-  docstring (`tests/test_crypto.py`, `tests/test_storage.py`,
-  `tests/test_models.py`) — treat those lists as a checklist, not a
-  suggestion.
+- Every test file lists its required coverage in its docstring — treat
+  those lists as a checklist, not a suggestion, and extend the list when
+  you add behavior worth guarding.
 - Run `uv run pytest` before considering any module done, and
   `uv run ruff check . && uv run ruff format . && uv run mypy` before
   calling it clean. CI (`.github/workflows/ci.yml`) runs exactly those
@@ -152,15 +157,17 @@ solid and tested — bugs there are the ones that actually matter.
 
 ## Conventions
 
-- Type hints everywhere (already present in stubs — keep them accurate
-  as you implement). `uv run mypy` enforces this; keep it green. Textual's
-  `App`/`Screen` are generic, so subclasses need a parameter —
+- Type hints everywhere. `uv run mypy` enforces this; keep it green.
+  Textual's `App`/`Screen` are generic, so subclasses need a parameter —
   `Screen[None]` unless the screen returns a value via `dismiss()`.
-- `Entry` is a frozen dataclass. Edits go through `entry.edited(...)`,
+- `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.
-- `from __future__ import annotations` at the top of every module
-  (already present).
+  There is deliberately no way to change an entry's date: that would be a
+  move, not an edit, and could collide with the day it lands on.
+- `import datetime as dt` rather than `from datetime import date` —
+  `Entry.date` would otherwise shadow the type it is annotated with.
+- `from __future__ import annotations` at the top of every module.
 - Docstrings are load-bearing documentation, not filler — update them if
   behavior diverges from what's currently written.
 - Prefer raising specific exceptions (`ZecretDecryptError`, etc.) over
@@ -177,6 +184,9 @@ solid and tested — bugs there are the ones that actually matter.
 
 - No cloud sync, no networking of any kind.
 - No tags, mood ratings, or attachments on entries.
+- No titles: the date names the entry. Adding one back would put two
+  identities on a thing that only needs one.
+- No more than one entry per day, and no future-dated entries.
 - No multi-user support.
 - No password recovery mechanism.
 - No plugin system.

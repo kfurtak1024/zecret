@@ -2,15 +2,28 @@
 
 File format (JSON):
     {
-        "version": 1,
+        "version": 2,
         "kdf": {"algo": "argon2id", "salt": "<base64>", "time_cost": 3,
                 "memory_cost": 65536, "parallelism": 4},
         "verifier": {"nonce": "<base64>", "ciphertext": "<base64>"},
         "entries": [
-            {"id": "<uuid>", "nonce": "<base64>", "ciphertext": "<base64>"},
+            {"date": "YYYY-MM-DD", "nonce": "<base64>",
+             "ciphertext": "<base64>"},
             ...
         ]
     }
+
+Version 1 keyed entries by a per-entry UUID and gave each one a title. It
+was replaced by the one-entry-per-day model before any diary depended on
+it, so there is no migration: _load_document() rejects a version it does
+not know rather than misreading it. A future format change adds a
+migration here, keyed off `version`.
+
+Note what the record date does and does not give away. Each entry's text is
+inside its ciphertext, but the days you wrote on are readable by anyone
+holding the file -- it leaks the shape of the habit, not its content. That
+is the price of being able to name a record without decrypting it, which is
+what makes the outer/inner date check below possible.
 
 The verifier is a fixed known plaintext encrypted under the derived key.
 Without it, a diary holding no entries has no ciphertext to authenticate
@@ -38,6 +51,7 @@ JSON structure plus opaque nonce/ciphertext bytes.
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -47,13 +61,12 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Self
-from uuid import UUID
 
 from zecret.crypto import KdfParams, ZecretDecryptError, decrypt, derive_key, encrypt
 from zecret.models import Entry
 
 DEFAULT_DIARY_PATH = Path.home() / ".zecret" / "diary.enc"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 FILE_MODE = 0o600
 DIR_MODE = 0o700
@@ -82,16 +95,18 @@ class DiaryFile:
     """In-memory representation of an unlocked diary.
 
     Holds the KDF params (needed if the password is ever changed) and the
-    decrypted entries, keyed by id for O(1) edit/delete lookup.
+    decrypted entries, keyed by date -- one entry per day -- for O(1)
+    lookup of the day the user is writing about. Unordered: callers sort
+    by date for display.
     """
 
     path: Path
     kdf_params: KdfParams
-    entries: dict[UUID, Entry]
+    entries: dict[dt.date, Entry]
 
     # Ciphertexts as they currently exist on disk, and a fingerprint of the
     # key they were produced with. Private: callers work with `entries`.
-    _records: dict[UUID, _Record] = field(default_factory=dict, repr=False)
+    _records: dict[dt.date, _Record] = field(default_factory=dict, repr=False)
     _records_key: bytes | None = field(default=None, repr=False)
 
     @classmethod
@@ -141,22 +156,23 @@ class DiaryFile:
         key = derive_key(password, kdf_params)
         _check_verifier(key, document["verifier"])
 
-        entries: dict[UUID, Entry] = {}
-        records: dict[UUID, _Record] = {}
+        entries: dict[dt.date, Entry] = {}
+        records: dict[dt.date, _Record] = {}
         for raw in document["entries"]:
-            record_id, nonce, ciphertext = _parse_record(raw)
+            record_date, nonce, ciphertext = _parse_record(raw)
             # Decrypt before trusting anything: ZecretDecryptError from here
             # is what the unlock screen turns into "incorrect password".
             entry = Entry.from_json_bytes(decrypt(key, nonce, ciphertext))
-            # The record id sits outside the AEAD and so is unauthenticated;
-            # the id inside the ciphertext is authenticated. Requiring them
-            # to match keeps a tampered index from repointing an entry.
-            if entry.id != record_id:
-                raise ValueError(f"entry id mismatch for record {record_id}")
-            if entry.id in entries:
-                raise ValueError(f"duplicate entry id: {entry.id}")
-            entries[entry.id] = entry
-            records[entry.id] = _Record(entry, nonce, ciphertext)
+            # The record date sits outside the AEAD and so is
+            # unauthenticated; the date inside the ciphertext is
+            # authenticated. Requiring them to match keeps a tampered index
+            # from filing an entry under the wrong day.
+            if entry.date != record_date:
+                raise ValueError(f"entry date mismatch for record {record_date}")
+            if entry.date in entries:
+                raise ValueError(f"duplicate entry for {entry.date}")
+            entries[entry.date] = entry
+            records[entry.date] = _Record(entry, nonce, ciphertext)
 
         diary = cls(path=path, kdf_params=kdf_params, entries=entries)
         diary._records = records
@@ -180,19 +196,22 @@ class DiaryFile:
         fingerprint = _key_fingerprint(key)
         reusable = self._records if fingerprint == self._records_key else {}
 
-        records: dict[UUID, _Record] = {}
+        records: dict[dt.date, _Record] = {}
         payload: list[dict[str, str]] = []
-        for entry_id, entry in self.entries.items():
-            cached = reusable.get(entry_id)
+        # Written newest first, so the file's own order matches how the
+        # diary reads; nothing depends on it, since unlock() keys by date.
+        for date in sorted(self.entries, reverse=True):
+            entry = self.entries[date]
+            cached = reusable.get(date)
             if cached is not None and cached.entry == entry:
                 record = cached
             else:
                 nonce, ciphertext = encrypt(key, entry.to_json_bytes())
                 record = _Record(entry, nonce, ciphertext)
-            records[entry_id] = record
+            records[date] = record
             payload.append(
                 {
-                    "id": str(entry_id),
+                    "date": date.isoformat(),
                     "nonce": _b64(record.nonce),
                     "ciphertext": _b64(record.ciphertext),
                 }
@@ -215,37 +234,46 @@ class DiaryFile:
         self._records = records
         self._records_key = fingerprint
 
+    def entry_for(self, date: dt.date) -> Entry | None:
+        """The entry written for `date`, or None if that day is unwritten.
+
+        How the editor decides between creating a day's entry and opening
+        the existing one -- a day holds at most one, so this is the whole
+        question.
+        """
+        return self.entries.get(date)
+
     def add_entry(self, entry: Entry) -> None:
         """Add a new entry to the in-memory store (does not persist to disk).
 
         Raises:
-            ValueError: if an entry with this id is already present. Use
-                update_entry() to replace one.
+            ValueError: if that day already has an entry. One entry per
+                day is the model, so use update_entry() to replace it.
         """
-        if entry.id in self.entries:
-            raise ValueError(f"entry already exists: {entry.id}")
-        self.entries[entry.id] = entry
+        if entry.date in self.entries:
+            raise ValueError(f"an entry already exists for {entry.date}")
+        self.entries[entry.date] = entry
 
     def update_entry(self, entry: Entry) -> None:
-        """Replace an existing entry (matched by entry.id) in the in-memory store.
+        """Replace an existing entry (matched by entry.date) in the in-memory store.
 
         Raises:
-            KeyError: if no entry with this id exists.
+            KeyError: if that day has no entry yet.
         """
-        if entry.id not in self.entries:
-            raise KeyError(entry.id)
-        self.entries[entry.id] = entry
+        if entry.date not in self.entries:
+            raise KeyError(entry.date)
+        self.entries[entry.date] = entry
 
-    def delete_entry(self, entry_id: UUID) -> None:
-        """Remove an entry from the in-memory store by id.
+    def delete_entry(self, date: dt.date) -> None:
+        """Remove a day's entry from the in-memory store.
 
         Raises:
-            KeyError: if no entry with this id exists.
+            KeyError: if that day has no entry.
         """
-        del self.entries[entry_id]
+        del self.entries[date]
         # Drop the cached copy too: no reason to keep a deleted entry's
         # plaintext alive in memory until the next save.
-        self._records.pop(entry_id, None)
+        self._records.pop(date, None)
 
     def verify_password(self, password: str, key: bytes) -> bool:
         """Whether `password` derives `key` under this diary's KDF params.
@@ -334,13 +362,13 @@ def _check_verifier(key: bytes, verifier: dict[str, Any]) -> None:
         raise ZecretDecryptError("diary key verifier did not match")
 
 
-def _parse_record(raw: object) -> tuple[UUID, bytes, bytes]:
-    """Pull (id, nonce, ciphertext) out of one on-disk entry record."""
+def _parse_record(raw: object) -> tuple[dt.date, bytes, bytes]:
+    """Pull (date, nonce, ciphertext) out of one on-disk entry record."""
     if not isinstance(raw, dict):
         raise ValueError("entry record must be a JSON object")
     try:
         return (
-            UUID(raw["id"]),
+            dt.date.fromisoformat(raw["date"]),
             base64.b64decode(raw["nonce"], validate=True),
             base64.b64decode(raw["ciphertext"], validate=True),
         )

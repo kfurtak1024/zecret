@@ -1,7 +1,8 @@
 """The Zecret Textual application: screen management and app-level state.
 
 Screen flow:
-    UnlockScreen -> EntryListScreen <-> EditorScreen
+    UnlockScreen -> EntryListScreen <-> EditorScreen (one day's entry)
+                                     -> DatePromptScreen -> EditorScreen
                                      -> SearchScreen
                                      -> SettingsScreen (change password)
 

@@ -1,32 +1,40 @@
-"""Tests for EntryListScreen: listing, selection, and delete.
+"""Tests for EntryListScreen: listing days, selection, and delete.
 
 Required coverage:
     - Unlocking routes to the entry list.
-    - Entries render newest-first, with an empty state when there are none.
+    - Days render most-recent-first, with an empty state when there are
+      none.
+    - 'g' offers another day to write about and opens the editor on it;
+      backing out of the prompt changes nothing.
     - Delete asks for confirmation first; cancelling changes nothing.
     - Confirmed delete removes the entry from memory AND from disk, and
       leaves the other entries intact.
     - The list refreshes from app.diary whenever the screen is resumed.
-
-Navigation to the editor/search/settings is asserted only as far as it
-exists at build-order step 5.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label, ListView
+from textual.widgets import Input, Label, ListView, MaskedInput
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.entry_list import EMPTY_MESSAGE, UNTITLED, ConfirmScreen, EntryListScreen
+from zecret.screens.base import EMPTY_BODY, format_day
+from zecret.screens.date_prompt import DatePromptScreen
+from zecret.screens.editor import EditorScreen
+from zecret.screens.entry_list import EMPTY_MESSAGE, ConfirmScreen, EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
+
+TODAY = dt.date.today()
+YESTERDAY = TODAY - dt.timedelta(days=1)
+LAST_WEEK = TODAY - dt.timedelta(days=7)
+LAST_YEAR = TODAY - dt.timedelta(days=365)
 
 
 @pytest.fixture(autouse=True)
@@ -44,18 +52,6 @@ def seed(path: Path, *entries: Entry) -> None:
     for entry in entries:
         diary.add_entry(entry)
     diary.save(key)
-
-
-def dated(title: str, minutes_ago: int) -> Entry:
-    """An entry with a controlled created_at, for ordering assertions."""
-    entry = Entry.new(title, f"Body of {title}")
-    return Entry(
-        id=entry.id,
-        title=entry.title,
-        body=entry.body,
-        created_at=entry.created_at - timedelta(minutes=minutes_ago),
-        updated_at=entry.updated_at,
-    )
 
 
 async def unlock(pilot) -> None:
@@ -84,31 +80,37 @@ async def test_unlocking_routes_to_the_entry_list(diary_path):
         assert isinstance(app.screen, EntryListScreen)
 
 
-async def test_entries_render_newest_first(diary_path):
-    seed(diary_path, dated("Oldest", 120), dated("Newest", 1), dated("Middle", 60))
+async def test_days_render_most_recent_first(diary_path):
+    seed(
+        diary_path,
+        Entry.new(LAST_YEAR, "Oldest"),
+        Entry.new(YESTERDAY, "Newest"),
+        Entry.new(LAST_WEEK, "Middle"),
+    )
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        labels = row_labels(app)
-        assert [label.split("  ")[-1] for label in labels] == ["Newest", "Middle", "Oldest"]
+        assert [label.split("   ")[-1] for label in row_labels(app)] == [
+            "Newest",
+            "Middle",
+            "Oldest",
+        ]
 
 
-async def test_rows_show_the_entry_timestamp(diary_path):
-    entry = dated("A title", 0)
-    seed(diary_path, entry)
+async def test_rows_show_the_day_then_a_glimpse_of_the_text(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "First line\nsecond line"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        expected = entry.created_at.astimezone().strftime("%Y-%m-%d %H:%M")
-        assert row_labels(app)[0].startswith(expected)
+        assert row_labels(app) == [f"{format_day(YESTERDAY)}   First line"]
 
 
-async def test_untitled_entries_are_labelled(diary_path):
-    seed(diary_path, Entry.new("", "Body only"))
+async def test_an_entry_with_no_text_still_shows_its_day(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, ""))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        assert UNTITLED in row_labels(app)[0]
+        assert row_labels(app) == [f"{format_day(YESTERDAY)}   {EMPTY_BODY}"]
 
 
 async def test_empty_diary_shows_the_empty_state(diary_path):
@@ -123,7 +125,7 @@ async def test_empty_diary_shows_the_empty_state(diary_path):
 
 
 async def test_populated_diary_hides_the_empty_state(diary_path):
-    seed(diary_path, Entry.new("A title", "A body"))
+    seed(diary_path, Entry.new(TODAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
@@ -131,29 +133,99 @@ async def test_populated_diary_hides_the_empty_state(diary_path):
 
 
 async def test_first_row_is_selected_by_default(diary_path):
-    seed(diary_path, dated("Older", 60), dated("Newer", 1))
+    seed(diary_path, Entry.new(LAST_WEEK, "Older"), Entry.new(YESTERDAY, "Newer"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         assert app.screen.selected_entry is not None
-        assert app.screen.selected_entry.title == "Newer"
+        assert app.screen.selected_entry.date == YESTERDAY
+
+
+async def test_q_quits(diary_path):
+    """The footer offers it, so it has to work: a binding whose action is
+    not defined on the screen silently does nothing."""
+    seed(diary_path, Entry.new(TODAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("q")
+        await pilot.pause()
+        assert app._exit is True
 
 
 async def test_arrow_keys_move_the_selection(diary_path):
-    seed(diary_path, dated("Older", 60), dated("Newer", 1))
+    seed(diary_path, Entry.new(LAST_WEEK, "Older"), Entry.new(YESTERDAY, "Newer"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await pilot.press("down")
         await pilot.pause()
-        assert app.screen.selected_entry.title == "Older"
+        assert app.screen.selected_entry.date == LAST_WEEK
+
+
+# --- writing another day ---------------------------------------------------
+
+
+async def test_g_opens_the_date_prompt(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.press("g")  # ignored: still on the unlock screen
+        await unlock(pilot)
+        await pilot.press("g")
+        await pilot.pause()
+        assert isinstance(app.screen, DatePromptScreen)
+
+
+async def test_choosing_a_day_opens_the_editor_on_it(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("g")
+        await pilot.pause()
+        app.screen.query_one("#date", MaskedInput).value = LAST_WEEK.isoformat()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.date == LAST_WEEK
+
+
+async def test_choosing_a_day_that_is_already_written_opens_its_entry(diary_path):
+    seed(diary_path, Entry.new(LAST_WEEK, "What happened that day."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("g")
+        await pilot.pause()
+        app.screen.query_one("#date", MaskedInput).value = LAST_WEEK.isoformat()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen.creating is False
+        assert app.screen.body_text == "What happened that day."
+
+
+async def test_backing_out_of_the_date_prompt_returns_to_the_list(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("g")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert app.diary.entries == {}
 
 
 # --- delete ----------------------------------------------------------------
 
 
 async def test_delete_asks_for_confirmation_first(diary_path):
-    seed(diary_path, Entry.new("Keep me", "Body"))
+    seed(diary_path, Entry.new(YESTERDAY, "Keep me"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
@@ -164,8 +236,19 @@ async def test_delete_asks_for_confirmation_first(diary_path):
         assert len(app.diary.entries) == 1, "nothing may be deleted before confirming"
 
 
+async def test_the_confirmation_names_the_day(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Keep me"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("d")
+        await pilot.pause()
+        question = str(app.screen.query_one("#confirm-question", Label).content)
+        assert format_day(YESTERDAY) in question
+
+
 async def test_cancelling_the_confirmation_keeps_the_entry(diary_path):
-    entry = Entry.new("Keep me", "Body")
+    entry = Entry.new(YESTERDAY, "Keep me")
     seed(diary_path, entry)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -174,17 +257,15 @@ async def test_cancelling_the_confirmation_keeps_the_entry(diary_path):
         await pilot.pause()
         await pilot.press("escape")
         await pilot.pause()
-        assert app.diary.entries == {entry.id: entry}
-        assert row_labels(app) == [f"{entry.created_at.astimezone():%Y-%m-%d %H:%M}  Keep me"]
+        assert app.diary.entries == {YESTERDAY: entry}
+        assert row_labels(app) == [f"{format_day(YESTERDAY)}   Keep me"]
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert reopened.entries == {entry.id: entry}
+    assert reopened.entries == {YESTERDAY: entry}
 
 
 async def test_confirmed_delete_removes_the_entry_everywhere(diary_path):
-    doomed = dated("Delete me", 1)
-    kept = dated("Keep me", 60)
-    seed(diary_path, doomed, kept)
+    seed(diary_path, Entry.new(YESTERDAY, "Delete me"), Entry.new(LAST_WEEK, "Keep me"))
 
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -195,16 +276,16 @@ async def test_confirmed_delete_removes_the_entry_everywhere(diary_path):
         await pilot.pause()
         await pilot.pause()
 
-        assert set(app.diary.entries) == {kept.id}
-        assert [label.split("  ")[-1] for label in row_labels(app)] == ["Keep me"]
+        assert set(app.diary.entries) == {LAST_WEEK}
+        assert [label.split("   ")[-1] for label in row_labels(app)] == ["Keep me"]
 
     # Persisted, not just dropped from memory.
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert set(reopened.entries) == {kept.id}
+    assert set(reopened.entries) == {LAST_WEEK}
 
 
 async def test_deleting_the_last_entry_restores_the_empty_state(diary_path):
-    seed(diary_path, Entry.new("Only one", "Body"))
+    seed(diary_path, Entry.new(TODAY, "Only one"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
@@ -228,7 +309,7 @@ async def test_delete_on_an_empty_list_does_nothing(diary_path):
 
 async def test_confirmation_defaults_to_cancel(diary_path):
     """A stray Enter on the modal must not delete anything."""
-    entry = Entry.new("Keep me", "Body")
+    entry = Entry.new(YESTERDAY, "Keep me")
     seed(diary_path, entry)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -238,7 +319,29 @@ async def test_confirmation_defaults_to_cancel(diary_path):
         await pilot.press("enter")
         await pilot.pause()
         await pilot.pause()
-        assert app.diary.entries == {entry.id: entry}
+        assert app.diary.entries == {YESTERDAY: entry}
+
+
+async def test_a_failed_delete_keeps_the_entry_visible(diary_path, monkeypatch):
+    """The file still holds it, so the list must not claim otherwise."""
+    entry = Entry.new(YESTERDAY, "Keep me")
+    seed(diary_path, entry)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(type(app.diary), "save", boom)
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.diary.entries == {YESTERDAY: entry}
+        assert row_labels(app) == [f"{format_day(YESTERDAY)}   Keep me"]
 
 
 # --- refresh on resume -----------------------------------------------------
@@ -247,14 +350,13 @@ async def test_confirmation_defaults_to_cancel(diary_path):
 async def test_list_refreshes_when_the_screen_resumes(diary_path):
     """Entries added while another screen was in front must appear on
     return -- this is the hook the editor and search rely on."""
-    seed(diary_path, Entry.new("First", "Body"))
+    seed(diary_path, Entry.new(YESTERDAY, "First"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         entry_list = app.screen
 
-        added = Entry.new("Added elsewhere", "Body")
-        app.diary.add_entry(added)
+        app.diary.add_entry(Entry.new(LAST_WEEK, "Added elsewhere"))
         app.diary.save(app.key)
 
         # Stand in for returning from the editor.
