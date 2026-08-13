@@ -12,6 +12,11 @@ dependencies = [
     "argon2-cffi>=25.1",
 ]
 
+[project.urls]
+Homepage = "https://zecret.krfu.dev"
+Repository = "https://github.com/kfurtak1024/zecret"
+Issues = "https://github.com/kfurtak1024/zecret/issues"
+
 [project.scripts]
 zecret = "zecret.__main__:main"
 
