@@ -40,7 +40,7 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.widgets import Footer, Header, Label, ListItem, ListView
+from textual.widgets import Footer, Label, ListItem, ListView
 
 from zecret.models import Entry
 from zecret.screens.base import (
@@ -54,6 +54,8 @@ from zecret.screens.base import (
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
+from zecret.screens.header import DiaryHeader
+from zecret.screens.help import HelpScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
 
@@ -75,6 +77,9 @@ class EntryListScreen(ZecretScreen):
         Binding("d", "delete_entry", "Delete"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
+        # Bound here rather than app-wide on purpose: a '?' typed into the
+        # editor, the search box or a password field must stay a '?'.
+        Binding("question_mark", "help", "Help", key_display="?"),
         # "app.quit", not "quit": a binding's action is dispatched on the
         # node that declares it, and a Screen has no action_quit -- an
         # unqualified "quit" here silently does nothing.
@@ -94,7 +99,7 @@ class EntryListScreen(ZecretScreen):
         self.refresh_lock = asyncio.Lock()
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield DiaryHeader()
         yield Label(EMPTY_MESSAGE, id="entries-empty")
         yield ListView(id="entries")
         yield Footer()
@@ -184,6 +189,11 @@ class EntryListScreen(ZecretScreen):
 
     def action_settings(self) -> None:
         self.app.push_screen(SettingsScreen())
+
+    def action_help(self) -> None:
+        # This screen's own keys are handed over: HelpScreen cannot import
+        # the list it is opened from without closing an import cycle.
+        self.app.push_screen(HelpScreen(self.BINDINGS))
 
     def action_delete_entry(self) -> None:
         entry = self.selected_entry

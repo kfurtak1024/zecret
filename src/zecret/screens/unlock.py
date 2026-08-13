@@ -23,10 +23,11 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
-from textual.widgets import Footer, Header, Input, Label
+from textual.widgets import Footer, Input, Label
 
 from zecret.crypto import ZecretDecryptError
 from zecret.screens.base import ZecretScreen
+from zecret.screens.header import DiaryHeader
 from zecret.storage import DiaryFile
 
 # Deliberately the same message for a wrong password and for an unreadable
@@ -60,7 +61,7 @@ class UnlockScreen(ZecretScreen):
         self.creating = creating
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield DiaryHeader()
         with Vertical(id="unlock-box"):
             if self.creating:
                 yield Label("Create a new diary", id="unlock-title")

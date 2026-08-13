@@ -17,11 +17,12 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView
+from textual.widgets import Footer, Input, Label, ListItem, ListView
 
 from zecret.models import Entry
 from zecret.screens.base import ZecretScreen, entry_summary
 from zecret.screens.editor import EditorScreen
+from zecret.screens.header import DiaryHeader
 
 NO_MATCHES = "No entries match."
 
@@ -50,7 +51,7 @@ class SearchScreen(ZecretScreen):
         self.refresh_lock = asyncio.Lock()
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield DiaryHeader()
         yield Input(placeholder="Search entries", id="query")
         yield Label(NO_MATCHES, id="search-empty")
         yield ListView(id="results")

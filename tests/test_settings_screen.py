@@ -1,7 +1,10 @@
-"""Tests for SettingsScreen: the master password change.
+"""Tests for SettingsScreen: appearance and the master password change.
 
 Required coverage:
     - 's' from the list opens settings.
+    - The theme picker starts on the theme in use, applies a choice
+      immediately, and saves it so the next launch starts there.
+    - A theme that cannot be saved still applies to this session.
     - A correct current password + matching new password re-keys the diary:
       the new password opens it and the old one no longer does.
     - app.key is updated, so the session keeps working afterwards.
@@ -17,13 +20,21 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label
+from textual.widgets import Input, Label, Select
 
 from zecret.app import ZecretApp
+from zecret.config import DEFAULT_THEME, Config
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
 from zecret.screens.entry_list import EntryListScreen
-from zecret.screens.settings import EMPTY_NEW, MISMATCH, WRONG_CURRENT, SettingsScreen
+from zecret.screens.settings import (
+    EMPTY_NEW,
+    MISMATCH,
+    THEME_NOT_SAVED,
+    THEMES,
+    WRONG_CURRENT,
+    SettingsScreen,
+)
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
@@ -72,6 +83,136 @@ async def submit_change(pilot, current: str, new: str, confirm: str) -> None:
 
 def error_of(screen) -> str:
     return str(screen.query_one("#settings-error", Label).content)
+
+
+def theme_select(app: ZecretApp) -> Select:
+    return app.screen.query_one("#theme", Select)
+
+
+# --- appearance ------------------------------------------------------------
+
+
+async def test_the_picker_starts_on_the_theme_in_use(diary_path, isolated_config):
+    Config(path=isolated_config, theme="nord").save()
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        assert theme_select(app).value == "nord"
+        assert app.theme == "nord"
+
+
+async def test_every_offered_theme_is_one_textual_knows(diary_path):
+    """A name Textual does not have would raise the moment it is chosen."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        for _label, theme in THEMES:
+            assert theme in app.available_themes
+
+
+async def test_choosing_a_theme_applies_it_immediately(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        theme_select(app).value = "gruvbox"
+        await pilot.pause()
+        assert app.theme == "gruvbox"
+
+
+async def test_choosing_a_theme_saves_it(diary_path, isolated_config):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        theme_select(app).value = "dracula"
+        await pilot.pause()
+    assert Config.load(isolated_config).theme == "dracula"
+
+
+async def test_a_chosen_theme_survives_a_restart(diary_path, isolated_config):
+    """The whole point of saving it: the next launch starts there, lock
+    screen included."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        theme_select(app).value = "nord"
+        await pilot.pause()
+
+    relaunched = ZecretApp(diary_path=diary_path)
+    async with relaunched.run_test() as pilot:
+        await pilot.pause()
+        assert relaunched.theme == "nord", "the lock screen is themed too"
+
+
+async def test_choosing_by_keyboard_applies_the_theme(diary_path):
+    """The dropdown is the intended way in, not just setting .value."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        theme_select(app).focus()
+        await pilot.pause()
+        await pilot.press("enter")  # open the list
+        await pilot.pause()
+        await pilot.press("down", "enter")  # move one and take it
+        await pilot.pause()
+        assert app.theme == THEMES[1][1]
+
+
+async def test_escape_closes_the_open_dropdown_rather_than_the_screen(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        theme_select(app).focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert theme_select(app).expanded is True
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SettingsScreen), "the screen must stay"
+        assert theme_select(app).expanded is False
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen), "now it leaves"
+
+
+async def test_a_theme_that_cannot_be_saved_still_applies(diary_path, monkeypatch):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+
+        def boom(*_args, **_kwargs):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(Config, "save", boom)
+        notifications = []
+        monkeypatch.setattr(
+            type(app), "notify", lambda self, message, **kw: notifications.append(message)
+        )
+
+        theme_select(app).value = "nord"
+        await pilot.pause()
+        assert app.theme == "nord", "the session keeps the theme"
+        assert THEME_NOT_SAVED in notifications
+
+
+async def test_an_unknown_saved_theme_falls_back_to_the_default(diary_path, isolated_config):
+    """A theme name from a future Zecret, or a typo, must not stop the app
+    from starting."""
+    Config(path=isolated_config, theme="no-such-theme").save()
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.theme == DEFAULT_THEME
 
 
 # --- opening ---------------------------------------------------------------

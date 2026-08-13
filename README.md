@@ -38,7 +38,7 @@ password only you know, in a terminal you already have open.
 - ✍️ **Keyboard-driven** — a fast Textual TUI, no mouse required
 - 🔎 **Instant search** — live filtering across everything you have written
 - 📄 **One portable file** — back it up by copying it; it is useless without your password
-- 🌗 **Light and dark** — follows your terminal's theme
+- 🌗 **Light and dark** — eight themes, picked in settings and remembered
 - 🚫 **Offline by design** — no networking of any kind
 
 ## Install
@@ -110,6 +110,19 @@ fair game; days that have not happened yet are refused.
 Press <kbd>/</kbd> to search. Your entries are already decrypted in memory
 for the session, so filtering is instant and nothing touches the disk.
 
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/help-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/help-light.png">
+  <img alt="The help popup over the diary, listing every key by section" src="assets/help-dark.png" width="760">
+</picture>
+</div>
+
+Press <kbd>?</kbd> for every key in one popup, and <kbd>s</kbd> for settings
+— where you pick a theme and change your master password. The theme is kept
+in `~/.zecret/config.json`, the one file Zecret writes unencrypted; it holds
+your preferences and nothing about what you wrote.
+
 ### Keys
 
 | Key | Where | Does |
@@ -119,7 +132,8 @@ for the session, so filtering is instant and nothing touches the disk.
 | <kbd>enter</kbd> | entry list | Open the selected day |
 | <kbd>d</kbd> | entry list | Delete the selected day's entry (asks first) |
 | <kbd>/</kbd> | entry list | Search |
-| <kbd>s</kbd> | entry list | Change your master password |
+| <kbd>s</kbd> | entry list | Settings: theme and master password |
+| <kbd>?</kbd> | entry list | Help — every key, on one page |
 | <kbd>q</kbd> | entry list | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save and return |
 | <kbd>esc</kbd> | anywhere | Back (asks first if you have unsaved edits) |

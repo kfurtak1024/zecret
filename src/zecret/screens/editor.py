@@ -24,11 +24,12 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
-from textual.widgets import Footer, Header, Label, TextArea
+from textual.widgets import Footer, Label, TextArea
 
 from zecret.models import Entry
 from zecret.screens.base import ZecretScreen, format_day_long
 from zecret.screens.confirm import ConfirmScreen
+from zecret.screens.header import DiaryHeader
 
 DISCARD_QUESTION = "Discard your unsaved changes?"
 EMPTY_ENTRY = "Nothing to save — write something first."
@@ -63,7 +64,7 @@ class EditorScreen(ZecretScreen):
         diary, _ = self.zecret.unlocked
         self.entry = diary.entry_for(self.date)
 
-        yield Header()
+        yield DiaryHeader()
         with Vertical(id="editor-box"):
             yield TextArea(
                 "" if self.entry is None else self.entry.body,

@@ -15,6 +15,22 @@
      selectors here list several ids at once.
 */
 
+/* --- Title bar ---------------------------------------------------------- */
+
+/* Zecret's own header, not Textual's: one line, no icon, nothing to click.
+   $panel keeps it distinct from the screen behind it without competing with
+   $accent, which is reserved for what you are working in. */
+DiaryHeader {
+    dock: top;
+    width: 100%;
+    height: 1;
+    background: $panel;
+    color: $foreground;
+    content-align: center middle;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
 /* --- Panels: the centred card used by unlock and settings --------------- */
 
 UnlockScreen,
@@ -26,13 +42,16 @@ SettingsScreen {
 #settings-box {
     width: 62;
     height: auto;
+    /* Never taller than the terminal: settings scrolls inside its border
+       rather than running off the bottom of a short window. */
+    max-height: 100%;
     padding: 1 2;
     border: round $accent;
     background: $surface;
 }
 
 #unlock-title,
-#settings-title {
+.section-title {
     width: 100%;
     content-align: center middle;
     text-style: bold;
@@ -41,14 +60,17 @@ SettingsScreen {
 }
 
 #unlock-hint,
-#settings-hint {
+.section-hint {
     width: 100%;
     color: $text-muted;
     padding-bottom: 1;
 }
 
 #unlock-box Input,
-#settings-box Input {
+#settings-box Input,
+/* The gap under the theme picker is what separates the two sections of
+   the settings screen; they need no rule of their own. */
+#settings-box Select {
     margin-bottom: 1;
 }
 
@@ -140,11 +162,72 @@ SettingsScreen {
     }
 }
 
-/* --- Modals: confirm and date prompt ------------------------------------ */
+/* --- HelpScreen (modal) ------------------------------------------------- */
 
-/* Dim what is behind them: the question is the only thing to answer. */
+/* Wide enough for the logo, and never taller than the terminal: the help
+   scrolls inside its own border rather than off the bottom of the screen. */
+#help-box {
+    width: 62;
+    max-width: 100%;
+    height: auto;
+    max-height: 100%;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+
+#help-logo {
+    width: auto;
+    color: $text-accent;
+    /* The art is drawn, not written: wrapping it would make nonsense of
+       it. Narrow terminals hide it instead -- see HelpScreen.fit_logo. */
+    text-wrap: nowrap;
+}
+
+#help-tagline {
+    width: 100%;
+    color: $text-muted;
+    padding-bottom: 1;
+}
+
+/* Section titles are centred where they head a narrow card; here they head
+   a list, so they read as headings only if they sit at the left edge of
+   what they introduce, with air above rather than below. */
+#help-box .section-title {
+    content-align: left middle;
+    text-align: left;
+    padding: 1 0 0 0;
+}
+
+/* The key rows are aligned into columns by the screen itself, since only
+   it knows how wide the widest key in a section is. */
+.help-key {
+    width: 100%;
+}
+
+/* A tight list, like the key rows above: each note is one line, and the
+   section heading already gives the group its air. */
+.help-note {
+    width: 100%;
+    color: $text-muted;
+}
+
+/* No padding above it: this is the one line someone who feels stuck needs
+   to see, so it earns its place inside the fold rather than a row of air. */
+#help-close-hint {
+    width: 100%;
+    content-align: right middle;
+    text-align: right;
+    color: $text-muted;
+}
+
+/* --- Modals: confirm, date prompt and help ------------------------------ */
+
+/* Dim what is behind them: the question is the only thing to answer, and
+   help sits over the diary rather than replacing it. */
 ConfirmScreen,
-DatePromptScreen {
+DatePromptScreen,
+HelpScreen {
     align: center middle;
     background: $background 60%;
 }

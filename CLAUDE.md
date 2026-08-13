@@ -49,12 +49,13 @@ src/zecret/
 ├── crypto.py     # KDF (Argon2id) + AEAD encrypt/decrypt. No file I/O, no entry semantics.
 ├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
 ├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
+├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
 ├── app.py        # ZecretApp (Textual App subclass): screen routing, holds session state.
-├── screens/      # One file per screen: unlock, entry_list, editor, search, settings.
-│                 # Plus three shared helpers: base.py (ZecretScreen, typed
-│                 # access to the app, and the date/snippet formatting every
-│                 # screen shares), confirm.py (yes/no modal) and
-│                 # date_prompt.py (which-day modal).
+├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
+│                 # Plus shared pieces: base.py (ZecretScreen, typed access
+│                 # to the app, and the date/snippet formatting every screen
+│                 # shares), header.py (the title bar), confirm.py (yes/no
+│                 # modal) and date_prompt.py (which-day modal).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -62,7 +63,18 @@ Keep this layering strict:
 - `crypto.py` knows nothing about entries or files — just bytes in, bytes out.
 - `models.py` knows nothing about encryption or file paths.
 - `storage.py` is the only place that touches the filesystem or combines
-  crypto + models.
+  crypto + models — with one bounded exception, `config.py`.
+- `config.py` owns `~/.zecret/config.json`, the only file Zecret writes in
+  the clear. It exists because the theme has to be known before the diary
+  is unlocked, and a preference is neither secret nor writing. **It may
+  hold preferences and nothing else** — no entry text, no dates, no
+  password, nothing derived from the key. Anything that would tell a reader
+  of that file something about the diary's contents belongs in the diary,
+  behind the password. Security requirement 4 below is about entry content
+  and passwords; a theme name is neither, which is why this is an exception
+  and not a violation. It is also forgiving where `storage.py` is strict: a
+  missing or corrupt config falls back to defaults, because a mangled
+  preference must never be why someone cannot reach their diary.
 - `screens/*.py` never call `crypto.py` or the filesystem directly — they
   only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
   needs something crypto-shaped, storage grows the method: this is why
@@ -181,9 +193,25 @@ actually matter.
   usefully print to stdout anyway while running.
 - Styling lives entirely in `app.tcss`, which documents its own
   conventions at the top: theme variables only (never hard-coded colors,
-  so light and dark both work), rules grouped by the role a widget plays
-  rather than by screen, and 1 cell of vertical to 2 of horizontal
+  so every theme in the picker works), rules grouped by the role a widget
+  plays rather than by screen, and 1 cell of vertical to 2 of horizontal
   spacing. Screens carry a `SUB_TITLE` so the header says where you are.
+- The chrome is deliberately minimal. Textual's `Header` is not used —
+  `screens/header.py` replaces it, because Textual's docks an icon that
+  opens the command palette and expands when clicked. The command palette
+  is off (`ENABLE_COMMAND_PALETTE = False`), which also removes `ctrl+p`
+  and the footer's palette entry. Don't reintroduce either; a setting that
+  belongs to the user goes on the settings screen, where it can be saved.
+- The help popup (`screens/help.py`) is a `ModalScreen` — Textual's
+  pattern for a dialog, and what the app's other popups already are. It is
+  not Textual's `HelpPanel`, which documents whichever widget has focus
+  rather than the app. Its key list is generated from the screens'
+  `BINDINGS`, so a new binding appears there automatically and a test
+  fails if it does not. Never hand-write a key into it. It is bound to `?`
+  on the entry list only, so `?` stays typeable in every text field.
+- The version shown in the help popup comes from `zecret.__version__`,
+  which reads the installed distribution metadata. `pyproject.toml` is the
+  only place the version is written; don't add a second copy.
 
 ## Explicit non-goals (do not implement unless asked)
 

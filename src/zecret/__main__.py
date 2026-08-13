@@ -4,6 +4,10 @@ Supports:
     zecret                          # use default diary path
     zecret --path /custom/diary.enc # override diary location
     (or env var ZECRET_DIARY_PATH)
+
+Only the diary is configurable here. Preferences live at a fixed per-user
+path (see config.py): they are settings for the person, not for the file,
+so a diary opened with --path still uses the same theme.
 """
 
 from __future__ import annotations

@@ -1,7 +1,16 @@
-"""Settings screen: currently just master password change.
+"""Settings screen: appearance, and the master password.
 
-Flow: prompt for current password (re-verify against app.key/derive), new
-password, confirm new password. On confirm, call
+Appearance is a theme picker over a curated set of Textual's themes. It
+applies as the selection moves, so you see the diary in it rather than a
+swatch, and saves immediately -- there is no "apply" button to forget. The
+list is curated rather than Textual's full set: each name here has been
+rendered against this app's own styling and checked that the month
+headings, the highlighted row and the footer all stay legible. Saving is
+best effort; a preferences file that cannot be written costs you the
+setting next launch, never the session you are in.
+
+Password flow: prompt for current password (re-verify against
+app.key/derive), new password, confirm new password. On confirm, call
 app.diary.change_password(new_password) to get a new key, update app.key,
 then app.diary.save(app.key) to persist everything re-encrypted under the
 new key and new KDF salt.
@@ -24,19 +33,36 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
-from textual.widgets import Footer, Header, Input, Label
+from textual.containers import VerticalScroll
+from textual.widgets import Footer, Input, Label, Select
 
 from zecret.screens.base import ZecretScreen
+from zecret.screens.header import DiaryHeader
 
 WRONG_CURRENT = "That is not your current password."
 EMPTY_NEW = "Choose a new password."
 MISMATCH = "The new passwords do not match."
 CHANGED = "Master password changed."
+THEME_NOT_SAVED = "Theme applied, but could not be saved for next time."
+
+#: The themes offered, as (what the user reads, what Textual calls it).
+#: A shortlist, not all 21 Textual ships: the ansi ones borrow the
+#: terminal's own palette and render this app's accents unpredictably, and
+#: a dropdown is a worse place to browse than a diary is to read.
+THEMES: list[tuple[str, str]] = [
+    ("Dark", "textual-dark"),
+    ("Light", "textual-light"),
+    ("Nord", "nord"),
+    ("Gruvbox", "gruvbox"),
+    ("Dracula", "dracula"),
+    ("Catppuccin Mocha", "catppuccin-mocha"),
+    ("Catppuccin Latte", "catppuccin-latte"),
+    ("Solarized Light", "solarized-light"),
+]
 
 
 class SettingsScreen(ZecretScreen):
-    """Change the master password."""
+    """Pick a theme, and change the master password."""
 
     SUB_TITLE = "Settings"
 
@@ -45,13 +71,27 @@ class SettingsScreen(ZecretScreen):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        with Vertical(id="settings-box"):
-            yield Label("Change master password", id="settings-title")
+        yield DiaryHeader()
+        # Scrolls: two sections of fields do not fit a 24-row terminal, and
+        # a card that simply runs off the bottom hides the confirm field.
+        with VerticalScroll(id="settings-box"):
+            yield Label("Appearance", classes="section-title")
+            yield Label(
+                "Applied as you choose it, and kept for next time.",
+                classes="section-hint",
+            )
+            yield Select(
+                THEMES,
+                value=self.zecret.config.theme,
+                allow_blank=False,
+                id="theme",
+            )
+
+            yield Label("Change master password", classes="section-title")
             yield Label(
                 "Your entries are re-encrypted under the new password. "
                 "There is no recovery if you forget it.",
-                id="settings-hint",
+                classes="section-hint",
             )
             yield Input(placeholder="Current password", password=True, id="current")
             yield Input(placeholder="New password", password=True, id="new")
@@ -61,6 +101,24 @@ class SettingsScreen(ZecretScreen):
 
     def on_mount(self) -> None:
         self.query_one("#current", Input).focus()
+
+    # --- appearance --------------------------------------------------------
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Apply the chosen theme and remember it."""
+        theme = event.value
+        # Select is typed as possibly blank; this one is allow_blank=False,
+        # so anything else is not a theme name and there is nothing to do.
+        if not isinstance(theme, str) or theme == self.zecret.theme:
+            return
+
+        self.zecret.apply_theme(theme)
+        self.zecret.config.theme = theme
+        try:
+            self.zecret.config.save()
+        except OSError:
+            # The theme is already applied; only its persistence failed.
+            self.notify(THEME_NOT_SAVED, severity="warning")
 
     def value_of(self, field: str) -> str:
         return self.query_one(f"#{field}", Input).value
@@ -105,6 +163,13 @@ class SettingsScreen(ZecretScreen):
         self.dismiss()
 
     def action_back(self) -> None:
+        # This screen's escape binding is priority, so it would otherwise
+        # win over the dropdown's own -- closing the whole screen when the
+        # user meant to close the list they just opened.
+        theme = self.query_one("#theme", Select)
+        if theme.expanded:
+            theme.expanded = False
+            return
         self.dismiss()
 
     def set_error(self, message: str) -> None:
