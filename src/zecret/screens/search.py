@@ -64,7 +64,13 @@ class SearchScreen(ZecretScreen):
         self.query_one("#query", Input).focus()
 
     async def on_screen_resume(self) -> None:
-        """Re-filter on return from the editor: the entry may have changed."""
+        """Re-filter on return from the editor: the entry may have changed.
+
+        Skipped when the app is locking, which pops this screen too -- see
+        EntryListScreen.
+        """
+        if not self.zecret.is_unlocked:
+            return
         await self.refresh_results()
 
     async def on_input_changed(self, _event: Input.Changed) -> None:

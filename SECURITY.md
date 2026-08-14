@@ -58,8 +58,11 @@ that *is* worth reporting.
   The file leaks the shape of the habit, never a word of the content.
 - **There is no password recovery.** Lose the password and the diary is
   gone. This is the point, not a gap.
-- **An unlocked Zecret is unlocked.** While the app is running, entries are
-  decrypted in memory and anyone at that terminal can read them.
+- **An unlocked Zecret is unlocked.** While the diary is open, entries are
+  decrypted in memory and anyone at that terminal can read them. Zecret
+  locks itself after a spell with no typing, which shortens that window but
+  does not close it — during those minutes, and for as long as an entry is
+  half-written, the diary is open.
 - **Secrets cannot be wiped from memory.** Python strings and `bytes` are
   immutable, so the password and derived key cannot be overwritten after
   use, and Zecret does not lock pages into RAM. Either may reach swap or a

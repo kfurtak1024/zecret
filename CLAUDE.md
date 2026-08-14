@@ -50,7 +50,7 @@ src/zecret/
 ├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
 ├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
 ├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
-├── app.py        # ZecretApp (Textual App subclass): screen routing, holds session state.
+├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock.
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
@@ -68,7 +68,8 @@ Keep this layering strict:
   crypto + models — with one bounded exception, `config.py`.
 - `config.py` owns `~/.zecret/config.json`, the only file Zecret writes in
   the clear. It exists because the theme has to be known before the diary
-  is unlocked, and a preference is neither secret nor writing. **It may
+  is unlocked -- as does how long the diary may sit idle, since that timer
+  runs from launch -- and a preference is neither secret nor writing. **It may
   hold preferences and nothing else** — no entry text, no dates, no
   password, nothing derived from the key. Anything that would tell a reader
   of that file something about the diary's contents belongs in the diary,

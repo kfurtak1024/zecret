@@ -5,6 +5,9 @@ Required coverage:
     - The theme picker starts on the theme in use, applies a choice
       immediately, and saves it so the next launch starts there.
     - A theme that cannot be saved still applies to this session.
+    - The lock picker starts on the saved wait, falls back to the default
+      for a wait it cannot show, applies and saves a choice, and offers
+      "Never"; a wait that cannot be saved still applies.
     - A correct current password + matching new password re-keys the diary:
       the new password opens it and the old one no longer does.
     - app.key is updated, so the session keeps working afterwards.
@@ -20,15 +23,18 @@ import json
 from pathlib import Path
 
 import pytest
+from textual.containers import VerticalScroll
 from textual.widgets import Input, Label, Select
 
 from zecret.app import ZecretApp
-from zecret.config import DEFAULT_THEME, Config
+from zecret.config import DEFAULT_LOCK_AFTER_MINUTES, DEFAULT_THEME, Config
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.settings import (
     EMPTY_NEW,
+    LOCK_NOT_SAVED,
+    LOCK_TIMEOUTS,
     MISMATCH,
     THEME_NOT_SAVED,
     THEMES,
@@ -80,7 +86,13 @@ async def submit_change(pilot, current: str, new: str, confirm: str) -> None:
     screen = pilot.app.screen
     screen.query_one("#current", Input).value = current
     screen.query_one("#new", Input).value = new
-    screen.query_one("#confirm", Input).value = confirm
+    confirm_field = screen.query_one("#confirm", Input)
+    confirm_field.value = confirm
+    # Focused explicitly: the screen opens on the theme picker, and Enter
+    # submits the form only from inside one of its fields -- which is where
+    # someone who just typed a password is.
+    confirm_field.focus()
+    await pilot.pause()
     await pilot.press("enter")
     await pilot.pause()
     await pilot.pause()
@@ -397,3 +409,85 @@ async def test_a_refused_change_leaves_no_password_in_the_fields(diary_path, new
         assert isinstance(app.screen, SettingsScreen), "must not leave"
         assert error_of(app.screen)
         assert [field.value for field in app.screen.query(Input)] == ["", "", ""]
+
+
+# --- locking ---------------------------------------------------------------
+
+
+async def test_the_lock_picker_starts_on_the_saved_wait(diary_path, isolated_config):
+    isolated_config.write_text(json.dumps({"lock_after_minutes": 30}))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        assert app.screen.query_one("#lock-after", Select).value == 30
+
+
+async def test_a_wait_the_picker_cannot_show_falls_back_to_the_default(diary_path, isolated_config):
+    """The file may have been hand-edited to a number this build does not
+    offer. Select refuses a value that is not one of its options, so the
+    screen must not hand it one."""
+    isolated_config.write_text(json.dumps({"lock_after_minutes": 7}))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        assert app.screen.query_one("#lock-after", Select).value == DEFAULT_LOCK_AFTER_MINUTES
+
+
+async def test_choosing_a_wait_applies_and_is_remembered(diary_path, isolated_config):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        app.screen.query_one("#lock-after", Select).value = 5
+        await pilot.pause()
+        assert app.config.lock_after_minutes == 5
+
+    assert json.loads(isolated_config.read_text())["lock_after_minutes"] == 5
+
+
+async def test_never_is_offered_and_turns_locking_off(diary_path, isolated_config):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        app.screen.query_one("#lock-after", Select).value = 0
+        await pilot.pause()
+        assert app.config.lock_after_minutes == 0
+
+    assert ("Never", 0) in LOCK_TIMEOUTS
+
+
+async def test_a_wait_that_cannot_be_saved_still_applies(diary_path, monkeypatch):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+
+        def boom(*_args, **_kwargs):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(Config, "save", boom)
+        notifications = []
+        monkeypatch.setattr(
+            type(app), "notify", lambda self, message, **kw: notifications.append(message)
+        )
+
+        app.screen.query_one("#lock-after", Select).value = 30
+        await pilot.pause()
+
+        assert app.config.lock_after_minutes == 30, "the session keeps the setting"
+        assert LOCK_NOT_SAVED in notifications
+
+
+async def test_settings_opens_at_the_top_of_the_form(diary_path):
+    """The screen scrolls. Opening it focused on the password fields would
+    put it straight past appearance and locking, which is what most visits
+    are for."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 26)) as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        assert app.screen.focused is theme_select(app)
+        assert app.screen.query_one("#settings-box", VerticalScroll).scroll_offset.y == 0

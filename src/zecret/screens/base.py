@@ -133,6 +133,17 @@ class ZecretScreen(Screen[None]):
         """The running app, typed -- `self.app` is only known as App here."""
         return cast("ZecretApp", self.app)
 
+    @property
+    def blocks_lock(self) -> bool:
+        """Whether locking now would throw away something not yet saved.
+
+        Almost nothing does: every save in Zecret is immediate, so most
+        screens have nothing to lose. The editor is the exception, and says
+        so by overriding this. The idle timer asks every screen on the
+        stack before it locks.
+        """
+        return False
+
 
 class FormScreen(ZecretScreen):
     """A screen with fields to fill in and one line to say what went wrong.

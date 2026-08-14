@@ -41,6 +41,7 @@ password only you know, in a terminal you already have open.
 - 🔎 **Instant search** — live filtering across everything you have written
 - 📄 **One portable file** — back it up by copying it; it is useless without your password
 - 🌗 **Light and dark** — eight themes, picked in settings and remembered
+- 🔒 **Locks itself** — walks away when you do, and asks for your password again
 - 🚫 **Offline by design** — no networking of any kind
 
 ## Install
@@ -121,9 +122,15 @@ for the session, so filtering is instant and nothing touches the disk.
 </div>
 
 Press <kbd>?</kbd> for every key in one popup, and <kbd>s</kbd> for settings
-— where you pick a theme and change your master password. The theme is kept
-in `~/.zecret/config.json`, the one file Zecret writes unencrypted; it holds
-your preferences and nothing about what you wrote.
+— where you pick a theme, choose how long the diary waits before locking
+itself, and change your master password. Those preferences are kept in
+`~/.zecret/config.json`, the one file Zecret writes unencrypted; it holds
+your settings and nothing about what you wrote.
+
+Zecret locks itself after fifteen minutes without a keystroke, and asks for
+your password again — press <kbd>l</kbd> to do it yourself on the way out
+of the room. A half-written entry holds the lock off rather than being
+thrown away by a timer. Change the wait, or turn it off, in settings.
 
 ### Keys
 
@@ -133,8 +140,10 @@ your preferences and nothing about what you wrote.
 | <kbd>g</kbd> | entry list | Write about another day (asks which) |
 | <kbd>enter</kbd> | entry list | Open the selected day |
 | <kbd>d</kbd> | entry list | Delete the selected day's entry (asks first) |
+| <kbd>r</kbd> | entry list | Re-read the file, picking up another Zecret's writing |
 | <kbd>/</kbd> | entry list | Search |
-| <kbd>s</kbd> | entry list | Settings: theme and master password |
+| <kbd>s</kbd> | entry list | Settings: theme, locking, master password |
+| <kbd>l</kbd> | entry list | Lock the diary without quitting |
 | <kbd>?</kbd> | entry list | Help — every key, on one page |
 | <kbd>q</kbd> | entry list | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save and return |

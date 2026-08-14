@@ -632,3 +632,109 @@ async def test_deleting_the_oldest_day_leaves_the_cursor_at_the_foot(diary_path)
         screen = app.screen
         assert screen.query_one("#entries", ListView).index == len(screen.rows) - 1
         assert screen.selected_entry.date == FEBRUARY[1]
+
+
+# --- reloading -------------------------------------------------------------
+
+
+async def test_reload_picks_up_another_sessions_writing(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+
+        other, other_key = DiaryFile.unlock(diary_path, PASSWORD)
+        other.add_entry(Entry.new(LAST_WEEK, "Theirs"))
+        other.save(other_key)
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert set(app.diary.entries) == {YESTERDAY, LAST_WEEK}
+        assert snippets(app) == ["Mine", "Theirs"]
+
+
+async def test_reload_unsticks_a_refused_save(diary_path):
+    """The whole point: after a conflict every save is refused until the
+    diary in memory is the one on disk again."""
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+
+        other, other_key = DiaryFile.unlock(diary_path, PASSWORD)
+        other.add_entry(Entry.new(LAST_WEEK, "Theirs"))
+        other.save(other_key)
+
+        # Deleting now hits the conflict and rolls back.
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+        assert set(app.diary.entries) == {YESTERDAY}, "the delete should have been refused"
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        # And now the same delete lands.
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+        assert set(app.diary.entries) == {LAST_WEEK}
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert set(reopened.entries) == {LAST_WEEK}
+
+
+async def test_reload_reports_a_password_changed_elsewhere(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        before = dict(app.diary.entries)
+
+        other, _ = DiaryFile.unlock(diary_path, PASSWORD)
+        other.save(other.change_password("an entirely different passphrase"))
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.diary.entries == before, "the diary in hand must be left alone"
+        assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_reload_survives_an_unreadable_file(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        before = dict(app.diary.entries)
+
+        diary_path.write_bytes(b"not a diary at all")
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.diary.entries == before
+        assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_reload_reports_a_diary_that_has_gone(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        diary_path.unlink()
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert set(app.diary.entries) == {YESTERDAY}
+        assert isinstance(app.screen, EntryListScreen)

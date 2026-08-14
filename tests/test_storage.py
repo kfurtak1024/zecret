@@ -18,6 +18,10 @@ Required coverage:
     - create_new() refuses a path that gained a diary while it was busy
       deriving the key, rather than writing over it, and leaves nothing
       behind if the write fails.
+    - reopen() re-reads the file with the key already held, picking up
+      another session's writing and clearing the conflict; it refuses a key
+      that no longer fits, and leaves the diary in hand alone when it
+      fails.
     - change_password() + save() + unlock() with the NEW password succeeds,
       and unlock() with the OLD password now fails.
 """
@@ -999,3 +1003,69 @@ def test_unlock_rejects_a_verifier_holding_the_wrong_plaintext(diary_path):
 
     with pytest.raises(ZecretDecryptError):
         DiaryFile.unlock(diary_path, PASSWORD)
+
+
+# --- reopen ----------------------------------------------------------------
+
+
+def test_reopen_picks_up_what_another_session_wrote(diary_path):
+    _, key, _ = populated(diary_path)
+
+    second, second_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second.add_entry(Entry.new(UNWRITTEN_DAY, "Written by the other session"))
+    second.save(second_key)
+
+    reopened = DiaryFile.reopen(diary_path, key)
+    assert set(reopened.entries) == set(DAYS) | {UNWRITTEN_DAY}
+    assert reopened.entry_for(UNWRITTEN_DAY).body == "Written by the other session"
+
+
+def test_a_reopened_diary_can_save_again(diary_path):
+    """The point of reopening: the stamp matches the file again, so the
+    session is no longer stuck refusing every save."""
+    first, key, _ = populated(diary_path)
+
+    second, second_key = DiaryFile.unlock(diary_path, PASSWORD)
+    second.add_entry(Entry.new(UNWRITTEN_DAY, "Theirs"))
+    second.save(second_key)
+
+    with pytest.raises(ZecretConflictError):
+        first.save(key)
+
+    reopened = DiaryFile.reopen(diary_path, key)
+    reopened.add_entry(Entry.new(dt.date(2026, 7, 1), "Mine, afterwards"))
+    reopened.save(key)
+
+    final, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert set(final.entries) == set(DAYS) | {UNWRITTEN_DAY, dt.date(2026, 7, 1)}
+
+
+def test_reopen_refuses_a_key_that_no_longer_fits(diary_path):
+    """A password changed elsewhere re-keys the whole file. The session's
+    key opens none of it, and the password to derive a new one was never
+    kept -- so this has to fail rather than look like a damaged file."""
+    _, key, _ = populated(diary_path)
+
+    other, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    new_key = other.change_password(NEW_PASSWORD)
+    other.save(new_key)
+
+    with pytest.raises(ZecretDecryptError):
+        DiaryFile.reopen(diary_path, key)
+
+
+def test_reopen_leaves_the_diary_in_hand_alone_when_it_fails(diary_path):
+    """A reload that fails must not empty the diary still being held."""
+    diary, key, entries = populated(diary_path)
+    diary_path.write_bytes(b"not a diary at all")
+
+    with pytest.raises(ValueError):
+        DiaryFile.reopen(diary_path, key)
+    assert diary.entries == {entry.date: entry for entry in entries}
+
+
+def test_reopen_raises_when_the_diary_has_gone(diary_path):
+    _, key, _ = populated(diary_path)
+    diary_path.unlink()
+    with pytest.raises(FileNotFoundError):
+        DiaryFile.reopen(diary_path, key)

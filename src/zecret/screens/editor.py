@@ -100,6 +100,15 @@ class EditorScreen(FormScreen):
         """Whether the text differs from what was opened."""
         return self.body_text != self.original_body
 
+    @property
+    def blocks_lock(self) -> bool:
+        """Unsaved text is exactly what the idle lock must not discard.
+
+        Backing out asks before throwing this away; a timer must not do
+        silently what a keypress is made to confirm.
+        """
+        return self.modified
+
     # --- actions -----------------------------------------------------------
 
     def action_save(self) -> None:

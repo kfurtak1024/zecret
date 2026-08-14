@@ -12,6 +12,15 @@ file matters as much as that does.
 
 ### Added
 
+- The diary locks itself. After fifteen minutes without a keystroke Zecret
+  forgets the diary and the key and asks for the password again; `l` does
+  it on demand. A half-written entry holds the lock off rather than being
+  discarded by a timer, and the wait is configurable in settings, including
+  turning it off.
+- `r` on the entry list re-reads the file. A second Zecret writing to the
+  same diary used to leave this one refusing every save until it was quit
+  and reopened; now there is a way back that does not need the password
+  retyped.
 - A security policy ([SECURITY.md](SECURITY.md)): how to report a
   vulnerability privately, what counts as one, and the list of properties
   that are known and accepted rather than bugs.

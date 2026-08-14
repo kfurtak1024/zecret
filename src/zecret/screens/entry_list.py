@@ -9,7 +9,8 @@ Responsibilities:
     - Keybindings: 'n' write today -> EditorScreen, 'g' pick another day
       -> DatePromptScreen -> EditorScreen, 'enter' open selected day
       -> EditorScreen, 'd' delete selected (with confirmation modal),
-      '/' -> SearchScreen, 's' -> SettingsScreen, 'q' quit.
+      'r' re-read the file, '/' -> SearchScreen, 's' -> SettingsScreen,
+      'q' quit.
     - After returning from EditorScreen/SearchScreen, refresh the list from
       the current in-memory app.diary state (no re-read from disk needed,
       since app.diary is the source of truth during the session), leaving
@@ -44,6 +45,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.widgets import Footer, Label, ListItem, ListView
 
+from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
 from zecret.screens.base import (
     ZecretScreen,
@@ -61,9 +63,13 @@ from zecret.screens.header import DiaryHeader
 from zecret.screens.help import HelpScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
-from zecret.storage import ZecretConflictError
+from zecret.storage import DiaryFile, ZecretConflictError
 
 EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
+
+#: A reload that cannot use the key this session holds. The only other
+#: session that could cause it is one that changed the password.
+RELOAD_REKEYED = "The password was changed elsewhere. Quit and unlock again."
 
 #: Marks the rows that are month headings rather than entries.
 HEADING_CLASS = "group-heading"
@@ -82,8 +88,14 @@ class EntryListScreen(ZecretScreen):
         # through, and guards its own selection accordingly.
         Binding("enter", "open_entry", "Open"),
         Binding("d", "delete_entry", "Delete"),
+        Binding("r", "reload", "Reload"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
+        # A letter, like the rest of this screen's keys, rather than an
+        # app-wide chord: locking from inside the editor would have to
+        # decide what to do with half-written text, and pressing escape
+        # first already answers that question properly.
+        Binding("l", "lock", "Lock"),
         # Bound here rather than app-wide on purpose: a '?' typed into the
         # editor, the search box or a password field must stay a '?'.
         Binding("question_mark", "help", "Help", key_display="?"),
@@ -113,7 +125,14 @@ class EntryListScreen(ZecretScreen):
 
     async def on_screen_resume(self) -> None:
         """Fires when this screen is shown, including after returning from
-        the editor or search -- so the list always reflects app.diary."""
+        the editor or search -- so the list always reflects app.diary.
+
+        Also fires on the way out, as locking pops the screens above this
+        one. There is no diary to draw from by then, and nothing to draw
+        it onto.
+        """
+        if not self.zecret.is_unlocked:
+            return
         await self.refresh_entries()
 
     async def refresh_entries(self) -> None:
@@ -246,6 +265,35 @@ class EntryListScreen(ZecretScreen):
         # This screen's own keys are handed over: HelpScreen cannot import
         # the list it is opened from without closing an import cycle.
         self.app.push_screen(HelpScreen(self.BINDINGS))
+
+    def action_lock(self) -> None:
+        """Put the diary away without leaving the app."""
+        self.zecret.lock()
+
+    def action_reload(self) -> None:
+        """Pick up what another Zecret wrote.
+
+        The way out of a refused save: once the file has changed underneath
+        this session, every save is a conflict until the diary in memory is
+        the one on disk again. Nothing is lost by doing it -- every save
+        here is immediate, so there is no unsaved state to overwrite.
+        """
+        diary, key = self.zecret.unlocked
+        try:
+            reopened = DiaryFile.reopen(diary.path, key)
+        except ZecretDecryptError:
+            # A re-key elsewhere. The session's key opens nothing in the
+            # file now, and the password to derive a new one was not kept.
+            self.notify(RELOAD_REKEYED, severity="error")
+            return
+        except (OSError, ValueError) as error:
+            detail = error.strerror if isinstance(error, OSError) and error.strerror else error
+            self.notify(f"Could not re-read the diary: {detail}.", severity="error")
+            return
+
+        self.zecret.diary = reopened
+        self.notify(f"Reloaded — {count_entries(len(reopened.entries))}.")
+        self.run_worker(self.refresh_entries())
 
     def action_delete_entry(self) -> None:
         entry = self.selected_entry

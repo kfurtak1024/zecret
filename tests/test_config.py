@@ -6,6 +6,8 @@ Required coverage:
     - A corrupt, empty, or wrong-shaped file also yields defaults. A
       mangled preference must never be why the diary cannot be opened.
     - save() round-trips through load(), creating the directory if needed.
+    - The lock timeout round-trips, and a value that is not a whole
+      non-negative number of minutes falls back to the default.
     - Nothing about the diary is written to it.
 """
 
@@ -16,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_THEME, Config
+from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_LOCK_AFTER_MINUTES, DEFAULT_THEME, Config
 
 
 @pytest.fixture
@@ -97,9 +99,11 @@ def test_save_creates_the_directory(tmp_path):
 def test_save_writes_only_preferences(config_path):
     """The one file Zecret writes in the clear says nothing about the
     diary -- no entries, no dates, no password."""
-    config = Config(path=config_path, theme="nord")
+    config = Config(path=config_path, theme="nord", lock_after_minutes=5)
     config.save()
-    assert json.loads(config_path.read_text()) == {"theme": "nord"}
+    # Spelled out rather than checked key by key: this is the assertion
+    # that would catch anything about the diary being added to the file.
+    assert json.loads(config_path.read_text()) == {"theme": "nord", "lock_after_minutes": 5}
 
 
 def test_save_overwrites_an_existing_file(config_path):
@@ -122,3 +126,35 @@ def test_save_replaces_a_corrupt_file(config_path):
 def test_default_config_path_is_under_home():
     """Sanity check that tests never point at the user's own preferences."""
     assert Path.home() / ".zecret" / "config.json" == DEFAULT_CONFIG_PATH
+
+
+def test_the_lock_timeout_round_trips(config_path):
+    Config(path=config_path, lock_after_minutes=30).save()
+    assert Config.load(config_path).lock_after_minutes == 30
+
+
+def test_never_locking_round_trips(config_path):
+    """Zero is a real choice, not a missing value."""
+    Config(path=config_path, lock_after_minutes=0).save()
+    assert Config.load(config_path).lock_after_minutes == 0
+
+
+@pytest.mark.parametrize(
+    "value",
+    [-1, "15", 15.5, True, None, [], {"minutes": 15}],
+    ids=["negative", "string", "fraction", "bool", "null", "list", "object"],
+)
+def test_a_lock_timeout_that_is_not_minutes_falls_back(config_path, value):
+    """A negative wait would lock the diary the instant it opened, and a
+    bool is an int in Python without being a number of minutes."""
+    config_path.write_text(json.dumps({"lock_after_minutes": value}))
+    assert Config.load(config_path).lock_after_minutes == DEFAULT_LOCK_AFTER_MINUTES
+
+
+def test_a_bad_lock_timeout_does_not_cost_the_theme(config_path):
+    """Each preference falls back on its own; one bad value must not throw
+    away the rest of the file."""
+    config_path.write_text(json.dumps({"theme": "nord", "lock_after_minutes": -5}))
+    config = Config.load(config_path)
+    assert config.theme == "nord"
+    assert config.lock_after_minutes == DEFAULT_LOCK_AFTER_MINUTES

@@ -184,6 +184,48 @@ class DiaryFile:
         document = _load_document(path)
         kdf_params = KdfParams.from_dict(document["kdf"])
         key = derive_key(password, kdf_params)
+        return cls._decrypted(path, document, kdf_params, key), key
+
+    @classmethod
+    def reopen(cls, path: Path, key: bytes) -> Self:
+        """Read the diary again with a key this session already holds.
+
+        For picking up what another Zecret wrote. A DiaryFile holds the
+        whole diary in memory and never re-reads it, so once save() has
+        started refusing with ZecretConflictError there is otherwise
+        nothing to do but quit and unlock again -- this is the way back
+        without retyping a password.
+
+        The password is deliberately not kept past unlock, so the key is
+        what there is to reopen with. That is enough unless the other
+        session changed the password: a re-key writes a new salt and new
+        ciphertexts, and this key opens none of it. That surfaces as
+        ZecretDecryptError, the same as any other key that does not fit,
+        and the caller is expected to say so rather than to treat it as a
+        damaged file.
+
+        Returns:
+            A new DiaryFile. The old one is left alone -- a reload that
+            fails must not empty the diary the session is still holding.
+
+        Raises:
+            FileNotFoundError: if the diary has since been deleted.
+            zecret.crypto.ZecretDecryptError: if `key` no longer opens it.
+            ValueError: if the file is not a diary we can parse.
+        """
+        document = _load_document(path)
+        kdf_params = KdfParams.from_dict(document["kdf"])
+        return cls._decrypted(path, document, kdf_params, key)
+
+    @classmethod
+    def _decrypted(
+        cls, path: Path, document: dict[str, Any], kdf_params: KdfParams, key: bytes
+    ) -> Self:
+        """Turn a loaded document into an open diary, given the key for it.
+
+        Shared by unlock() and reopen(), which differ only in where the key
+        came from -- derived from a password, or already in hand.
+        """
         _check_verifier(key, document["verifier"])
 
         entries: dict[dt.date, Entry] = {}
@@ -208,7 +250,7 @@ class DiaryFile:
         diary._records = records
         diary._records_key = _key_fingerprint(key)
         diary._file_stamp = _file_stamp(path)
-        return diary, key
+        return diary
 
     def save(self, key: bytes) -> None:
         """Encrypt any new or modified entries under `key` and atomically
