@@ -1,24 +1,32 @@
-"""Shared base class and formatting helpers for Zecret's screens.
+"""Shared base classes and formatting helpers for Zecret's screens.
 
 Textual types `self.app` as the generic `App`, so every screen would
 otherwise repeat the same cast to reach `diary_path`, `diary` and `key`.
-This keeps that in one place, and with it the rule from CLAUDE.md that
-screens reach the diary only through the app -- never through crypto.py or
-the filesystem directly.
+ZecretScreen keeps that in one place, and with it the rule from CLAUDE.md
+that screens reach the diary only through the app -- never through
+crypto.py or the filesystem directly. FormScreen adds what the screens
+with fields to fill in all need: one error line, and a way to empty the
+fields after a rejected attempt.
 
 The date helpers live here too: a diary is one entry per day, so how a day
 is worded is a decision every screen shares, and "which day is today" is a
 question only this layer asks (models.py takes the date it is given).
+
+And the wording for a save that did not happen, which is the same wherever
+a save is attempted -- three screens attempt one, and none of them should
+be deciding for itself how to describe a diary that changed underneath it.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from textual.screen import Screen
+from textual.widgets import Input, Label
 
 from zecret.models import Entry
+from zecret.storage import ZecretConflictError
 
 if TYPE_CHECKING:
     from zecret.app import ZecretApp
@@ -101,6 +109,22 @@ def day_summary(entry: Entry) -> str:
     return f"{format_day_short(entry.date)}   {body_snippet(entry.body)}"
 
 
+def save_error(error: OSError | ZecretConflictError) -> str:
+    """What to tell the user about a save that did not happen.
+
+    Every screen that saves catches the same two things and has to say the
+    same two things about them, so the wording lives here rather than in
+    three copies that would drift. What each screen adds around this is
+    what the failure cost *there* -- an entry not written, a password not
+    changed -- which is the part that genuinely differs.
+    """
+    if isinstance(error, ZecretConflictError):
+        return DIARY_CHANGED
+    # strerror is None for an OSError raised without an errno, which the
+    # tests do; falling back to the exception keeps the message readable.
+    return f"Could not save: {error.strerror or error}."
+
+
 class ZecretScreen(Screen[None]):
     """A screen with typed access to the running Zecret app."""
 
@@ -108,3 +132,31 @@ class ZecretScreen(Screen[None]):
     def zecret(self) -> ZecretApp:
         """The running app, typed -- `self.app` is only known as App here."""
         return cast("ZecretApp", self.app)
+
+
+class FormScreen(ZecretScreen):
+    """A screen with fields to fill in and one line to say what went wrong.
+
+    Names the error label rather than each screen repeating the query for
+    it. Deliberately not extended to DatePromptScreen, which has an error
+    line of its own shape: it is a ModalScreen returning a date, so it
+    cannot inherit Screen[None], and reaching it would need a mixin that
+    fights both the type system and Textual's widget hierarchy for the sake
+    of one two-line method.
+    """
+
+    #: The id of the Label this screen writes its errors into.
+    ERROR_ID: ClassVar[str]
+
+    def set_error(self, message: str) -> None:
+        """Show `message` on the error line, or clear it when empty."""
+        self.query_one(f"#{self.ERROR_ID}", Label).update(message)
+
+    def clear_inputs(self) -> None:
+        """Empty every text field.
+
+        Used after a rejected attempt: a password left sitting in a widget
+        on an unattended terminal costs more than retyping one does.
+        """
+        for widget in self.query(Input):
+            widget.value = ""

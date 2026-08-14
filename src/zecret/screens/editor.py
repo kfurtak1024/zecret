@@ -27,7 +27,7 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Label, TextArea
 
 from zecret.models import Entry
-from zecret.screens.base import DIARY_CHANGED, ZecretScreen, format_day_long
+from zecret.screens.base import FormScreen, format_day_long, save_error
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.header import DiaryHeader
 from zecret.storage import ZecretConflictError
@@ -38,8 +38,10 @@ DISCARD_QUESTION = "Discard your unsaved changes?"
 EMPTY_ENTRY = "Nothing to save — write something first."
 
 
-class EditorScreen(ZecretScreen):
+class EditorScreen(FormScreen):
     """Write or revise the entry for a single day."""
+
+    ERROR_ID = "editor-error"
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+s", "save", "Save", priority=True),
@@ -132,11 +134,7 @@ class EditorScreen(ZecretScreen):
                 diary.update_entry(existing)
             # Stay put: popping now would throw away text that never
             # reached disk.
-            self.set_error(
-                DIARY_CHANGED
-                if isinstance(error, ZecretConflictError)
-                else f"Could not save: {error.strerror or error}."
-            )
+            self.set_error(save_error(error))
             self.notify("The entry was not saved.", severity="error")
             return
 
@@ -153,6 +151,3 @@ class EditorScreen(ZecretScreen):
     def discard(self, confirmed: bool | None) -> None:
         if confirmed:
             self.dismiss()
-
-    def set_error(self, message: str) -> None:
-        self.query_one("#editor-error", Label).update(message)

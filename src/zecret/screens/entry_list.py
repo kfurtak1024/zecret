@@ -46,12 +46,12 @@ from textual.widgets import Footer, Label, ListItem, ListView
 
 from zecret.models import Entry
 from zecret.screens.base import (
-    DIARY_CHANGED,
     ZecretScreen,
     count_entries,
     day_summary,
     format_day,
     format_month,
+    save_error,
     today,
 )
 from zecret.screens.confirm import ConfirmScreen
@@ -286,10 +286,5 @@ class EntryListScreen(ZecretScreen):
             # The file still holds the entry, so put it back in memory too
             # rather than let the user believe the deletion stuck.
             diary.add_entry(entry)
-            self.notify(
-                DIARY_CHANGED
-                if isinstance(error, ZecretConflictError)
-                else f"Could not save: {error.strerror or error}.",
-                severity="error",
-            )
+            self.notify(save_error(error), severity="error")
         self.run_worker(self.refresh_entries())

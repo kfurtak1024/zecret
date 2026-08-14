@@ -52,9 +52,11 @@ src/zecret/
 ├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
 ├── app.py        # ZecretApp (Textual App subclass): screen routing, holds session state.
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
-│                 # Plus shared pieces: base.py (ZecretScreen, typed access
-│                 # to the app, and the date/snippet formatting every screen
-│                 # shares), header.py (the title bar), confirm.py (yes/no
+│                 # Plus shared pieces: base.py (ZecretScreen for typed
+│                 # access to the app, FormScreen for the screens with
+│                 # fields and an error line, the date/snippet formatting
+│                 # every screen shares, and the wording for a refused
+│                 # save), header.py (the title bar), confirm.py (yes/no
 │                 # modal) and date_prompt.py (which-day modal).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```

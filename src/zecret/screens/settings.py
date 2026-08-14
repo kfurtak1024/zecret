@@ -36,7 +36,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Input, Label, Select
 
-from zecret.screens.base import DIARY_CHANGED, ZecretScreen
+from zecret.screens.base import FormScreen, save_error
 from zecret.screens.header import DiaryHeader
 from zecret.storage import ZecretConflictError
 
@@ -62,10 +62,11 @@ THEMES: list[tuple[str, str]] = [
 ]
 
 
-class SettingsScreen(ZecretScreen):
+class SettingsScreen(FormScreen):
     """Pick a theme, and change the master password."""
 
     SUB_TITLE = "Settings"
+    ERROR_ID = "settings-error"
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Back", priority=True),
@@ -160,11 +161,7 @@ class SettingsScreen(ZecretScreen):
             # Undo the re-key so memory and disk agree again; app.key is
             # deliberately still the old key at this point.
             diary.kdf_params = previous_params
-            self.set_error(
-                DIARY_CHANGED
-                if isinstance(error, ZecretConflictError)
-                else f"Could not save: {error.strerror or error}."
-            )
+            self.set_error(save_error(error))
             self.notify("Your password was not changed.", severity="error")
             return
 
@@ -182,10 +179,3 @@ class SettingsScreen(ZecretScreen):
             theme.expanded = False
             return
         self.dismiss()
-
-    def set_error(self, message: str) -> None:
-        self.query_one("#settings-error", Label).update(message)
-
-    def clear_inputs(self) -> None:
-        for widget in self.query(Input):
-            widget.value = ""

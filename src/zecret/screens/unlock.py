@@ -30,7 +30,7 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Input, Label
 
 from zecret.crypto import ZecretDecryptError
-from zecret.screens.base import ZecretScreen
+from zecret.screens.base import FormScreen
 from zecret.screens.header import DiaryHeader
 from zecret.storage import DiaryFile
 
@@ -40,8 +40,10 @@ from zecret.storage import DiaryFile
 UNLOCK_FAILED = "Incorrect password."
 
 
-class UnlockScreen(ZecretScreen):
+class UnlockScreen(FormScreen):
     """Prompts for the master password and unlocks (or creates) the diary."""
+
+    ERROR_ID = "unlock-error"
 
     # ctrl+q already quits app-wide, but it is hidden by default. Someone
     # who cannot get in needs an obvious way out, so show it here.
@@ -143,10 +145,3 @@ class UnlockScreen(ZecretScreen):
             for widget in inputs:
                 widget.disabled = False
             self.query_one("#password", Input).focus()
-
-    def set_error(self, message: str) -> None:
-        self.query_one("#unlock-error", Label).update(message)
-
-    def clear_inputs(self) -> None:
-        for widget in self.query(Input):
-            widget.value = ""
