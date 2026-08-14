@@ -6,6 +6,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# Hypothesis's example database: machine-local, and regenerated on demand.
+.hypothesis/
 dist/
 build/
 # Diary files -- never commit one, encrypted or not.

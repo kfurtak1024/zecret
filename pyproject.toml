@@ -30,6 +30,7 @@ dev = [
     "ruff>=0.16",
     "mypy>=1.18",
     "pytest-cov>=7",
+    "hypothesis>=6",
 ]
 
 [build-system]
