@@ -117,7 +117,13 @@ Do not weaken any of these for convenience:
    plaintext for "crash recovery" purposes.
 5. **Atomic writes only.** `DiaryFile.save()` must write to a temp file in
    the same directory, `fsync()`, then `os.replace()` over the real path.
-   Never write directly to the live diary file in place.
+   Never write directly to the live diary file in place. Creating a diary
+   is the one exception, and guards a different failure: it writes to the
+   target directly under `O_CREAT|O_EXCL` (`_create_exclusively()`), because
+   the temp-and-rename dance protects a diary that is already there, and
+   the rename is itself the step that would flatten one another process had
+   just created. There is no live file to damage at that point, and a
+   failed creation unlinks what it started.
 6. **Per-entry independent encryption.** Editing or deleting one day's
    entry must never require decrypting or re-encrypting any other entry's
    ciphertext. This is what the storage tests check for explicitly.
@@ -130,7 +136,12 @@ Do not weaken any of these for convenience:
    with no error at all. `save()` compares the file's mtime and size
    against what they were when it last read or wrote it, and raises
    `ZecretConflictError` instead. Every screen that saves rolls its
-   in-memory change back and says so.
+   in-memory change back and says so. The same failure reaches creating a
+   diary by a different road — two Zecrets started with no diary, both
+   passing the "is one there?" check, both going on to write — and the
+   mtime check cannot see it, since neither has a stamp to compare
+   against. That case is closed by the exclusive create in requirement 5,
+   not here.
 
 ## File format
 

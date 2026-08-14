@@ -44,12 +44,17 @@ Writes are always atomic: content is written to a temp file in the same
 directory, fsync'd, then renamed over the target path. This guarantees the
 diary file is never left half-written if the process is interrupted.
 
+Creating a diary is the one write that does not go through that, because
+it is guarding something else. See _create_exclusively().
+
 A save also refuses to overwrite a file that changed since this DiaryFile
 last read or wrote it. Two Zecrets open on the same diary each hold the
 whole thing in memory, so without that check the second one to save would
 write its own copy over the first's and take those entries with it --
 silently, since neither would have any reason to complain. The check turns
-that into ZecretConflictError.
+that into ZecretConflictError. Creating a diary is covered by O_EXCL rather
+than by that check, since a diary being created has no earlier state to
+have diverged from -- but the failure it prevents is the same one.
 
 No plaintext ever touches this module -- it only ever handles the encrypted
 JSON structure plus opaque nonce/ciphertext bytes.
@@ -145,7 +150,11 @@ class DiaryFile:
 
         Raises:
             FileExistsError: if `path` already exists. Overwriting would
-                destroy a diary whose password we have not verified.
+                destroy a diary whose password we have not verified. The
+                check below is a courtesy -- it fails fast, before paying
+                for Argon2, and with a message naming the path -- but it is
+                not what makes this safe. The write itself refuses to
+                create a file that is already there; see _write().
         """
         if path.exists():
             raise FileExistsError(f"a diary already exists at {path}")
@@ -155,7 +164,7 @@ class DiaryFile:
         kdf_params = KdfParams.generate()
         key = derive_key(password, kdf_params)
         diary = cls(path=path, kdf_params=kdf_params, entries={})
-        diary.save(key)
+        diary._write(key, exclusive=True)
         return diary, key
 
     @classmethod
@@ -222,6 +231,28 @@ class DiaryFile:
             OSError: if the write itself fails.
         """
         self._check_unchanged()
+        self._write(key)
+
+    def _write(self, key: bytes, *, exclusive: bool = False) -> None:
+        """Encrypt what needs encrypting and put the whole diary on disk.
+
+        The body of save(), minus the conflict check, so that create_new()
+        can share it without one -- a diary being created has no earlier
+        state to have diverged from.
+
+        `exclusive` is what create_new() adds instead: the file must not
+        already exist, and that has to be decided by the write itself.
+        Checking first and writing after is two steps, and another Zecret
+        can create the diary in between -- the whole time this one spends
+        deriving a key, in fact, which is deliberately most of a second.
+        The loser of that race would otherwise replace the winner's diary
+        with an empty one and report success, which is exactly the silent
+        overwrite the conflict check exists to prevent.
+
+        Raises:
+            FileExistsError: if `exclusive` and the file now exists.
+            OSError: if the write itself fails.
+        """
         fingerprint = _key_fingerprint(key)
         reusable = self._records if fingerprint == self._records_key else {}
 
@@ -256,7 +287,11 @@ class DiaryFile:
             },
             "entries": payload,
         }
-        _atomic_write(self.path, json.dumps(document).encode("utf-8"))
+        encoded = json.dumps(document).encode("utf-8")
+        if exclusive:
+            _create_exclusively(self.path, encoded)
+        else:
+            _atomic_write(self.path, encoded)
 
         # Only adopt the new records once the write has actually landed, so
         # a failed save leaves the cache describing what is really on disk.
@@ -467,6 +502,42 @@ def _atomic_write(path: Path, data: bytes) -> None:
         tmp_path.unlink(missing_ok=True)
         raise
     _fsync_directory(directory)
+
+
+def _create_exclusively(path: Path, data: bytes) -> None:
+    """Write `data` to `path`, refusing a path that already holds a file.
+
+    O_EXCL makes the "is it there?" and the "claim it" one indivisible step,
+    which is the only version of that question another process cannot get
+    between. Used to create a diary, never to update one.
+
+    Written straight to the target rather than through the temp file that
+    _atomic_write() uses, because the two protect against different things.
+    That dance exists so an interrupted write cannot damage the diary
+    already on disk; here there is nothing on disk to damage, and a temp
+    file would have to be renamed into place, which is precisely the step
+    that would happily flatten a diary someone else had just created. What
+    an interruption can leave behind is a stub of a file at a path that was
+    empty a moment ago -- so the window is kept to a single small write,
+    after the slow key derivation rather than before it, and anything that
+    goes wrong takes the stub with it.
+
+    Raises:
+        FileExistsError: if something is already at `path`.
+        OSError: if the write fails for any other reason.
+    """
+    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, FILE_MODE)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    # O_EXCL honours the mode only where the umask allows it.
+    _restrict(path, FILE_MODE)
+    _fsync_directory(path.parent)
 
 
 def _restrict(target: Path, mode: int) -> None:

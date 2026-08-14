@@ -155,8 +155,10 @@ your preferences and nothing about what you wrote.
   empty or partial diary. The header carries an encrypted verifier, so this
   holds even for a diary with no entries yet.
 - **Durability** — saves are atomic (temp file → `fsync` → `os.replace`),
-  so an interrupted write can never leave a half-written diary. The file is
-  created `0600`.
+  so an interrupted save can never leave a half-written diary. Creating a
+  diary instead claims the path with `O_EXCL`, so two first runs racing each
+  other cannot end with one written over the other; a creation that fails
+  removes what it started. The file is created `0600`.
 
 Plaintext is never written to disk — not as temp files, not as logs, not
 for crash recovery.

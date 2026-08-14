@@ -391,11 +391,11 @@ footer p.right { margin-left: auto; }
       </div>
       <div>
         <dt>Durability</dt>
-        <dd>Saves are atomic: temp file, <span class="mono">fsync</span>, then rename over the original. An interrupted write cannot leave a half-written diary, and the file is created <span class="mono">0600</span>.</dd>
+        <dd>Saves are atomic: temp file, <span class="mono">fsync</span>, then rename over the original. An interrupted save cannot leave a half-written diary, and the file is created <span class="mono">0600</span>.</dd>
       </div>
       <div>
         <dt>Two windows open</dt>
-        <dd>A second Zecret on the same file is detected before anything is written, so one session cannot silently overwrite what the other just saved.</dd>
+        <dd>A second Zecret on the same file is detected before anything is written, so one session cannot silently overwrite what the other just saved. Creating a diary claims the path in the same indivisible step that writes it, so two first runs cannot land on top of each other either.</dd>
       </div>
       <div>
         <dt>Plaintext</dt>

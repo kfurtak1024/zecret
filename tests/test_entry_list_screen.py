@@ -14,6 +14,9 @@ Required coverage:
     - Confirmed delete removes the entry from memory AND from disk, and
       leaves the other entries intact.
     - The list refreshes from app.diary whenever the screen is resumed.
+    - That refresh keeps the reader where they were: on the day they had
+      highlighted, or -- when that day was the one just deleted -- on the
+      next older day, which has moved up into its place.
 """
 
 from __future__ import annotations
@@ -560,3 +563,72 @@ async def test_entry_at_ignores_a_row_that_is_not_there(diary_path):
         assert screen.entry_at(-1) is None
         assert screen.entry_at(len(screen.rows)) is None
         assert screen.entry_at(0) is None, "row 0 is a month heading"
+
+
+# --- keeping the reader's place --------------------------------------------
+
+
+async def test_the_cursor_stays_on_the_day_you_opened(diary_path):
+    """A rebuild is a redraw. Sending someone back to the newest entry
+    every time they read one would make a long diary unreadable."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for _ in range(3):  # down past the March/February heading
+            await pilot.press("down")
+            await pilot.pause()
+        row, day = app.screen.query_one("#entries", ListView).index, app.screen.selected_entry.date
+        assert day == FEBRUARY[1]
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.query_one("#entries", ListView).index == row
+        assert app.screen.selected_entry.date == day
+
+
+async def test_deleting_a_day_leaves_the_cursor_on_the_next_older_one(diary_path):
+    """The day below has moved up into the gap, which is where the eye is."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == MARCH[1]
+
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.selected_entry.date == MARCH[0]
+
+
+async def test_deleting_the_oldest_day_leaves_the_cursor_at_the_foot(diary_path):
+    """Nothing older is left to fall onto, and the reader was at the bottom
+    of the list -- so that is where they stay, not back at the top."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for _ in range(len(app.screen.rows)):
+            await pilot.press("down")
+            await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[0], "not at the oldest day"
+
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+
+        screen = app.screen
+        assert screen.query_one("#entries", ListView).index == len(screen.rows) - 1
+        assert screen.selected_entry.date == FEBRUARY[1]

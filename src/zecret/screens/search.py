@@ -7,12 +7,15 @@ plaintext is ever written to disk as part of search.
 
 Selecting a result opens it in the editor, so search is a way into an entry
 rather than a dead end; the results refresh on return, since the entry may
-have been edited or its text may no longer match.
+have been edited or its text may no longer match. That refresh keeps the
+cursor on the day it was on where that day is still a result, so coming
+back from an entry does not cost you the one you were reading.
 """
 
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 from typing import ClassVar
 
 from textual.app import ComposeResult
@@ -90,15 +93,37 @@ class SearchScreen(ZecretScreen):
             )
 
             results = self.query_one("#results", ListView)
+            was_on = self.highlighted_date
             await results.clear()
-            for entry in self.results:
-                await results.append(ListItem(Label(entry_summary(entry))))
+            # One mount pass, not one per result: see EntryListScreen, where
+            # appending row by row made a long diary take a minute to draw.
+            await results.extend(ListItem(Label(entry_summary(entry))) for entry in self.results)
 
             found = bool(self.results)
             self.query_one("#search-empty", Label).display = not found
             results.display = found
             if found:
-                results.index = 0
+                results.index = self.row_for(was_on)
+
+    @property
+    def highlighted_date(self) -> dt.date | None:
+        """The day the cursor is on, or None if there is nothing under it."""
+        index = self.query_one("#results", ListView).index
+        if index is None or not 0 <= index < len(self.results):
+            return None
+        return self.results[index].date
+
+    def row_for(self, date: dt.date | None) -> int:
+        """Where to leave the cursor once the results have been rebuilt.
+
+        On the same day, if it is still a result: returning from the editor
+        should not lose the reader's place, and narrowing a query that still
+        matches what they were reading should not either. Otherwise the top,
+        which is what a new set of results deserves.
+        """
+        if date is None:
+            return 0
+        return next((row for row, entry in enumerate(self.results) if entry.date == date), 0)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         index = event.list_view.index

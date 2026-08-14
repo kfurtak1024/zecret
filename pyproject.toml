@@ -48,15 +48,23 @@ python_version = "3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Coverage is not in addopts: a plain `uv run pytest` stays fast for the
-# edit-run loop. CI asks for it explicitly, with the threshold below.
-addopts = ["--strict-markers", "--strict-config"]
+# Neither coverage nor the scale tests are in the default run: a plain
+# `uv run pytest` stays fast for the edit-run loop. CI asks for both
+# explicitly (`--cov -m ""`), so neither can quietly erode on main.
+addopts = ["--strict-markers", "--strict-config", "-m", "not slow"]
 xfail_strict = true
 asyncio_mode = "auto"
 # Pinned explicitly: pytest-asyncio warns when this is left to default.
 asyncio_default_fixture_loop_scope = "function"
 # Crypto code must not be allowed to pass tests while emitting deprecations.
 filterwarnings = ["error"]
+markers = [
+    # tests/test_scale.py builds a diary of years to check that drawing it
+    # has not gone quadratic again. Worth guarding, but it costs seconds
+    # where every other test costs milliseconds, so it is deselected above
+    # and CI selects it back with `-m ""`.
+    "slow: builds a large diary; seconds rather than milliseconds",
+]
 
 [tool.coverage.run]
 source = ["zecret"]

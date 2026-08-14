@@ -5,7 +5,7 @@ Required coverage:
     - Typing filters live over the entry text, case-insensitively.
     - No matches shows an empty state rather than a blank list.
     - Selecting a result opens that day in the editor; results refresh on
-      return.
+      return, with the cursor still on the day that was opened.
     - Escape returns to the list.
     - Searching never writes anything to disk.
 """
@@ -271,3 +271,58 @@ async def test_enter_on_an_empty_result_list_stays_put(stocked):
         await pilot.pause()
         assert isinstance(app.screen, SearchScreen)
         assert app.screen.focused is app.screen.query_one("#query", Input)
+
+
+# --- keeping the reader's place --------------------------------------------
+
+
+async def test_the_cursor_stays_on_the_result_you_opened(stocked):
+    """Returning from an entry should not cost you the one you were on."""
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        await pilot.press("enter")  # focus the results
+        await pilot.pause()
+        await pilot.press("down", "down")  # the oldest of the three
+        await pilot.pause()
+        assert app.screen.query_one("#results", ListView).index == 2
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.query_one("#results", ListView).index == 2
+
+
+async def test_a_query_that_drops_the_highlighted_day_starts_at_the_top(stocked):
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("down", "down")
+        await pilot.pause()
+        assert app.screen.query_one("#results", ListView).index == 2
+
+        await type_query(pilot, "frost")
+        assert app.screen.query_one("#results", ListView).index == 0
+
+
+async def test_the_highlighted_day_is_none_when_the_cursor_is_off_the_results(stocked):
+    """The guard that keeps highlighted_date total, exercised directly:
+    the widgets above it cannot normally desync from self.results."""
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        screen = app.screen
+        screen.query_one("#results", ListView).index = None
+        assert screen.highlighted_date is None
+        screen.results = []
+        assert screen.highlighted_date is None
+        assert screen.row_for(None) == 0

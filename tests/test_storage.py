@@ -15,6 +15,9 @@ Required coverage:
       no other entries are affected.
     - save() is atomic: simulate/verify no partial file is left if
       interrupted (e.g. check a temp file is used and renamed).
+    - create_new() refuses a path that gained a diary while it was busy
+      deriving the key, rather than writing over it, and leaves nothing
+      behind if the write fails.
     - change_password() + save() + unlock() with the NEW password succeeds,
       and unlock() with the OLD password now fails.
 """
@@ -30,6 +33,7 @@ from pathlib import Path
 
 import pytest
 
+from zecret import storage
 from zecret.crypto import KdfParams, ZecretDecryptError, derive_key, encrypt
 from zecret.models import Entry
 from zecret.storage import (
@@ -41,6 +45,8 @@ from zecret.storage import (
 
 PASSWORD = "correct horse battery staple"
 WRONG_PASSWORD = "Correct horse battery staple"
+#: The other Zecret in the create-a-diary race.
+WINNER_PASSWORD = "the password that got there first"
 NEW_PASSWORD = "an entirely different passphrase"
 
 DAYS = [dt.date(2026, 8, 11), dt.date(2026, 8, 12), dt.date(2026, 8, 13)]
@@ -119,6 +125,50 @@ def test_create_new_refuses_to_overwrite_existing_file(diary_path):
     with pytest.raises(FileExistsError):
         DiaryFile.create_new(diary_path, "some other password")
     assert diary_path.read_bytes() == before, "existing diary must be untouched"
+
+
+def test_create_new_refuses_a_diary_that_appears_while_it_derives(diary_path, monkeypatch):
+    """The gap between "is a diary there?" and writing one is as long as
+    Argon2 takes, which is deliberately most of a second. Two Zecrets
+    started with no diary can both pass the check and both go on to write;
+    without an exclusive create the second lands on top of the first and
+    reports success, and the first person's entries are gone.
+
+    The race is reproduced by having the loser's key derivation be when the
+    winner creates their diary.
+    """
+    real_derive = storage.derive_key
+
+    def derive_and_lose_the_race(password, params):
+        if password == PASSWORD:
+            monkeypatch.setattr(storage, "derive_key", real_derive)
+            winner, winner_key = DiaryFile.create_new(diary_path, WINNER_PASSWORD)
+            winner.add_entry(Entry.new(DAYS[0], "The winner's first day"))
+            winner.save(winner_key)
+        return real_derive(password, params)
+
+    monkeypatch.setattr(storage, "derive_key", derive_and_lose_the_race)
+
+    with pytest.raises(FileExistsError):
+        DiaryFile.create_new(diary_path, PASSWORD)
+
+    # The winner's diary is still theirs, and still has what they wrote.
+    survivor, _ = DiaryFile.unlock(diary_path, WINNER_PASSWORD)
+    assert survivor.entry_for(DAYS[0]).body == "The winner's first day"
+
+
+def test_create_new_leaves_nothing_behind_when_the_write_fails(diary_path, monkeypatch):
+    """A stub of a file at a path that was empty a moment ago would send the
+    next launch to the unlock screen for a diary that is not there."""
+
+    def no_room(_descriptor):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(os, "fsync", no_room)
+
+    with pytest.raises(OSError):
+        DiaryFile.create_new(diary_path, PASSWORD)
+    assert not diary_path.exists()
 
 
 def test_create_new_uses_a_fresh_salt_per_diary(tmp_path):
@@ -555,6 +605,24 @@ def test_reopening_clears_the_conflict(diary_path):
 
     final, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert set(final.entries) == set(DAYS) | {UNWRITTEN_DAY, dt.date(2026, 7, 1)}
+
+
+def test_a_diary_that_has_never_written_has_nothing_to_conflict_with(diary_path):
+    """_file_stamp is None until a write of this session's lands, and a
+    DiaryFile that has never written cannot be overwriting anyone.
+
+    create_new() used to be how that state reached save(); it now writes
+    exclusively instead and never goes through the conflict check at all.
+    The case is still real for a DiaryFile built directly, and is still the
+    right answer for it, so it is covered here rather than left to rot.
+    """
+    diary = DiaryFile(path=diary_path, kdf_params=KdfParams.generate(), entries={})
+    key = derive_key(PASSWORD, diary.kdf_params)
+    diary.add_entry(Entry.new(DAYS[0], "Written by a hand-built diary"))
+    diary.save(key)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entry_for(DAYS[0]).body == "Written by a hand-built diary"
 
 
 def test_repeated_saves_from_one_session_never_conflict(diary_path):

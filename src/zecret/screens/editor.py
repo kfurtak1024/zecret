@@ -33,6 +33,8 @@ from zecret.screens.header import DiaryHeader
 from zecret.storage import ZecretConflictError
 
 DISCARD_QUESTION = "Discard your unsaved changes?"
+#: Shown for an empty body and for one that is only whitespace, which
+#: amounts to the same thing and reads the same way in the list.
 EMPTY_ENTRY = "Nothing to save — write something first."
 
 
@@ -100,7 +102,12 @@ class EditorScreen(ZecretScreen):
 
     def action_save(self) -> None:
         body = self.body_text
-        if not body:
+        # Blank means blank, not just zero-length: a body of spaces and
+        # newlines is what the list already renders as "(empty)", so
+        # accepting it here would file a day under text nobody wrote. The
+        # text is stored as typed -- only the question of whether there is
+        # any is asked with the whitespace taken off.
+        if not body.strip():
             self.set_error(EMPTY_ENTRY)
             return
 

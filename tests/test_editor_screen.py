@@ -221,6 +221,40 @@ async def test_an_empty_entry_is_refused(diary_path):
         assert app.diary.entries == {}
 
 
+async def test_an_entry_of_only_whitespace_is_refused(diary_path):
+    """The list renders a body of spaces and newlines as "(empty)", so
+    letting one through would file a day under nothing anyone wrote."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "   \n\n\t  \n"
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen), "must not leave"
+        assert str(app.screen.query_one("#editor-error", Label).content) == EMPTY_ENTRY
+        assert app.diary.entries == {}
+
+
+async def test_surrounding_whitespace_is_kept_on_a_body_that_has_text(diary_path):
+    """Only the question of whether there is any text is asked with the
+    whitespace off; what gets stored is what was typed."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "  indented thought\n"
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.diary.entry_for(TODAY).body == "  indented thought\n"
+
+
 # --- editing ---------------------------------------------------------------
 
 

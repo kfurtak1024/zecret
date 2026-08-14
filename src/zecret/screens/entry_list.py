@@ -12,7 +12,9 @@ Responsibilities:
       '/' -> SearchScreen, 's' -> SettingsScreen, 'q' quit.
     - After returning from EditorScreen/SearchScreen, refresh the list from
       the current in-memory app.diary state (no re-read from disk needed,
-      since app.diary is the source of truth during the session).
+      since app.diary is the source of truth during the session), leaving
+      the cursor on the day it was on -- a refresh is a redraw, not a
+      reason to send a reader of a years-long diary back to the top.
 
 'n' and 'g' both land on a date rather than on a new entry: the editor
 opens whatever that day holds, so writing more about today just continues
@@ -122,8 +124,12 @@ class EntryListScreen(ZecretScreen):
             entries = sorted(diary.entries.values(), key=lambda entry: entry.date, reverse=True)
 
             list_view = self.query_one("#entries", ListView)
+            # Read before clearing: rebuilding is what loses the reader's
+            # place, so where they were has to be taken down first.
+            was_on = self.highlighted_date
             await list_view.clear()
             self.rows = []
+            items: list[ListItem] = []
             # Sorted by date, so each month's entries are already adjacent.
             for first_of_month, group in groupby(
                 entries, key=lambda entry: entry.date.replace(day=1)
@@ -133,12 +139,15 @@ class EntryListScreen(ZecretScreen):
                 heading = f"{format_month(first_of_month)} · {count_entries(len(month))}"
                 # Disabled, so the cursor steps over it and clicks on it do
                 # nothing -- it is a signpost, not somewhere to be.
-                await list_view.append(
-                    ListItem(Label(heading), disabled=True, classes=HEADING_CLASS)
-                )
+                items.append(ListItem(Label(heading), disabled=True, classes=HEADING_CLASS))
                 for entry in month:
                     self.rows.append(entry)
-                    await list_view.append(ListItem(Label(day_summary(entry))))
+                    items.append(ListItem(Label(day_summary(entry))))
+
+            # Mounted in one pass. Appending row by row re-lays-out every row
+            # already mounted, which is quadratic: a decade of entries took
+            # over a minute to draw, on every return to this screen.
+            await list_view.extend(items)
 
             self.sub_title = "no entries" if not entries else count_entries(len(entries))
 
@@ -146,16 +155,54 @@ class EntryListScreen(ZecretScreen):
             self.query_one("#entries-empty", Label).display = not has_entries
             list_view.display = has_entries
             if has_entries:
-                # Not index 0: that is a month heading, and assigning an
+                # Never left at 0: that is a month heading, and assigning an
                 # index is not filtered by the skip-disabled rule that
                 # cursor movement follows -- Enter would then open nothing.
-                list_view.index = self.first_entry_row
+                list_view.index = self.row_for(was_on)
                 list_view.focus()
 
     @property
     def first_entry_row(self) -> int | None:
         """The row of the newest entry, past the heading it sits under."""
         return next((row for row, entry in enumerate(self.rows) if entry is not None), None)
+
+    @property
+    def last_entry_row(self) -> int | None:
+        """The row of the oldest entry, at the bottom of the list."""
+        return next(
+            (row for row in reversed(range(len(self.rows))) if self.rows[row] is not None), None
+        )
+
+    @property
+    def highlighted_date(self) -> dt.date | None:
+        """The day the cursor is on, or None if it is not on an entry."""
+        entry = self.selected_entry
+        return None if entry is None else entry.date
+
+    def row_for(self, date: dt.date | None) -> int | None:
+        """The row to put the cursor on to leave the reader where they were.
+
+        `date` is the day highlighted before the rebuild. Usually it still
+        has a row and the cursor simply lands back on it -- returning from
+        the editor should not cost someone their place halfway down a diary
+        of years. When the day is gone, it was just deleted, and the next
+        older day has moved up into the space it left, which is where the
+        eye already is. Rows run newest first, so that is the first row not
+        newer than `date`.
+        """
+        if date is None:
+            return self.first_entry_row
+        same_or_older = next(
+            (
+                row
+                for row, entry in enumerate(self.rows)
+                if entry is not None and entry.date <= date
+            ),
+            None,
+        )
+        # Nothing that old is left: the deleted day was the oldest one, so
+        # the cursor was at the foot of the list and belongs there still.
+        return self.last_entry_row if same_or_older is None else same_or_older
 
     def entry_at(self, row: int | None) -> Entry | None:
         """The entry a row shows, or None for a heading or a missing row."""
