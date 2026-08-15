@@ -1,19 +1,29 @@
-"""The title bar every screen wears.
+"""The bars every screen wears: the title above, the keys below.
 
 Textual's own Header is deliberately not used. It docks an icon that opens
 the command palette, and clicking anywhere on it toggles a taller variant --
 two behaviours this app does not want and cannot switch off, only style
 around. Zecret's chrome does one thing: say what this is and where you are.
 
-So this is a plain Static that renders the same title text (deferring to
-App.format_title, so the "Zecret — Search" styling matches what Textual
+So DiaryHeader is a plain Static that renders the same title text (deferring
+to App.format_title, so the "Zecret — Search" styling matches what Textual
 would produce) and watches the same four reactives Textual's header does:
 screen title and sub-title, falling back to the app's.
+
+DiaryFooter is Textual's Footer in its compact spelling, which is one place
+rather than five so the bar cannot end up looking different depending on
+which screen you are on. Compact because the entry list advertises nine
+keys and the roomy spelling needs 102 columns to lay them out; a terminal
+is 80, and a footer that stops mid-word at "? Hel" is worse than a tight
+one. It fits 80 exactly, so this is the setting that gives way if the app
+ever grows another key -- see the note in CLAUDE.md.
 """
 
 from __future__ import annotations
 
-from textual.widgets import Static
+from typing import Any
+
+from textual.widgets import Footer, Static
 
 
 class DiaryHeader(Static):
@@ -41,3 +51,19 @@ class DiaryHeader(Static):
                 self.app.sub_title if screen_sub_title is None else screen_sub_title,
             )
         )
+
+
+class DiaryFooter(Footer):
+    """The key bar, compact so the entry list's keys fit an 80-column terminal.
+
+    A subclass rather than `Footer(compact=True)` written out on every
+    screen: the five of them must agree, and one of them quietly not
+    agreeing is exactly the kind of thing nobody notices.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        # Passed to __init__ rather than set as a class attribute, since
+        # `compact` is a Textual reactive and assigning a plain value over
+        # it in a subclass replaces the descriptor instead of the default.
+        kwargs.setdefault("compact", True)
+        super().__init__(**kwargs)

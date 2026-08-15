@@ -294,21 +294,37 @@ def test_unlock_preserves_kdf_params(diary_path):
     assert reopened.kdf_params == diary.kdf_params
 
 
-def test_unlock_rejects_unknown_format_version(diary_path):
+def test_the_format_version_is_one(diary_path):
+    """Pinned deliberately. The number was reset to 1 while nothing
+    depended on it; changing it again means writing a migration, not
+    editing this constant."""
+    populated(diary_path)
+    assert FORMAT_VERSION == 1
+    assert read_document(diary_path)["version"] == 1
+
+
+@pytest.mark.parametrize(
+    "version",
+    [0, 2, 99, -1, "1", 1.0, True, None, [1], {"major": 1}],
+    ids=["zero", "next", "far", "negative", "string", "float", "bool", "null", "list", "object"],
+)
+def test_unlock_rejects_any_other_format_version(diary_path, version):
+    """An exact match, not a range: a file written by a Zecret that knows a
+    format this one does not must be refused rather than half-read. The
+    neighbouring numbers matter most -- those are the ones a future version
+    will actually use."""
     populated(diary_path)
     document = read_document(diary_path)
-    document["version"] = 99
+    document["version"] = version
     diary_path.write_text(json.dumps(document))
     with pytest.raises(ValueError):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
-def test_unlock_rejects_the_retired_version_1_format(diary_path):
-    """Version 1 was UUID-and-title keyed. It is not migrated, so it must
-    be refused outright rather than half-read as if it were version 2."""
+def test_unlock_rejects_a_file_with_no_version_at_all(diary_path):
     populated(diary_path)
     document = read_document(diary_path)
-    document["version"] = 1
+    del document["version"]
     diary_path.write_text(json.dumps(document))
     with pytest.raises(ValueError):
         DiaryFile.unlock(diary_path, PASSWORD)

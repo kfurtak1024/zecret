@@ -10,6 +10,12 @@ typed out.
 Prose is deliberately not checked. What is checked are the facts a reader
 would act on: which keys exist, how many themes there are, the Argon2
 parameters, and which Python it needs.
+
+On keys the check runs both ways but is not symmetric: every key the app
+puts in its footer must be on the page, and no key on the page may be one
+the app does not have. In between sit the bindings that never reach the
+footer -- navigation, mostly -- which the page is free to describe in prose
+rather than to tabulate.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from textual.binding import Binding
 from zecret.crypto import KdfParams
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
-from zecret.screens.help import shown_bindings
+from zecret.screens.help import documented_bindings
 from zecret.screens.settings import THEMES
 
 REPO = Path(__file__).resolve().parents[1]
@@ -65,19 +71,40 @@ def page_keys(page: str) -> set[str]:
 
 
 def app_keys() -> set[str]:
-    """Every key the app advertises on the two screens the page covers."""
+    """Every key the app binds on the two screens the page covers.
+
+    The page may list any of these; it may not list anything else.
+    """
     return {
         key_display(binding)
         for screen in (EntryListScreen, EditorScreen)
-        for binding in shown_bindings(screen.BINDINGS)
+        for binding in documented_bindings(screen.BINDINGS)
+    }
+
+
+def required_keys() -> set[str]:
+    """The keys the page must carry: the ones the app puts in its footer.
+
+    Not the whole keymap. Getting around the list takes eight bindings that
+    pair up into four ideas, and spelling each out would turn a table
+    someone skims into one they skip -- the page says what they are in
+    prose instead, and the in-app help popup is the exhaustive reference.
+    What must never happen is the page naming a key the app does not have,
+    or dropping one the app puts in front of every user.
+    """
+    return {
+        key_display(binding)
+        for screen in (EntryListScreen, EditorScreen)
+        for binding in documented_bindings(screen.BINDINGS)
+        if binding.show
     }
 
 
 # --- keys ------------------------------------------------------------------
 
 
-def test_the_page_lists_every_key_the_app_advertises(page):
-    missing = app_keys() - page_keys(page)
+def test_the_page_lists_every_key_the_app_puts_in_its_footer(page):
+    missing = required_keys() - page_keys(page)
     assert not missing, f"docs/index.html does not mention: {sorted(missing)}"
 
 

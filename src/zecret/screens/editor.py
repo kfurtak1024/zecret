@@ -24,12 +24,12 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
-from textual.widgets import Footer, Label, TextArea
+from textual.widgets import Label, TextArea
 
 from zecret.models import Entry
 from zecret.screens.base import FormScreen, format_day_long, save_error
 from zecret.screens.confirm import ConfirmScreen
-from zecret.screens.header import DiaryHeader
+from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import ZecretConflictError
 
 DISCARD_QUESTION = "Discard your unsaved changes?"
@@ -77,7 +77,7 @@ class EditorScreen(FormScreen):
                 id="body",
             )
             yield Label("", id="editor-error")
-        yield Footer()
+        yield DiaryFooter()
 
     def on_mount(self) -> None:
         day = format_day_long(self.date)

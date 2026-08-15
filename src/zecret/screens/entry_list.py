@@ -6,11 +6,12 @@ Responsibilities:
       under a heading per month ("August 2026 · 12 entries"). Because the
       heading names the month, the rows under it need only the weekday and
       day of the month.
-    - Keybindings: 'n' write today -> EditorScreen, 'g' pick another day
+    - Keybindings: 'n' write today -> EditorScreen, 'a' pick another day
       -> DatePromptScreen -> EditorScreen, 'enter' open selected day
       -> EditorScreen, 'd' delete selected (with confirmation modal),
       'r' re-read the file, '/' -> SearchScreen, 's' -> SettingsScreen,
-      'q' quit.
+      'L' lock, 'q' quit. Plus getting around a long diary: j/k, g/G,
+      home/end and the page keys, none of which reach the footer.
     - After returning from EditorScreen/SearchScreen, refresh the list from
       the current in-memory app.diary state (no re-read from disk needed,
       since app.diary is the source of truth during the session), leaving
@@ -43,7 +44,7 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.widgets import Footer, Label, ListItem, ListView
+from textual.widgets import Label, ListItem, ListView
 
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
@@ -59,7 +60,7 @@ from zecret.screens.base import (
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
-from zecret.screens.header import DiaryHeader
+from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.screens.help import HelpScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
@@ -78,24 +79,17 @@ HEADING_CLASS = "group-heading"
 class EntryListScreen(ZecretScreen):
     """Lists the days written and routes to write/edit/search/settings."""
 
+    #: `show` decides what goes in the footer and nothing else -- the help
+    #: popup lists every binding here regardless. The bar holds about eighty
+    #: columns and these seven fill sixty-four of them, which leaves room
+    #: for the next one; everything below them is no less real for being
+    #: found through '?' instead.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("n", "today", "Today"),
-        Binding("g", "another_day", "Another day"),
-        # ListView has focus and handles Enter itself, posting Selected --
-        # which on_list_view_selected turns into the same call. This binding
-        # is what puts "Open" in the footer; the action behind it is a
-        # second door onto the same room rather than the one you walk
-        # through, and guards its own selection accordingly.
-        Binding("enter", "open_entry", "Open"),
+        Binding("a", "another_day", "Another day"),
         Binding("d", "delete_entry", "Delete"),
-        Binding("r", "reload", "Reload"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
-        # A letter, like the rest of this screen's keys, rather than an
-        # app-wide chord: locking from inside the editor would have to
-        # decide what to do with half-written text, and pressing escape
-        # first already answers that question properly.
-        Binding("l", "lock", "Lock"),
         # Bound here rather than app-wide on purpose: a '?' typed into the
         # editor, the search box or a password field must stay a '?'.
         Binding("question_mark", "help", "Help", key_display="?"),
@@ -103,6 +97,37 @@ class EntryListScreen(ZecretScreen):
         # node that declares it, and a Screen has no action_quit -- an
         # unqualified "quit" here silently does nothing.
         Binding("q", "app.quit", "Quit"),
+        # --- real, but not worth the width -------------------------------
+        # ListView has focus and handles Enter itself, posting Selected --
+        # which on_list_view_selected turns into the same call. The action
+        # behind this binding is a second door onto the same room rather
+        # than the one you walk through, and guards its own selection
+        # accordingly. Hidden because the ListView's own enter binding
+        # shadows it in the bar anyway: it never rendered there.
+        Binding("enter", "open_entry", "Open", show=False),
+        Binding("r", "reload", "Reload", show=False),
+        # Shift-L, leaving l to the hjkl cluster below. A letter rather than
+        # an app-wide chord: locking from inside the editor would have to
+        # decide what to do with half-written text, and pressing escape
+        # first already answers that question properly.
+        Binding("L", "lock", "Lock", show=False),
+        # --- getting around ----------------------------------------------
+        # A diary kept for years is a long list, and arrow keys alone make
+        # its far end hundreds of presses away. j/k/g/G are what a terminal
+        # reader will try first; home/end/page are what everyone else will.
+        # j/k/g/G are ours alone. home, end and the page keys are not:
+        # ListView inherits them from ScrollView, which scrolls the view
+        # without moving the highlight -- leaving the cursor somewhere off
+        # screen. `priority` takes them back, which is safe here because
+        # this screen has no text field for them to mean anything else in.
+        Binding("j", "cursor_down", "Down a day", show=False),
+        Binding("k", "cursor_up", "Up a day", show=False),
+        Binding("pagedown", "page_down", "Down a screenful", show=False, priority=True),
+        Binding("pageup", "page_up", "Up a screenful", show=False, priority=True),
+        Binding("g", "first_entry", "Newest entry", show=False),
+        Binding("home", "first_entry", "Newest entry", show=False, priority=True),
+        Binding("G", "last_entry", "Oldest entry", show=False),
+        Binding("end", "last_entry", "Oldest entry", show=False, priority=True),
     ]
 
     def __init__(self) -> None:
@@ -121,7 +146,7 @@ class EntryListScreen(ZecretScreen):
         yield DiaryHeader()
         yield Label(EMPTY_MESSAGE, id="entries-empty")
         yield ListView(id="entries")
-        yield Footer()
+        yield DiaryFooter()
 
     async def on_screen_resume(self) -> None:
         """Fires when this screen is shown, including after returning from
@@ -301,6 +326,66 @@ class EntryListScreen(ZecretScreen):
             return
         question = f"Delete the entry for {format_day(entry.date)}? This cannot be undone."
         self.app.push_screen(ConfirmScreen(question), self.confirm_delete(entry))
+
+    # --- getting around ----------------------------------------------------
+
+    def action_cursor_down(self) -> None:
+        """j, handed to the ListView, which already steps over headings."""
+        self.query_one("#entries", ListView).action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        self.query_one("#entries", ListView).action_cursor_up()
+
+    def action_page_down(self) -> None:
+        self.move_cursor(self.page_rows)
+
+    def action_page_up(self) -> None:
+        self.move_cursor(-self.page_rows)
+
+    def action_first_entry(self) -> None:
+        self.move_cursor_to(self.first_entry_row)
+
+    def action_last_entry(self) -> None:
+        self.move_cursor_to(self.last_entry_row)
+
+    @property
+    def page_rows(self) -> int:
+        """A screenful, less a row, so the jump keeps something in view."""
+        return max(1, self.query_one("#entries", ListView).size.height - 1)
+
+    def move_cursor(self, rows: int) -> None:
+        """Move the highlight `rows` rows, landing on a day.
+
+        Assigning an index is not filtered by the skip-disabled rule that
+        arrow keys follow, so a jump that lands on a month heading has to
+        walk off it -- onwards first, since that is the way the reader was
+        already going.
+        """
+        list_view = self.query_one("#entries", ListView)
+        here = list_view.index
+        if here is None:
+            return
+        target = min(max(here + rows, 0), len(self.rows) - 1)
+        onwards = 1 if rows > 0 else -1
+        landing = self.entry_row_from(target, onwards)
+        if landing is None:
+            # Ran out of list that way: the top of the diary is always a
+            # heading, so paging up lands on one with nothing above it.
+            landing = self.entry_row_from(target, -onwards)
+        self.move_cursor_to(landing)
+
+    def entry_row_from(self, row: int, step: int) -> int | None:
+        """The first row from `row` in the `step` direction showing a day."""
+        while 0 <= row < len(self.rows):
+            if self.rows[row] is not None:
+                return row
+            row += step
+        return None
+
+    def move_cursor_to(self, row: int | None) -> None:
+        """Highlight `row`, or do nothing when there is no day to go to."""
+        if row is not None:
+            self.query_one("#entries", ListView).index = row
 
     # --- helpers -----------------------------------------------------------
 

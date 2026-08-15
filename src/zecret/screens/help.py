@@ -10,8 +10,14 @@ about the app, not about the focused widget.
 The key list is built from the screens' own BINDINGS rather than written
 out here. A hand-kept copy would be wrong the first time a binding changed
 and nobody would notice -- the whole point of a help page is that it can be
-trusted. Only bindings marked show=True appear, so this page and the footer
-agree about what is worth advertising.
+trusted.
+
+Every binding appears, not just the ones marked show=True. That flag decides
+what fits in the footer, which is a question about eighty columns rather
+than about what is worth knowing: the keys that get around a long diary are
+some of the most useful in the app and none of them would survive the
+budget. This page is where they are told to you, and it is why leaving a
+binding out of the bar costs nothing.
 """
 
 from __future__ import annotations
@@ -83,13 +89,15 @@ NOTES = [
 ]
 
 
-def shown_bindings(bindings: list[BindingType]) -> list[Binding]:
-    """The bindings a screen advertises, in the order it declares them.
+def documented_bindings(bindings: list[BindingType]) -> list[Binding]:
+    """Every binding a screen declares, in the order it declares them.
 
-    Mirrors the footer: a binding hidden from there is hidden here too, so
-    the two never disagree about what is worth telling you.
+    Not filtered by `show`: that decides what fits in the footer, and a key
+    left out of eighty columns is still a key. Screens are expected to
+    declare their bindings in the order a reader wants them -- what you do
+    first, then what you do rarely, then how you move around.
     """
-    return [binding for binding in bindings if isinstance(binding, Binding) and binding.show]
+    return [binding for binding in bindings if isinstance(binding, Binding)]
 
 
 class HelpScreen(ModalScreen[None]):
@@ -137,16 +145,18 @@ class HelpScreen(ModalScreen[None]):
         self.query_one("#help-logo", Static).display = self.size.width >= MIN_LOGO_WIDTH
 
     def section_keys(self, groups: list[list[BindingType]]) -> ComposeResult:
-        """One row per advertised key across `groups`, aligned in a column.
+        """One row per key across `groups`, aligned in a column.
 
         Keys are rendered the way the footer renders them (ctrl+s as ^s,
-        and a binding's own key_display honoured), so what you read here is
-        what you saw at the bottom of the screen. Rows repeated across
-        screens -- "esc  Back" on every one of them -- are listed once.
+        and a binding's own key_display honoured), so a key that does reach
+        the bar reads the same in both places. Rows repeated across screens
+        -- "esc  Back" on every one of them -- are listed once; two keys
+        doing the same thing are not, so g and home each get a line, which
+        is right, since the reader needs to know both exist.
         """
         rows: list[tuple[str, str]] = []
         for bindings in groups:
-            for binding in shown_bindings(bindings):
+            for binding in documented_bindings(bindings):
                 row = (self.app.get_key_display(binding), binding.description)
                 if row not in rows:
                     rows.append(row)

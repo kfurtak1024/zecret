@@ -149,12 +149,23 @@ Do not weaken any of these for convenience:
 ## File format
 
 See the module docstring in `storage.py` for the authoritative JSON shape.
-Treat `version: 2` in the header as load-bearing — if you ever need to
-change the format, add a migration path keyed off that field rather than
-breaking old files. Version 1 (UUID-keyed entries with titles) predates
-the one-entry-per-day model and is refused outright rather than migrated;
-that was a deliberate call taken while no real diary used it, and it is not
-a precedent for the next change.
+
+**The format is version 1 and that number is now frozen.** It was reset to
+1 while no diary anywhere depended on it — the last moment that was free to
+do. From here the header field is a promise, not a draft: if you change the
+format, bump the version and **write a migration** keyed off it. Renumbering
+again, or quietly widening what version 1 means, is not an option, and
+"nobody is using it yet" is no longer true. `_load_document()` matches the
+version exactly (`type is int`, not `==`, because `True == 1` and
+`1.0 == 1` in Python and neither is a format version) and refuses anything
+else rather than half-reading it.
+
+Entries carry `created_at` and `updated_at`, and no screen shows either.
+That is deliberate and settled: the date names the entry, and a diary does
+not need to tell you when you typed it. They stay in the format because
+taking them out would be a format change for no gain — but don't add UI for
+them, and don't take them as licence to add more fields "since they're
+free".
 
 Known and accepted: the record dates are outside the ciphertext, so the
 file reveals *which days* have entries, though not a word of what they say.
@@ -226,12 +237,43 @@ actually matter.
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
   spacing. Screens carry a `SUB_TITLE` so the header says where you are.
+- **`show` is a layout decision, not a documentation one.** A binding's
+  `show=True` puts it in the footer and nothing more; the help popup lists
+  every binding either way (`documented_bindings()` in `screens/help.py`).
+  Keeping a key out of the bar therefore costs nothing, which is what lets
+  the entry list carry eight navigation bindings without a fight over
+  width. Do not couple the two back together — that coupling is what made
+  navigation unaddable and left `enter` documented but invisible.
+- **The key bar fits 80 columns.** `DiaryFooter` (`screens/header.py`) is
+  Textual's `Footer` in its compact spelling. The entry list's seven
+  advertised keys take about 64 of the 80 a terminal defaults to, so there
+  is room for one more — after that, either shorten a description
+  ("Another day" is the long one) or drop a key to `show=False`, which now
+  costs only its place in the bar. `tests/test_chrome.py` fails when
+  anything advertised stops fitting.
+- **Bindings are declared in reading order**, because the help popup lists
+  them in that order: what you do often, then what you do rarely, then how
+  you move around.
 - The chrome is deliberately minimal. Textual's `Header` is not used —
   `screens/header.py` replaces it, because Textual's docks an icon that
   opens the command palette and expands when clicked. The command palette
   is off (`ENABLE_COMMAND_PALETTE = False`), which also removes `ctrl+p`
   and the footer's palette entry. Don't reintroduce either; a setting that
   belongs to the user goes on the settings screen, where it can be saved.
+- **A user-facing change is not done until the documentation matches it.**
+  This is a checklist, not a sentiment. Every change that alters what
+  someone sees or presses goes through it *in the same commit*:
+  - `README.md` — the key table, the feature list, the prose.
+  - `docs/index.html` — the key table, the feature cards, "How it works".
+  - `CHANGELOG.md` — under `Unreleased`, in the voice of what changed for
+    the writer, not what changed in the code.
+  - `assets/*.png` — **the screenshots**, if the change touches anything
+    visible. Adding a keybinding changes the footer in five of them. This
+    is the one that gets forgotten, because nothing fails when it is: no
+    test can see that a picture is out of date. Regenerate with
+    `tools/screenshots.py` (`uv run python tools/screenshots.py`).
+  - `CLAUDE.md` — this file, if an interface, layer or rule moved.
+  - The in-app help needs nothing: it builds itself from `BINDINGS`.
 - **The product page is part of the app's surface.** `docs/index.html`
   describes the keys, the theme count, the Argon2 parameters, the default
   diary path and the Python version. Change any of those in the code and

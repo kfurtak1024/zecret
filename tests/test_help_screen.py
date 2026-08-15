@@ -3,10 +3,12 @@
 Required coverage:
     - '?' from the entry list opens help; escape and '?' close it.
     - It is a modal: the diary stays behind it rather than being replaced.
-    - Every key the app advertises anywhere appears on the page, with the
-      same wording the footer uses. This is the point of generating the
-      page from BINDINGS: a new binding cannot be added without it showing
-      up here, so the help can never quietly go stale.
+    - Every key the app binds anywhere appears on the page, with the same
+      wording the footer uses for the ones that reach it. This is the point
+      of generating the page from BINDINGS: a new binding cannot be added
+      without it showing up here, so the help can never quietly go stale.
+      Keys kept out of the footer for want of width are listed too -- the
+      navigation keys are only ever found here.
     - The logo and version are shown, and the logo gives way rather than
       being drawn half-cut on a narrow terminal.
     - '?' typed into a text field stays a '?'.
@@ -18,7 +20,6 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.binding import Binding
 from textual.widgets import Input, Label, Static, TextArea
 
 from zecret import __version__
@@ -33,7 +34,7 @@ from zecret.screens.help import (
     SECTIONS,
     TAGLINE,
     HelpScreen,
-    shown_bindings,
+    documented_bindings,
 )
 from zecret.screens.search import SearchScreen
 from zecret.screens.unlock import UnlockScreen
@@ -197,7 +198,7 @@ async def test_every_advertised_key_of_every_screen_is_listed(diary_path):
 
         every_binding = [EntryListScreen.BINDINGS] + [bindings for _title, bindings in SECTIONS]
         for bindings in every_binding:
-            for binding in shown_bindings(bindings):
+            for binding in documented_bindings(bindings):
                 # Rows are right-aligned within their section, so compare
                 # the stripped line: "  ^s   Save" -> "^s   Save".
                 expected = f"{app.get_key_display(binding)}   {binding.description}"
@@ -227,20 +228,27 @@ async def test_the_page_carries_the_notes_keys_cannot_express(diary_path):
         assert "No password recovery" in page, "the one thing that cannot be undone"
 
 
-async def test_hidden_bindings_are_not_listed(diary_path):
-    """The page mirrors the footer, and the footer hides these."""
+async def test_keys_kept_out_of_the_footer_are_still_listed(diary_path):
+    """This page documents the whole keymap, not the footer's share of it.
+
+    Navigation is the case that matters. None of it fits in eighty columns,
+    so none of it is in the bar, and this popup is the only place in the
+    app where a reader is ever told that j, g, G or the page keys exist.
+    """
     hidden = [
-        binding
-        for binding in EntryListScreen.BINDINGS
-        if isinstance(binding, Binding) and not binding.show
+        binding for binding in documented_bindings(EntryListScreen.BINDINGS) if not binding.show
     ]
+    assert hidden, "nothing is being kept out of the footer, so this proves nothing"
+
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await open_help(pilot)
         lines = page_lines(app)
         for binding in hidden:
-            assert not any(line.endswith(binding.description) for line in lines)
+            assert any(line.endswith(binding.description) for line in lines), (
+                f"{binding.key} is bound but documented nowhere"
+            )
 
 
 # --- '?' elsewhere ---------------------------------------------------------

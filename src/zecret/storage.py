@@ -2,7 +2,7 @@
 
 File format (JSON):
     {
-        "version": 2,
+        "version": 1,
         "kdf": {"algo": "argon2id", "salt": "<base64>", "time_cost": 3,
                 "memory_cost": 65536, "parallelism": 4},
         "verifier": {"nonce": "<base64>", "ciphertext": "<base64>"},
@@ -13,11 +13,12 @@ File format (JSON):
         ]
     }
 
-Version 1 keyed entries by a per-entry UUID and gave each one a title. It
-was replaced by the one-entry-per-day model before any diary depended on
-it, so there is no migration: _load_document() rejects a version it does
-not know rather than misreading it. A future format change adds a
-migration here, keyed off `version`.
+Version 1 is this shape, and it is the number the format keeps. It was
+renumbered to 1 while no diary anywhere depended on it, which is the last
+moment that was free to do -- from here the field is a promise rather than
+a draft. _load_document() refuses any version it does not know rather than
+misreading it, and the next change to the format adds a migration here,
+keyed off `version`. There will be no second renumbering.
 
 Note what the record date does and does not give away. Each entry's text is
 inside its ciphertext, but the days you wrote on are readable by anyone
@@ -78,7 +79,7 @@ from zecret.crypto import KdfParams, ZecretDecryptError, decrypt, derive_key, en
 from zecret.models import Entry
 
 DEFAULT_DIARY_PATH = Path.home() / ".zecret" / "diary.enc"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 1
 
 FILE_MODE = 0o600
 DIR_MODE = 0o700
@@ -476,9 +477,12 @@ def _load_document(path: Path) -> dict[str, Any]:
         raise ValueError("diary file must contain a JSON object")
 
     version = document.get("version")
-    if version != FORMAT_VERSION:
-        # Keyed off `version` by design: future formats add a migration
-        # here rather than silently misreading an old file.
+    # `type is not int` rather than a plain comparison: in Python True == 1
+    # and 1.0 == 1, and neither of those is a format version. This is the
+    # field that will decide which migration runs, so it is matched exactly
+    # -- a future format adds a branch here rather than being allowed to
+    # silently misread a file written by a different one.
+    if type(version) is not int or version != FORMAT_VERSION:
         raise ValueError(f"unsupported diary format version: {version!r}")
     if not isinstance(document.get("kdf"), dict):
         raise ValueError("diary file is missing its kdf header")

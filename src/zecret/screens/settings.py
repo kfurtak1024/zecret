@@ -34,11 +34,11 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
-from textual.widgets import Footer, Input, Label, Select
+from textual.widgets import Input, Label, Select
 
 from zecret.config import DEFAULT_LOCK_AFTER_MINUTES
 from zecret.screens.base import FormScreen, save_error
-from zecret.screens.header import DiaryHeader
+from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import ZecretConflictError
 
 #: How long the diary may sit untouched, as (what the user reads, minutes).
@@ -126,7 +126,7 @@ class SettingsScreen(FormScreen):
             yield Input(placeholder="New password", password=True, id="new")
             yield Input(placeholder="Confirm new password", password=True, id="confirm")
             yield Label("", id="settings-error")
-        yield Footer()
+        yield DiaryFooter()
 
     def on_mount(self) -> None:
         # The top of the form, not the password fields at the bottom of it.

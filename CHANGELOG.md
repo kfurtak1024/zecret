@@ -10,10 +10,40 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Changed — file format
+
+- **The diary format is version 1, and that number is now fixed.** It was
+  numbered 2 for historical reasons that never reached anyone, so it has
+  been reset while no diary in the world depended on it. The shape of the
+  file is unchanged — only the `version` field in the header differs.
+  From here the number is a promise: the next format change bumps it and
+  ships a migration.
+- A diary written by an earlier build carries `"version": 2` and will be
+  refused with "incorrect password" (the unlock screen reports an
+  unreadable file and a wrong password identically, on purpose). If you
+  have one, change that single number to `1` in the file's JSON header —
+  nothing else about it needs to move, and the ciphertext is untouched.
+
+### Changed — keys
+
+- **The entry list can be navigated.** <kbd>j</kbd>/<kbd>k</kbd> move a day,
+  `g`/`G` and `home`/`end` jump to the newest and oldest entries, and the
+  page keys move a screenful. Before this the arrow keys were the only way
+  through, so the far end of a year of writing was three hundred presses
+  away.
+- `g` now means "newest entry", so **writing about another day moved from
+  `g` to `a`**, and **locking moved from `l` to `L`** to leave `l` clear of
+  the `hjkl` cluster.
+- The footer shows seven keys instead of nine; Open, Reload and Lock are
+  still there, just found through `?` rather than crowding a bar that only
+  holds eighty columns. The help popup now lists *every* binding rather
+  than only the ones the footer had room for — which is the only place the
+  navigation keys are named.
+
 ### Added
 
 - The diary locks itself. After fifteen minutes without a keystroke Zecret
-  forgets the diary and the key and asks for the password again; `l` does
+  forgets the diary and the key and asks for the password again; `L` does
   it on demand. A half-written entry holds the lock off rather than being
   discarded by a timer, and the wait is configurable in settings, including
   turning it off.
@@ -45,6 +75,14 @@ file matters as much as that does.
 
 ### Changed
 
+- The key bar is compact, so all of it fits an 80-column terminal. Adding
+  Reload and Lock had pushed it to 102 columns, where it stopped mid-word
+  at "? Hel" and dropped Quit entirely. A test now fails if any advertised
+  key stops fitting.
+- The screenshots are generated rather than taken by hand:
+  `uv run python tools/screenshots.py` rebuilds all ten from the real app.
+  They had gone stale, showing a footer two keybindings out of date, and
+  nothing could fail to tell anyone.
 - The scale tests are excluded from a plain `uv run pytest` and selected
   back by CI, so the edit-run loop stays quick.
 - The file format's parsers are covered by property-based tests

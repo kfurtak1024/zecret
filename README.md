@@ -128,7 +128,7 @@ itself, and change your master password. Those preferences are kept in
 your settings and nothing about what you wrote.
 
 Zecret locks itself after fifteen minutes without a keystroke, and asks for
-your password again — press <kbd>l</kbd> to do it yourself on the way out
+your password again — press <kbd>L</kbd> to do it yourself on the way out
 of the room. A half-written entry holds the lock off rather than being
 thrown away by a timer. Change the wait, or turn it off, in settings.
 
@@ -137,17 +137,23 @@ thrown away by a timer. Change the wait, or turn it off, in settings.
 | Key | Where | Does |
 | --- | --- | --- |
 | <kbd>n</kbd> | entry list | Write about today |
-| <kbd>g</kbd> | entry list | Write about another day (asks which) |
+| <kbd>a</kbd> | entry list | Write about another day (asks which) |
 | <kbd>enter</kbd> | entry list | Open the selected day |
 | <kbd>d</kbd> | entry list | Delete the selected day's entry (asks first) |
 | <kbd>r</kbd> | entry list | Re-read the file, picking up another Zecret's writing |
 | <kbd>/</kbd> | entry list | Search |
 | <kbd>s</kbd> | entry list | Settings: theme, locking, master password |
-| <kbd>l</kbd> | entry list | Lock the diary without quitting |
+| <kbd>L</kbd> | entry list | Lock the diary without quitting |
 | <kbd>?</kbd> | entry list | Help — every key, on one page |
 | <kbd>q</kbd> | entry list | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save and return |
 | <kbd>esc</kbd> | anywhere | Back (asks first if you have unsaved edits) |
+
+Getting around a long diary: <kbd>j</kbd>/<kbd>k</kbd> or the arrow keys move
+a day at a time, <kbd>g</kbd>/<kbd>G</kbd> (or <kbd>home</kbd>/<kbd>end</kbd>)
+jump to the newest and oldest entries, and <kbd>PgUp</kbd>/<kbd>PgDn</kbd>
+move a screenful. These stay out of the bar at the bottom, which only has
+room for so much — <kbd>?</kbd> lists everything.
 
 ## How it works
 
@@ -179,6 +185,13 @@ uv sync          # dev tools included (PEP 735 dependency group)
 uv run pytest
 uv run ruff check . && uv run ruff format .
 uv run mypy
+```
+
+The screenshots above are generated, not taken by hand — regenerate them
+after any change that alters what a screen looks like:
+
+```bash
+uv run python tools/screenshots.py    # needs librsvg or inkscape
 ```
 
 CI runs those same checks on every push and pull request. `uv.lock` is

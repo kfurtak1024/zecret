@@ -8,7 +8,7 @@ Required coverage:
       entry count. Headings are rows too, so: the highlight never rests on
       one, the cursor steps over them, and everything that maps a
       selection back to a day (open, delete) lands on the right day.
-    - 'g' offers another day to write about and opens the editor on it;
+    - 'a' offers another day to write about and opens the editor on it;
       backing out of the prompt changes nothing.
     - Delete asks for confirmation first; cancelling changes nothing.
     - Confirmed delete removes the entry from memory AND from disk, and
@@ -293,13 +293,13 @@ async def test_arrow_keys_move_the_selection(diary_path):
 # --- writing another day ---------------------------------------------------
 
 
-async def test_g_opens_the_date_prompt(diary_path):
+async def test_a_opens_the_date_prompt(diary_path):
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
-        await pilot.press("g")  # ignored: still on the unlock screen
+        await pilot.press("a")  # ignored: still on the unlock screen
         await unlock(pilot)
-        await pilot.press("g")
+        await pilot.press("a")
         await pilot.pause()
         assert isinstance(app.screen, DatePromptScreen)
 
@@ -309,7 +309,7 @@ async def test_choosing_a_day_opens_the_editor_on_it(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("g")
+        await pilot.press("a")
         await pilot.pause()
         app.screen.query_one("#date", MaskedInput).value = LAST_WEEK.isoformat()
         await pilot.press("enter")
@@ -324,7 +324,7 @@ async def test_choosing_a_day_that_is_already_written_opens_its_entry(diary_path
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("g")
+        await pilot.press("a")
         await pilot.pause()
         app.screen.query_one("#date", MaskedInput).value = LAST_WEEK.isoformat()
         await pilot.press("enter")
@@ -339,7 +339,7 @@ async def test_backing_out_of_the_date_prompt_returns_to_the_list(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("g")
+        await pilot.press("a")
         await pilot.pause()
         await pilot.press("escape")
         await pilot.pause()
@@ -738,3 +738,133 @@ async def test_reload_reports_a_diary_that_has_gone(diary_path):
 
         assert set(app.diary.entries) == {YESTERDAY}
         assert isinstance(app.screen, EntryListScreen)
+
+
+# --- getting around --------------------------------------------------------
+
+
+def long_diary(diary_path: Path, days: int = 90) -> None:
+    """Months of consecutive entries, so jumps have somewhere to go."""
+    seed(
+        diary_path,
+        *(
+            Entry.new(dt.date(2026, 1, 1) + dt.timedelta(days=offset), f"Day {offset}")
+            for offset in range(days)
+        ),
+    )
+
+
+def cursor(app: ZecretApp) -> int:
+    return app.screen.query_one("#entries", ListView).index
+
+
+async def test_j_and_k_move_a_day_at_a_time(diary_path):
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        start = cursor(app)
+        await pilot.press("j", "j", "j")
+        await pilot.pause()
+        assert cursor(app) == start + 3
+        await pilot.press("k")
+        await pilot.pause()
+        assert cursor(app) == start + 2
+
+
+async def test_g_and_G_reach_the_ends_of_the_diary(diary_path):
+    """The whole point: the far end of a long diary should be one key, not
+    three hundred."""
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("G")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == min(app.diary.entries)
+
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == max(app.diary.entries)
+
+
+async def test_home_and_end_do_the_same(diary_path):
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("end")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == min(app.diary.entries)
+
+        await pilot.press("home")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == max(app.diary.entries)
+
+
+async def test_the_page_keys_move_a_screenful(diary_path):
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 20)) as pilot:
+        await unlock(pilot)
+        start = cursor(app)
+        await pilot.press("pagedown")
+        await pilot.pause()
+        moved = cursor(app) - start
+        assert moved > 1, "a page should be more than a row"
+        assert moved <= app.screen.page_rows + 1, "and not more than a screenful"
+
+        await pilot.press("pageup")
+        await pilot.pause()
+        assert cursor(app) == start
+
+
+async def test_a_jump_never_lands_on_a_month_heading(diary_path):
+    """Assigning an index is not filtered by the skip-disabled rule that
+    the arrow keys follow, so every jump has to step off a heading itself."""
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 20)) as pilot:
+        await unlock(pilot)
+        for key in ("pagedown", "pagedown", "pagedown", "G", "pageup", "pageup", "g"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert app.screen.rows[cursor(app)] is not None, f"{key} landed on a month heading"
+
+
+async def test_paging_up_from_the_top_stays_on_the_newest_entry(diary_path):
+    """Row 0 is a heading and there is nothing above it, so the walk off it
+    has to turn around."""
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 20)) as pilot:
+        await unlock(pilot)
+        for _ in range(5):
+            await pilot.press("pageup")
+            await pilot.pause()
+        assert cursor(app) == app.screen.first_entry_row
+        assert app.screen.selected_entry.date == max(app.diary.entries)
+
+
+async def test_paging_down_from_the_bottom_stays_on_the_oldest_entry(diary_path):
+    long_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 20)) as pilot:
+        await unlock(pilot)
+        for _ in range(20):
+            await pilot.press("pagedown")
+            await pilot.pause()
+        assert cursor(app) == app.screen.last_entry_row
+
+
+async def test_getting_around_an_empty_diary_does_nothing(diary_path):
+    """Every jump key is live on a diary with no rows to jump between."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for key in ("j", "k", "g", "G", "home", "end", "pageup", "pagedown"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert app.screen.rows == []

@@ -6,6 +6,8 @@ Required coverage:
       that opens anything.
     - The command palette is off: ctrl+p does nothing and the footer does
       not advertise it.
+    - Every key the entry list advertises fits an 80-column terminal, and
+      every screen wears the same compact footer.
 """
 
 from __future__ import annotations
@@ -14,12 +16,13 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input
+from textual.widgets import Footer, Input
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.header import DiaryHeader
+from zecret.screens.help import documented_bindings
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
@@ -147,3 +150,54 @@ async def test_reaching_the_diary_before_unlocking_is_a_programming_error(diary_
         await pilot.pause()
         with pytest.raises(RuntimeError):
             _ = app.unlocked
+
+
+# --- the key bar -----------------------------------------------------------
+
+
+#: The narrowest terminal Zecret is expected to be usable in. Eighty is not
+#: an arbitrary round number -- it is the width a terminal defaults to.
+NARROWEST = 80
+
+
+def footer_text(app: ZecretApp) -> str:
+    """The bottom line of the screen, as rendered."""
+    strips = app.screen._compositor.render_strips()
+    return "".join(segment.text for segment in strips[-1])
+
+
+async def test_every_advertised_key_fits_an_eighty_column_terminal(diary_path):
+    """The entry list advertises more keys than any other screen, and the
+    roomy spelling of Textual's footer needs 102 columns to lay them out.
+    At 80 it stopped mid-word -- "? Hel" -- and dropped Quit entirely, which
+    is how two keys got added without anyone seeing the bar overflow.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 16)) as pilot:
+        await unlock(pilot)
+        assert isinstance(app.screen, EntryListScreen)
+        bar = footer_text(app)
+
+        missing = [
+            f"{binding.key_display or binding.key} {binding.description}"
+            for binding in documented_bindings(EntryListScreen.BINDINGS)
+            if binding.show
+            if f"{binding.key_display or binding.key} {binding.description}" not in bar
+        ]
+        assert not missing, (
+            f"the footer at {NARROWEST} columns does not fully show: {missing}\ngot: {bar!r}"
+        )
+
+
+async def test_the_footer_is_compact_on_every_screen(diary_path):
+    """One screen quietly using the roomy footer would look like a bug on
+    the way in and out of it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 20)) as pilot:
+        await unlock(pilot)
+        for key in ("n", "escape", "slash", "escape", "s"):
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+            for footer in app.screen.query(Footer):
+                assert footer.compact, f"{type(app.screen).__name__} has a roomy footer"

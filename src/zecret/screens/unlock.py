@@ -27,11 +27,11 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
-from textual.widgets import Footer, Input, Label
+from textual.widgets import Input, Label
 
 from zecret.crypto import ZecretDecryptError
 from zecret.screens.base import FormScreen
-from zecret.screens.header import DiaryHeader
+from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import DiaryFile
 
 # Deliberately the same message for a wrong password and for an unreadable
@@ -82,7 +82,7 @@ class UnlockScreen(FormScreen):
             if self.creating:
                 yield Input(placeholder="Confirm password", password=True, id="confirm")
             yield Label("", id="unlock-error")
-        yield Footer()
+        yield DiaryFooter()
 
     def on_mount(self) -> None:
         self.sub_title = "New diary" if self.creating else "Locked"

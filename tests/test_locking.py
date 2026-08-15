@@ -5,7 +5,7 @@ whoever is at the terminal. Locking is what makes walking away survivable,
 so what it forgets matters as much as what it shows.
 
 Required coverage:
-    - 'l' locks: the diary and key are gone from the app, the entry list is
+    - 'L' locks: the diary and key are gone from the app, the entry list is
       gone from the screen, and the lock screen is asking for a password.
     - Unlocking again works, and comes back to the entry list.
     - The idle timer locks once the wait has passed, and does not before.
@@ -80,13 +80,13 @@ def go_quiet(app: ZecretApp, minutes: float) -> None:
 # --- locking by hand -------------------------------------------------------
 
 
-async def test_l_locks_the_diary(diary_path):
+async def test_shift_l_locks_the_diary(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         assert isinstance(app.screen, EntryListScreen)
 
-        await pilot.press("l")
+        await pilot.press("L")
         await pilot.pause()
         await pilot.pause()
 
@@ -100,7 +100,7 @@ async def test_locking_takes_the_entries_off_the_screen(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("l")
+        await pilot.press("L")
         await pilot.pause()
         await pilot.pause()
 
@@ -111,7 +111,7 @@ async def test_the_diary_can_be_unlocked_again(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("l")
+        await pilot.press("L")
         await pilot.pause()
         await pilot.pause()
 
