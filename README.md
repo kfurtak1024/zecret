@@ -10,7 +10,7 @@ you can open.
 [**zecret.krfu.dev**](https://zecret.krfu.dev) · [Install](#install) · [How it works](#how-it-works)
 
 [![CI](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml/badge.svg)](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Built with Textual](https://img.shields.io/badge/built%20with-Textual-5a4fcf)](https://textual.textualize.io)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -198,10 +198,11 @@ CI runs those same checks on every push and pull request. `uv.lock` is
 committed and CI installs from it, so regenerate and commit it whenever
 `pyproject.toml` changes.
 
-Zecret targets Python 3.14 only, pinned in `.python-version`. It is an
-application rather than a library, so there is no consumer whose own
-version range it has to accommodate — and `uv` installs the right
-interpreter for you regardless of what your system ships.
+Zecret needs Python 3.13 or newer. Development happens on 3.13 — the floor,
+pinned in `.python-version`, so that a mistake only 3.14 would forgive
+shows up locally rather than in CI — and the test suite runs on both 3.13
+and 3.14 on every push. `uv` installs a suitable interpreter for you
+regardless of what your system ships.
 
 The layering is strict and worth preserving: `crypto.py` knows nothing
 about entries or files, `models.py` knows nothing about encryption,

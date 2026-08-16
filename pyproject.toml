@@ -3,7 +3,7 @@ name = "zecret"
 version = "0.1.0"
 description = "A modern, encrypted terminal diary."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Krzysztof Furtak" }]
 dependencies = [
@@ -47,9 +47,10 @@ packages = ["src/zecret"]
 # look inside it.
 files = ["src", "tools"]
 strict = true
-# Zecret targets exactly one interpreter (see .python-version); there is no
-# older version to stay compatible with.
-python_version = "3.14"
+# The oldest interpreter Zecret supports, not the one it is developed on:
+# type-checking against the floor is what catches a symbol that only exists
+# in 3.14. CI runs the suite on both ends of the range.
+python_version = "3.13"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -92,11 +93,13 @@ exclude_also = [
 [tool.ruff]
 src = ["src", "tests"]
 line-length = 100
-# Deliberately one below requires-python. Ruff would otherwise apply PEP 758
-# and rewrite `except (A, B):` as `except A, B:` — which is valid in 3.14 but
-# reads exactly like Python 2's `except A, b:`, where the second name bound
-# the exception instead of adding to the catch list. The parentheses cost
-# nothing and remove that ambiguity. Raise this to py314 to opt in.
+# Matches requires-python: the code has to run on the oldest interpreter
+# supported, so the linter has to hold it to that syntax. This is also what
+# keeps PEP 758 out — at py314 ruff would rewrite `except (A, B):` as
+# `except A, B:`, which is valid there but reads exactly like Python 2's
+# `except A, b:`, where the second name bound the exception instead of
+# adding to the catch list. If the floor ever rises to 3.14, keep the
+# parentheses on purpose rather than letting that rewrite land.
 target-version = "py313"
 
 [tool.ruff.lint]

@@ -23,10 +23,16 @@ update this file to match.
 
 ## Tech stack (fixed — do not substitute)
 
-- Python 3.14, managed with `uv` (`uv sync`, `uv run`, `uv add <pkg>`) and
-  pinned in `.python-version`. Zecret is an application, not a library, so
-  it targets exactly one interpreter rather than a support range: uv
-  provisions it, so nothing depends on what a user's system ships.
+- Python 3.13 or newer, managed with `uv` (`uv sync`, `uv run`,
+  `uv add <pkg>`). `.python-version` pins **3.13, the floor** — develop on
+  the oldest supported interpreter so that syntax or a stdlib symbol only
+  3.14 has fails here rather than on a user's machine. The range exists
+  because Zecret is published to PyPI: a `pip`/`pipx` user gets whatever
+  interpreter their system ships, and a floor above that is a resolver
+  error rather than an install. CI runs the suite on both 3.13 and 3.14, so
+  the range is tested rather than assumed; `requires-python`, mypy's
+  `python_version` and ruff's `target-version` all name the floor, and move
+  together if it ever rises.
 - **Textual** for the TUI — use widgets/screens/CSS idiomatically; don't
   hand-roll ANSI escape codes or use `curses` directly
 - **argon2-cffi** for key derivation (Argon2id specifically, not Argon2i/d)
@@ -192,7 +198,10 @@ actually matter.
 - Run `uv run pytest` before considering any module done, and
   `uv run ruff check . && uv run ruff format . && uv run mypy` before
   calling it clean. CI (`.github/workflows/ci.yml`) runs exactly those
-  three, on the single interpreter named in `.python-version`.
+  three. The test job is a matrix over both ends of `requires-python`
+  (3.13 and 3.14); lint and types are not matrixed, because ruff and mypy
+  are both pinned to the floor in `pyproject.toml` and would prove nothing
+  run twice.
 - CI runs the suite as `pytest --cov`, with the threshold in
   `[tool.coverage.report]`. It is set to where the suite stands, so it only
   ever ratchets up. Coverage is deliberately not in `addopts`: a local
