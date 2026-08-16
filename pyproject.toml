@@ -28,9 +28,9 @@ dev = [
     "pytest-asyncio>=1.4",
     "textual-dev>=1.8",
     "ruff>=0.16",
-    "mypy>=1.18",
-    "pytest-cov>=7",
-    "hypothesis>=6",
+    "mypy>=2.3",
+    "pytest-cov>=7.1",
+    "hypothesis>=6.165",
 ]
 
 [build-system]
