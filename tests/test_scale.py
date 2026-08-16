@@ -19,9 +19,22 @@ thousand rows the per-append cost has not yet come to dominate, so the
 broken code grew by 6.8x over a 4x span where the fixed code grows by 5x,
 and no threshold separates them. The blow-up is real but it arrives late,
 so the honest test is to build a diary large enough to feel it and put a
-ceiling on the clock. The margin either side of CEILING is wide (about 3x
-of headroom, against a regression that costs 7x) so that it fails for the
-reason it names rather than because the machine was busy.
+ceiling on the clock.
+
+A stopwatch measures the machine as well as the code, and CEILING is set
+for the slowest machine that runs it rather than the fastest. A GitHub
+runner is about 4x slower than a development one -- measured, not guessed:
+1.35s/1.72s here against 5.34s/6.02s there -- which sailed past a ceiling
+of 4.0s and failed a build for the one reason this test promises not to
+fail for. So the ceiling is now centred on the runner: the regression it
+guards against costs about 6.8x, which is ~41s where a healthy rebuild is
+~6s, and 15.0 sits between them in the log sense.
+
+The cost is a blind spot on a fast machine, where the same regression
+lands around 12s and passes. That is tolerable only because this test is
+marked `slow` and deselected from a local run anyway: CI is where it
+actually stands guard. If you are chasing this by hand, lower CEILING for
+the duration rather than trusting a local pass.
 """
 
 from __future__ import annotations
@@ -47,11 +60,11 @@ PASSWORD = "correct horse battery staple"
 #: to be run constantly.
 ENTRIES = 1500
 
-#: Seconds. Mounting the rows in one pass takes about 1.3s here; mounting
-#: them one at a time took 8.9s. Halfway between in the log sense, so a
-#: machine three times slower than this one still passes and a machine
-#: three times faster still fails if the rebuild regresses.
-CEILING = 4.0
+#: Seconds, sized for CI rather than for a development machine -- see the
+#: module docstring. Mounting the rows in one pass takes about 1.3s on a
+#: fast machine and about 6s on a GitHub runner; mounting them one at a
+#: time took 8.9s and would take ~41s. Halfway between in the log sense.
+CEILING = 15.0
 
 pytestmark = [
     pytest.mark.usefixtures("cheap_kdf"),

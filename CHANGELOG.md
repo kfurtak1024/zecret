@@ -75,13 +75,12 @@ file matters as much as that does.
 
 ### Changed
 
-- **Zecret runs on Python 3.13 as well as 3.14.** The floor was 3.14, which
-  is newer than the Python most systems ship — so installing with `pip` or
-  `pipx` failed outright for anyone who had not gone and fetched one. It
-  needs 3.13 or newer now, and the test suite runs on both, so neither is
-  supported only on paper. Nothing about the app or the diary format
-  changed; if you install with `uv`, which fetches its own interpreter, you
-  will not notice a difference.
+- **Zecret runs on Python 3.13.** The floor was 3.14, which is newer than
+  the Python most systems ship — so installing with `pip` or `pipx` failed
+  outright for anyone who had not gone and fetched one. It needs 3.13 or
+  newer now. Nothing about the app or the diary format changed; if you
+  install with `uv`, which fetches its own interpreter, you will not notice
+  a difference.
 - The key bar is compact, so all of it fits an 80-column terminal. Adding
   Reload and Lock had pushed it to 102 columns, where it stopped mid-word
   at "? Hel" and dropped Quit entirely. A test now fails if any advertised

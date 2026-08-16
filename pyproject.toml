@@ -47,9 +47,10 @@ packages = ["src/zecret"]
 # look inside it.
 files = ["src", "tools"]
 strict = true
-# The oldest interpreter Zecret supports, not the one it is developed on:
-# type-checking against the floor is what catches a symbol that only exists
-# in 3.14. CI runs the suite on both ends of the range.
+# The interpreter Zecret is developed, tested and type-checked on, and the
+# floor `requires-python` names. Newer ones are permitted but not checked,
+# so pinning mypy here is what catches a symbol that only a later version
+# has -- before a user on 3.13 finds it instead.
 python_version = "3.13"
 
 [tool.pytest.ini_options]

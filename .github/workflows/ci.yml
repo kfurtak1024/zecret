@@ -69,30 +69,25 @@ jobs:
         run: uv run mypy
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Both ends of requires-python, and nothing in between: 3.13 is the floor
-    # the package claims to support, 3.14 is what a system Python is
-    # increasingly likely to be. Testing only one of them would leave the
-    # metadata promising more than CI checks. Lint and types are not matrixed
-    # -- ruff's target-version and mypy's python_version are both pinned to
-    # the floor in pyproject.toml, so running them twice would prove nothing.
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13", "3.14"]
+    # No version matrix. `requires-python` is a floor rather than a pin, so
+    # newer interpreters are permitted, but 3.13 is the one every push is
+    # checked against -- testing the floor is what catches a symbol that
+    # only a later version has. Everything else here agrees: mypy's
+    # python_version and ruff's target-version both name 3.13 too.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # python-version overrides .python-version for this leg; that file
-      # stays the single source of truth for a local checkout.
+      # Named explicitly rather than left to .python-version, so that the
+      # interpreter CI runs on is visible in this file.
       - name: Install uv
         uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
 
       - name: Install dependencies
         run: uv sync
