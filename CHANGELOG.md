@@ -10,89 +10,68 @@ file matters as much as that does.
 
 ## [Unreleased]
 
-### Changed — file format
+## [0.1.0] - 2026-08-17
 
-- **The diary format is version 1, and that number is now fixed.** It was
-  numbered 2 for historical reasons that never reached anyone, so it has
-  been reset while no diary in the world depended on it. The shape of the
-  file is unchanged — only the `version` field in the header differs.
-  From here the number is a promise: the next format change bumps it and
-  ships a migration.
-- A diary written by an earlier build carries `"version": 2` and will be
-  refused with "incorrect password" (the unlock screen reports an
-  unreadable file and a wrong password identically, on purpose). If you
-  have one, change that single number to `1` in the file's JSON header —
-  nothing else about it needs to move, and the ciphertext is untouched.
+The first release. What follows is what Zecret does on its first day rather
+than a list of changes from something earlier: the entries that tracked its
+development described a program nobody outside had run, so they have been
+folded into this one and left in the git history, where they belong.
 
-### Changed — keys
-
-- **The entry list can be navigated.** <kbd>j</kbd>/<kbd>k</kbd> move a day,
-  `g`/`G` and `home`/`end` jump to the newest and oldest entries, and the
-  page keys move a screenful. Before this the arrow keys were the only way
-  through, so the far end of a year of writing was three hundred presses
-  away.
-- `g` now means "newest entry", so **writing about another day moved from
-  `g` to `a`**, and **locking moved from `l` to `L`** to leave `l` clear of
-  the `hjkl` cluster.
-- The footer shows seven keys instead of nine; Open, Reload and Lock are
-  still there, just found through `?` rather than crowding a bar that only
-  holds eighty columns. The help popup now lists *every* binding rather
-  than only the ones the footer had room for — which is the only place the
-  navigation keys are named.
+A `0.x` version on purpose. The program is finished and tested, but no one
+has yet kept a diary in it for a year, and the keys and the command line
+should stay free to move until someone has. The **file format is a
+different promise, and it is already made**: it is version 1, and a diary
+written today will be readable by every later Zecret or migrated by one.
 
 ### Added
 
-- The diary locks itself. After fifteen minutes without a keystroke Zecret
-  forgets the diary and the key and asks for the password again; `L` does
-  it on demand. A half-written entry holds the lock off rather than being
-  discarded by a timer, and the wait is configurable in settings, including
+- **A diary of days.** One entry per calendar day, and the date is the
+  entry's whole identity — no titles, no ids, nothing to name or file.
+  Opening a day means writing it or continuing what is already there. The
+  day is the local one, so something written at 23:50 belongs to the day
+  you would call it.
+- **A master password and nothing else.** Argon2id derives the key
+  (time_cost 3, 64 MiB, 4 lanes) and every entry is sealed on its own with
+  AES-256-GCM. Editing one day never re-encrypts another. A wrong password
+  or an altered file fails loudly rather than returning nonsense — and
+  there is no recovery, by design. Nobody, including you, opens the file
+  without the password.
+- **The diary locks itself.** After fifteen minutes without a keystroke
+  Zecret forgets the diary and the key and asks for the password again;
+  `L` does it on demand. A half-written entry holds the lock off rather
+  than being discarded by a timer, and the wait is configurable, including
   turning it off.
-- `r` on the entry list re-reads the file. A second Zecret writing to the
-  same diary used to leave this one refusing every save until it was quit
-  and reopened; now there is a way back that does not need the password
-  retyped.
-- A security policy ([SECURITY.md](SECURITY.md)): how to report a
-  vulnerability privately, what counts as one, and the list of properties
-  that are known and accepted rather than bugs.
+- **Search across every entry**, filtering as you type, with no separate
+  step to submit.
+- **An entry list that stays usable at years of writing.** Days are grouped
+  under month headings, newest first; `j`/`k` move a day, `g`/`G` and
+  `home`/`end` jump to the newest and oldest, and the page keys move a
+  screenful.
+- **Every key documented in the app.** `?` lists all of them, generated
+  from the bindings themselves, so the popup cannot fall out of step with
+  what the program actually does. The footer shows the seven that fit an
+  80-column terminal; the rest are a keypress away.
+- **Themes**, chosen in settings and remembered between runs in
+  `~/.zecret/config.json` — the one file Zecret writes in the clear, and it
+  holds preferences and nothing else. No entry text, no dates, nothing
+  derived from your key.
+- **Writes that do not lose a diary.** Saves go to a temporary file in the
+  same directory, are fsynced, and replace the real one in a single
+  indivisible step. A second Zecret writing the same file is detected and
+  refused rather than silently overwritten, and `r` re-reads without asking
+  for the password again. Creating a diary claims the path in the same step
+  that writes it, so two first runs cannot race.
+- **A diary anywhere you like.** `~/.zecret/diary.enc` by default,
+  `--path` or `ZECRET_DIARY_PATH` for somewhere else — separate diaries, or
+  a throwaway one to try it with.
 
-### Fixed
+### Security
 
-- A long diary is usable again. Both list screens mounted their rows one at
-  a time, which re-laid-out every row already placed — quadratic, and paid
-  on every return to the screen. Ten years of entries took over a minute to
-  draw; it now takes a few seconds.
-- Reading no longer costs you your place. Returning from an entry, or
-  deleting one, sent the cursor back to the newest day. It now stays on the
-  day it was on, or — when that day was the one just deleted — on the next
-  older day, which has moved up into its place.
-- Creating a diary can no longer overwrite one. The check for an existing
-  file and the write were separate steps with a key derivation between
-  them, so two Zecrets started with no diary could both pass the check and
-  the second would replace the first. Creation now claims the path in the
-  same indivisible step that writes it.
-- An entry of nothing but spaces and newlines is refused, the same as an
-  empty one. It was accepted, and then listed as `(empty)`.
+- The threat model, what counts as a vulnerability, and how to report one
+  privately are written down in [SECURITY.md](SECURITY.md), along with the
+  properties that are known and accepted rather than bugs. Chief among
+  them: the file reveals *which days* have entries, though not a word of
+  what they say.
 
-### Changed
-
-- **Zecret runs on Python 3.13.** The floor was 3.14, which is newer than
-  the Python most systems ship — so installing with `pip` or `pipx` failed
-  outright for anyone who had not gone and fetched one. It needs 3.13 or
-  newer now. Nothing about the app or the diary format changed; if you
-  install with `uv`, which fetches its own interpreter, you will not notice
-  a difference.
-- The key bar is compact, so all of it fits an 80-column terminal. Adding
-  Reload and Lock had pushed it to 102 columns, where it stopped mid-word
-  at "? Hel" and dropped Quit entirely. A test now fails if any advertised
-  key stops fitting.
-- The screenshots are generated rather than taken by hand:
-  `uv run python tools/screenshots.py` rebuilds all ten from the real app.
-  They had gone stale, showing a footer two keybindings out of date, and
-  nothing could fail to tell anyone.
-- The scale tests are excluded from a plain `uv run pytest` and selected
-  back by CI, so the edit-run loop stays quick.
-- The file format's parsers are covered by property-based tests
-  (Hypothesis) as well as by examples, so a diary file this program did not
-  write fails as a readable error rather than a traceback.
-
-[Unreleased]: https://github.com/kfurtak1024/zecret/commits/main
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kfurtak1024/zecret/releases/tag/v0.1.0

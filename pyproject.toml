@@ -6,6 +6,21 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Krzysztof Furtak" }]
+keywords = ["diary", "journal", "encryption", "terminal", "tui", "textual", "argon2"]
+# No `License ::` classifier: `license` above is an SPDX expression (PEP
+# 639), and the two are mutually exclusive rather than merely redundant.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
 dependencies = [
     "textual>=8.2",
     "cryptography>=50.0",
@@ -39,6 +54,29 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zecret"]
+
+# The sdist is published, so it must contain what the project is rather than
+# whatever happens to be in the working tree. Hatchling's default is
+# everything git does not ignore, which is not the same thing: an untracked
+# local file (.claude/settings.local.json was the one that showed up) is not
+# ignored, and so was being uploaded. Listed explicitly, so a new stray file
+# has to be added here on purpose before it can ship.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/tools",
+    "/docs",
+    "/assets",
+    "/.github",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/SECURITY.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/uv.lock",
+    "/.python-version",
+]
 
 [tool.mypy]
 # tools/ is committed code that will rot like any other, so it is checked

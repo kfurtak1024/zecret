@@ -10,6 +10,7 @@ you can open.
 [**zecret.krfu.dev**](https://zecret.krfu.dev) · [Install](#install) · [How it works](#how-it-works)
 
 [![CI](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml/badge.svg)](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/zecret?logo=pypi&logoColor=white)](https://pypi.org/project/zecret/)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue?logo=python&logoColor=white)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Built with Textual](https://img.shields.io/badge/built%20with-Textual-5a4fcf)](https://textual.textualize.io)
@@ -18,9 +19,9 @@ you can open.
 [![Checked with mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/entries-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/entries-light.png">
-  <img alt="The Zecret entry list, showing days of diary entries grouped under month headings, most recent first" src="assets/entries-dark.png" width="820">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/entries-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/entries-light.png">
+  <img alt="The Zecret entry list, showing days of diary entries grouped under month headings, most recent first" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/entries-dark.png" width="820">
 </picture>
 
 </div>
@@ -46,21 +47,16 @@ password only you know, in a terminal you already have open.
 
 ## Install
 
-Zecret is managed with [uv](https://github.com/astral-sh/uv).
-
 ```bash
-git clone https://github.com/kfurtak1024/zecret.git
-cd zecret
-uv sync
-uv run zecret
-```
-
-To get a `zecret` command available from anywhere:
-
-```bash
-uv tool install .
+uv tool install zecret
 zecret
 ```
+
+That is the whole of it: [uv](https://github.com/astral-sh/uv) fetches a
+suitable Python along with the program, so nothing depends on what your
+system happens to ship. If you would rather use what you already have,
+`pipx install zecret` and `pip install zecret` both work on Python 3.13 or
+newer.
 
 Your diary lives at `~/.zecret/diary.enc` by default. Point somewhere else
 with `--path /some/where.enc` or the `ZECRET_DIARY_PATH` environment
@@ -79,9 +75,9 @@ password to unlock it.
 
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/editor-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/editor-light.png">
-  <img alt="Writing a day's entry: the date in the header above a full-height text area" src="assets/editor-dark.png" width="760">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-light.png">
+  <img alt="Writing a day's entry: the date in the header above a full-height text area" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-dark.png" width="760">
 </picture>
 </div>
 
@@ -93,20 +89,20 @@ there is no draft state to lose track of.
 
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/date-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/date-light.png">
-  <img alt="A modal asking which day to write about, prefilled with a date" src="assets/date-dark.png" width="760">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-light.png">
+  <img alt="A modal asking which day to write about, prefilled with a date" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png" width="760">
 </picture>
 </div>
 
-Missed a day? Press <kbd>g</kbd> and type the date. Anything up to today is
+Missed a day? Press <kbd>a</kbd> and type the date. Anything up to today is
 fair game; days that have not happened yet are refused.
 
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/search-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/search-light.png">
-  <img alt="Search filtering entries live as you type" src="assets/search-dark.png" width="760">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/search-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/search-light.png">
+  <img alt="Search filtering entries live as you type" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/search-dark.png" width="760">
 </picture>
 </div>
 
@@ -115,9 +111,9 @@ for the session, so filtering is instant and nothing touches the disk.
 
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/help-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/help-light.png">
-  <img alt="The help popup over the diary, listing every key by section" src="assets/help-dark.png" width="760">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/help-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/help-light.png">
+  <img alt="The help popup over the diary, listing every key by section" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/help-dark.png" width="760">
 </picture>
 </div>
 
@@ -181,7 +177,10 @@ for crash recovery.
 ## Development
 
 ```bash
+git clone https://github.com/kfurtak1024/zecret.git
+cd zecret
 uv sync          # dev tools included (PEP 735 dependency group)
+uv run zecret    # run it from the checkout
 uv run pytest
 uv run ruff check . && uv run ruff format .
 uv run mypy

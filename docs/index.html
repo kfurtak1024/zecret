@@ -304,7 +304,7 @@ footer p.right { margin-left: auto; }
 
   <div class="cta">
     <div class="copy">
-      <code id="install-cmd" class="mono">uv tool install git+https://github.com/kfurtak1024/zecret</code>
+      <code id="install-cmd" class="mono">uv tool install zecret</code>
       <button type="button" data-copy="#install-cmd">Copy</button>
     </div>
     <a class="button" href="https://github.com/kfurtak1024/zecret">Source on GitHub</a>
@@ -326,7 +326,7 @@ footer p.right { margin-left: auto; }
   Fri 31   Walked the long way back along the canal. The herons have w…
   Tue 28   Finished the tax forms, badly. Rewarded myself with an appl…
   Sat 25   Rain all day. Read two chapters and slept like something hi…
-<span class="bar"><span class="key">n</span> Today  <span class="key">g</span> Another day  <span class="key">d</span> Delete  <span class="key">/</span> Search  <span class="key">s</span> Settings  <span class="key">?</span> Help  <span class="key">q</span> Quit</span>
+<span class="bar"><span class="key">n</span> Today  <span class="key">a</span> Another day  <span class="key">d</span> Delete  <span class="key">/</span> Search  <span class="key">s</span> Settings  <span class="key">?</span> Help  <span class="key">q</span> Quit</span>
 </pre>
   </div>
 </div>
@@ -432,9 +432,14 @@ footer p.right { margin-left: auto; }
     <div class="steps">
       <div>
         <h3>As a tool</h3>
-<pre class="block mono"><span class="p">$</span> uv tool install git+https://github.com/kfurtak1024/zecret
+<pre class="block mono"><span class="p">$</span> uv tool install zecret
 <span class="p">$</span> zecret</pre>
-        <p>Not on PyPI yet — until then, install straight from the repository.</p>
+        <p>
+          uv fetches a suitable Python along with it.
+          <span class="mono">pipx install zecret</span> and
+          <span class="mono">pip install zecret</span> work too, on 3.13 or
+          newer.
+        </p>
       </div>
 
       <div>

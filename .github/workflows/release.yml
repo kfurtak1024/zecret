@@ -1,0 +1,139 @@
+name: Release
+
+# Tags only. Pushing a `v*` tag publishes that version to PyPI and opens a
+# GitHub release for it; nothing else triggers this. There is no manual
+# dispatch on purpose -- a release should be a tag in the history, not a
+# button someone pressed once.
+on:
+  push:
+    tags: ["v*"]
+
+# Actions are pinned to full commit SHAs, with the version in a trailing
+# comment, exactly as in ci.yml. A mutable tag on a workflow that holds a
+# publishing identity is the one place that would matter most.
+
+# Least privilege by default; each job widens only what it needs.
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: "1"
+
+jobs:
+  # The version in pyproject.toml and the tag being released have to agree.
+  # They are written in different places by different hands, and the failure
+  # is silent otherwise: PyPI would happily accept a tag naming one version
+  # while the package carries another, and the wrong number would be public
+  # and unrepublishable.
+  check:
+    name: Check the tag matches the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(python3 -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          echo "tag=$tag pyproject=$version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pyproject version $version"
+            exit 1
+          fi
+
+  # CI runs on every push to main, but a tag can be pushed at any commit, so
+  # the checks are run again here against exactly what is about to ship.
+  verify:
+    name: Test before publishing
+    needs: [check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint, types, tests
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest -q --cov -m ""
+
+  pypi:
+    name: Publish to PyPI
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Trusted Publishing (OIDC): PyPI is configured to trust this repository
+    # and this workflow filename, so there is no API token anywhere in the
+    # repo or its secrets. `id-token: write` is what mints the short-lived
+    # credential; it is granted here and nowhere else.
+    permissions:
+      contents: read
+      id-token: write
+    # Named so PyPI's pending publisher can require it, and so a release can
+    # be gated behind a reviewer in the repository's environment settings.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/zecret
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: "3.13"
+
+      - name: Build the sdist and wheel
+        run: uv build
+
+      # What goes up is worth looking at in the log: the sdist should hold
+      # the project and not the working tree, and the wheel needs app.tcss
+      # and py.typed or the installed program is broken in ways no test here
+      # would catch.
+      - name: Show what is about to be published
+        run: |
+          set -euo pipefail
+          for f in dist/*.tar.gz; do echo "== $f"; tar tzf "$f"; done
+          for f in dist/*.whl; do echo "== $f"; unzip -l "$f"; done
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  github-release:
+    name: Open the GitHub release
+    needs: [pypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The only job that writes to the repository, and all it writes is a
+    # release. Deliberately after PyPI: a release pointing at a version that
+    # failed to publish is worse than no release yet.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # `gh` is preinstalled on the runner, so this needs no third-party
+      # action -- one less thing holding a token.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md) for what changed.
+
+          Install with \`uv tool install zecret\`, or \`pipx install zecret\` on Python 3.13 or newer."
