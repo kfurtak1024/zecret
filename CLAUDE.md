@@ -221,6 +221,68 @@ actually matter.
   `Pilot` API for basic interaction smoke tests; full UI test coverage
   is lower priority than crypto/storage correctness.
 
+## Releasing
+
+Zecret is on PyPI as [`zecret`](https://pypi.org/project/zecret/). A release
+is a tag and nothing else: pushing `vX.Y.Z` runs
+`.github/workflows/release.yml`, which publishes to PyPI and opens the
+GitHub release. There is no manual upload step and no `workflow_dispatch` —
+a release should be a tag in the history, not a button someone pressed.
+
+The workflow is four jobs in sequence, each gating the next:
+
+1. **check** — the tag must equal `pyproject.toml`'s `version`. They are
+   written by different hands and nothing else compares them; PyPI would
+   accept a `v0.2.0` tag carrying `0.1.0` without complaint, and the wrong
+   number would be public and unrepublishable.
+2. **verify** — ruff, mypy and `pytest --cov -m ""` against the *tagged*
+   commit. CI covers pushes to main, but a tag can point anywhere.
+3. **pypi** — `uv build`, then Trusted Publishing (OIDC). **There is no API
+   token anywhere in this repo or its secrets, and there must not be.**
+   `id-token: write` is granted to this job alone.
+4. **github-release** — `gh release create`, with notes lifted out of
+   `CHANGELOG.md`. It runs after PyPI on purpose: a release pointing at a
+   version that failed to publish is worse than no release yet.
+
+### Before tagging
+
+- **`CHANGELOG.md` needs a section for the version.** Rename
+  `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, leave a fresh empty
+  `[Unreleased]` above it, and update the link definitions at the foot of
+  the file. The `github-release` job extracts the section by heading and
+  **fails the release if it finds nothing** rather than publishing empty
+  notes.
+- **Regenerate the screenshots.** The help popup renders
+  `zecret.__version__` in its tagline, so *every version bump makes
+  `assets/help-*.png` stale* — the one documentation item nothing can fail
+  on. `uv run python tools/screenshots.py`; the generator is deterministic,
+  so only genuinely-changed shots show up in `git status`.
+- Bump `version` in `pyproject.toml` — the only place it is written — and
+  re-lock, since `uv.lock` records it too.
+- Let CI go green on main first.
+
+### The parts that live outside the repo
+
+Configured once, on PyPI and in the repository settings, and easy to
+misdiagnose from the workflow logs because neither is visible here:
+
+- **PyPI trusted publisher**: project `zecret`, owner `kfurtak1024`, repo
+  `zecret`, workflow `release.yml`, environment `pypi`. Renaming the
+  workflow file or the environment breaks publishing until PyPI is updated
+  to match.
+- **The `pypi` environment's deployment rule** must be **ref type `Tag`**,
+  pattern `v*`. A *branch* rule of the same name silently permits nothing,
+  and the failure lands late — after `check` and `verify` have passed — as
+  a rejected deployment rather than a test failure. Do not add `main`
+  here: the workflow only triggers on tags, so a branch rule would only
+  ever pre-authorise a mistake.
+
+### Irreversible
+
+A published version number is consumed permanently. Yanking or deleting a
+PyPI release does not free it for re-upload, so a bad release costs the next
+patch number, not a retry. This is why `check` and `verify` run first.
+
 ## Conventions
 
 - Type hints everywhere. `uv run mypy` enforces this; keep it green.
