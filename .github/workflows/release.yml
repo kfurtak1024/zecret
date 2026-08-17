@@ -126,6 +126,48 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # A release page is read, not clicked through, so it carries the
+      # changelog section itself rather than a link to it. CHANGELOG.md stays
+      # the one place the words are written; this only lifts them out, and
+      # fails the release rather than publishing empty notes if the section
+      # for this tag is missing.
+      - name: Build the release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          # From this version's heading to the next one, stopping short of
+          # the link definitions at the foot of the file. Matched by string
+          # rather than regex: a version is full of dots, and every one of
+          # them is a wildcard that would match a different release.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { inside = 1; next }
+            inside && /^## / { exit }
+            inside && /^\[[^]]+\]: / { exit }
+            inside { print }
+          ' CHANGELOG.md > notes.md
+
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+
+          # Relative links resolve against the releases URL rather than the
+          # repository root, so they would 404 on the release page. Point
+          # them at this tag instead.
+          sed -i "s#](\([A-Za-z][A-Za-z0-9_.-]*\.md\))#](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/\1)#g" notes.md
+
+          {
+            echo
+            echo "---"
+            echo
+            echo "Install with \`uv tool install zecret\`, or \`pipx install zecret\` on Python 3.13 or newer."
+          } >> notes.md
+
+          echo "--- notes.md ---"
+          cat notes.md
+
       # `gh` is preinstalled on the runner, so this needs no third-party
       # action -- one less thing holding a token.
       - name: Create the release
@@ -134,6 +176,5 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --notes "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md) for what changed.
-
-          Install with \`uv tool install zecret\`, or \`pipx install zecret\` on Python 3.13 or newer."
+            --notes-file notes.md \
+            --verify-tag
