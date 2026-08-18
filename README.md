@@ -218,19 +218,6 @@ CI runs those same checks on every push and pull request. `uv.lock` is
 committed and CI installs from it, so regenerate and commit it whenever
 `pyproject.toml` changes.
 
-Zecret needs Python 3.13 or newer. Development and CI both run on 3.13 —
-the floor, pinned in `.python-version` — so that a mistake only a newer
-interpreter would forgive shows up rather than reaching a user. Newer
-versions are expected to work and 3.14 passes the suite, but 3.13 is what
-every push is checked against. `uv` installs a suitable interpreter for you
-regardless of what your system ships.
-
-The layering is strict and worth preserving: `crypto.py` knows nothing
-about entries or files, `models.py` knows nothing about encryption,
-`storage.py` is the only module that touches the filesystem, and screens
-reach the diary only through the app. See [CLAUDE.md](CLAUDE.md) for the
-full architecture and the security requirements the test suite enforces.
-
 ## License
 
-MIT.
+MIT © Krzysztof Furtak — see [LICENSE](LICENSE).
