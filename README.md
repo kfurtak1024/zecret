@@ -63,6 +63,11 @@ with `--path /some/where.enc` or the `ZECRET_DIARY_PATH` environment
 variable — handy for keeping separate diaries, or trying it out without
 touching your real one.
 
+Your settings follow you rather than the file, so a diary opened with
+`--path` still uses your theme. If you would rather it did not — running a
+build you are working on, say — `--config /some/where.json` or
+`ZECRET_CONFIG_PATH` gives that run preferences of its own.
+
 On first launch there is no diary yet, so Zecret asks you to choose a
 master password and creates one. Every launch after that asks for that
 password to unlock it.

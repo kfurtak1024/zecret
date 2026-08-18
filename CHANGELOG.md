@@ -10,6 +10,21 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **Preferences can live somewhere else too.** `--config /some/where.json`,
+  or `ZECRET_CONFIG_PATH`, points one run at a different settings file. The
+  default has not moved and neither has the rule behind it: your settings
+  belong to you rather than to a file, so a diary opened with `--path`
+  still uses your theme. This is for when that is the wrong answer —
+  running a build of Zecret you are working on, where changing the theme to
+  see what it looks like should not change the one you write in.
+
+### Fixed
+
+- `ZECRET_DIARY_PATH` set to an empty string is now treated as unset rather
+  than as the current directory.
+
 ## [0.1.0] - 2026-08-17
 
 The first release. What follows is what Zecret does on its first day rather

@@ -83,7 +83,14 @@ Keep this layering strict:
   and passwords; a theme name is neither, which is why this is an exception
   and not a violation. It is also forgiving where `storage.py` is strict: a
   missing or corrupt config falls back to defaults, because a mangled
-  preference must never be why someone cannot reach their diary.
+  preference must never be why someone cannot reach their diary. The path
+  is the default rather than a constant: `--config` / `ZECRET_CONFIG_PATH`
+  redirects it, which is what lets a development build run without writing
+  the preferences someone actually uses. `ZecretApp` resolves the fallback
+  when it is constructed, not at import time, so tests can redirect it —
+  `__main__.py` passes `None` for "you decide" rather than naming the
+  default itself, and `conftest.py`'s autouse `isolated_config` fixture
+  depends on that.
 - `screens/*.py` never call `crypto.py` or the filesystem directly — they
   only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
   needs something crypto-shaped, storage grows the method: this is why
