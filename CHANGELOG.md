@@ -20,6 +20,14 @@ file matters as much as that does.
   running a build of Zecret you are working on, where changing the theme to
   see what it looks like should not change the one you write in.
 
+### Changed
+
+- The source distribution no longer ships `tools/`. Nothing installs or
+  runs differently — the wheel never contained it, and the test suite the
+  sdist carries does not depend on it. What an sdist is for is rebuilding
+  and verifying the package; the screenshot and dev-diary generators are
+  for working on it from a git checkout, which is where they now stay.
+
 ### Fixed
 
 - `ZECRET_DIARY_PATH` set to an empty string is now treated as unset rather

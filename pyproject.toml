@@ -61,11 +61,20 @@ packages = ["src/zecret"]
 # local file (.claude/settings.local.json was the one that showed up) is not
 # ignored, and so was being uploaded. Listed explicitly, so a new stray file
 # has to be added here on purpose before it can ship.
+#
+# The test for a line here is not "is this part of the project?" -- it is
+# "does rebuilding or verifying this package need it?". The sdist's reader
+# is someone building Zecret from source, most often a distro packager, not
+# the person running `pip install`; that one gets the wheel, which is
+# src/zecret and nothing else. /tests earns its place on that test, because
+# a packager who cannot run the suite cannot vouch for what they ship, and
+# nothing in it reaches outside the sdist. Development conveniences do not:
+# tools/ and zecret-dev.sh belong to the git checkout, and their entry
+# point is `git clone`, not a download from PyPI.
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
     "/tests",
-    "/tools",
     "/docs",
     "/assets",
     "/.github",
@@ -159,5 +168,9 @@ select = [
 "tests/**" = ["S101", "S105", "S106", "S311"]
 # The screenshot tool opens a throwaway diary with a password written in
 # the file, and shells out to a converter it picked from a fixed list.
-# Neither is a secret and neither takes untrusted input.
-"tools/**" = ["S101", "S105", "S106", "S603"]
+# Neither is a secret and neither takes untrusted input. The dev-diary
+# seeder wants `random` for exactly what S311 says it is for -- plausible
+# variety in fake prose, seeded so the same diary comes back. Nothing in
+# tools/ derives a key or generates a nonce; that is crypto.py's job, and
+# S311 is still on there.
+"tools/**" = ["S101", "S105", "S106", "S311", "S603"]

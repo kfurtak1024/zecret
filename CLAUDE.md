@@ -197,6 +197,34 @@ and tested before touching the UI, and leave visual polish until the
 behavior is settled. Bugs in `crypto.py` and `storage.py` are the ones that
 actually matter.
 
+**Never develop against a real diary, and never run `uv run zecret` bare.**
+The working tree is the program: an unfinished `storage.py` opening
+someone's own diary is how entries get lost. Use the script instead —
+
+```
+./zecret-dev.sh
+```
+
+— which seeds a throwaway diary if there is not one yet and opens it with
+**both** overrides, `--path` and `--config`. Both are required and only one
+of them fails loudly: forgetting `--path` shows you your own diary, which
+you notice, while forgetting `--config` silently writes the preferences you
+actually use. That is the whole reason the pair is in a script rather than
+in a shell alias someone retypes.
+
+Everything lives in `.zecret-dev/` inside the checkout — gitignored, and
+absent from the sdist allowlist in `pyproject.toml`, which is what keeps it
+out of a release. Delete it whenever; the next run rebuilds it.
+
+`tools/seed_dev_diary.py` is what does the seeding, and is worth running
+directly when you want different data: a few hundred generated days,
+deterministic per `--seed`, behind the password `dev`. It **refuses to
+write anywhere inside `~/.zecret`**, which is the guard that makes it safe
+to point `--path` somewhere by hand. A few of the seeded days are awkward
+on purpose (very long, one word, emoji, an unbroken line with nothing to
+wrap on) and it prints which dates they landed on. Add to `EDGE_CASES` when
+a new shape breaks something, so the next regeneration still has it.
+
 ## Testing
 
 - Every test file lists its required coverage in its docstring — treat

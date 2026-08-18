@@ -13,6 +13,11 @@ build/
 # Diary files -- never commit one, encrypted or not.
 *.enc
 .zecret/
+# The throwaway diary zecret-dev.sh runs against. *.enc already catches the
+# diary itself; this is for everything beside it -- the preferences file
+# above all, which is plain JSON and would otherwise sit here untracked
+# waiting for a `git add -A`.
+.zecret-dev/
 
 # uv.lock is deliberately NOT ignored: Zecret is an application, not a
 # library, so the lockfile is committed to pin exact dependency versions.

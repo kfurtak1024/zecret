@@ -184,11 +184,27 @@ for crash recovery.
 ```bash
 git clone https://github.com/kfurtak1024/zecret.git
 cd zecret
-uv sync          # dev tools included (PEP 735 dependency group)
-uv run zecret    # run it from the checkout
+uv sync            # dev tools included (PEP 735 dependency group)
+./zecret-dev.sh    # run it against a throwaway diary
 uv run pytest
 uv run ruff check . && uv run ruff format .
 uv run mypy
+```
+
+Note `./zecret-dev.sh` rather than `uv run zecret`. Running the app from a
+checkout opens **your own diary** with whatever code is currently checked
+out, which is not what you want a half-finished change doing. The script
+points the app at `.zecret-dev/` instead — gitignored, throwaway, and
+seeded on first run with a few hundred generated days so there is enough in
+it to see a layout problem. The password is `dev`. Delete the directory
+whenever you like; the next run rebuilds it.
+
+It overrides the preferences file as well as the diary, which matters more
+than it sounds: without that, trying themes out in a development build
+changes the theme in the one you write in.
+
+```bash
+uv run python tools/seed_dev_diary.py --help    # different data, same guardrails
 ```
 
 The screenshots above are generated, not taken by hand — regenerate them
