@@ -395,6 +395,15 @@ patch number, not a retry. This is why `check` and `verify` run first.
   `BINDINGS`, so a new binding appears there automatically and a test
   fails if it does not. Never hand-write a key into it. It is bound to `?`
   on the entry list only, so `?` stays typeable in every text field.
+- **The help popup spends width to buy height.** A section longer than
+  `COLUMN_THRESHOLD` is split down the middle into two columns, read down
+  and then across, and `fit_columns()` stacks them again where the terminal
+  is too narrow to pair them — the same bargain `fit_logo()` already makes.
+  This is what keeps the page to 30 rows rather than 47. Its full height is
+  coupled to two constants that must move together: `ROWS["help"]` in
+  `tools/screenshots.py` (what the picture is shot at) and `SHOT_ROWS` in
+  `tests/test_help_screen.py` (which fails if the page outgrows it).
+  Nothing else can see a cropped screenshot, so that test is the guard.
 - The version shown in the help popup comes from `zecret.__version__`,
   which reads the installed distribution metadata. `pyproject.toml` is the
   only place the version is written; don't add a second copy.

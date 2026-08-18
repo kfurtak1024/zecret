@@ -22,6 +22,12 @@ file matters as much as that does.
 
 ### Changed
 
+- **The help popup is wider, and most of it now fits on screen at once.**
+  The keys sit in two columns instead of one long list, which takes the
+  page from 47 rows to 30 — on an 80×25 terminal every key of the diary is
+  visible without scrolling, where before you scrolled to reach half of
+  them. A terminal too narrow to hold two columns stacks them back into
+  one rather than squeezing the descriptions.
 - The source distribution no longer ships `tools/`. Nothing installs or
   runs differently — the wheel never contained it, and the test suite the
   sdist carries does not depend on it. What an sdist is for is rebuilding

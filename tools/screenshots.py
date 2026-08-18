@@ -52,8 +52,12 @@ ROWS = {
     "date": 18,
     "search": 20,
     # The whole popup: logo, every key -- navigation included, which is
-    # most of them -- and the notes underneath.
-    "help": 50,
+    # most of them -- and the notes underneath. Two columns of keys brought
+    # this down from 50; it is the height the popup stops scrolling at, so
+    # it tracks the layout rather than being padded for safety. Guarded by
+    # SHOT_ROWS in tests/test_help_screen.py, since a cropped screenshot is
+    # not something any test can see.
+    "help": 34,
 }
 
 #: Width of the rendered PNGs, matching what the README embeds.

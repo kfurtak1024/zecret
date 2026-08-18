@@ -164,10 +164,14 @@ SettingsScreen {
 
 /* --- HelpScreen (modal) ------------------------------------------------- */
 
-/* Wide enough for the logo, and never taller than the terminal: the help
-   scrolls inside its own border rather than off the bottom of the screen. */
+/* Wide enough for two columns of keys side by side, and never taller than
+   the terminal: the help scrolls inside its own border rather than off the
+   bottom of the screen. The width is spent to buy height back -- eighteen
+   keys in one column is a page you scroll, and the same eighteen in two is
+   most of a page you do not. It still lands inside eighty columns, which
+   is the width the rest of the app is built to. */
 #help-box {
-    width: 62;
+    width: 76;
     max-width: 100%;
     height: auto;
     max-height: 100%;
@@ -203,6 +207,20 @@ SettingsScreen {
    it knows how wide the widest key in a section is. */
 .help-key {
     width: 100%;
+}
+
+/* Two columns side by side. `layout` is switched to vertical by
+   HelpScreen.fit_columns when the terminal is too narrow to pair them,
+   which is why the height must be auto rather than a fraction: stacked,
+   these have to grow to whatever they hold. */
+.help-columns {
+    width: 100%;
+    height: auto;
+}
+
+.help-column {
+    width: 1fr;
+    height: auto;
 }
 
 /* A tight list, like the key rows above: each note is one line, and the

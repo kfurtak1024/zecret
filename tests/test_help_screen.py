@@ -11,6 +11,11 @@ Required coverage:
       navigation keys are only ever found here.
     - The logo and version are shown, and the logo gives way rather than
       being drawn half-cut on a narrow terminal.
+    - A long section is laid out in two columns side by side, and stacks
+      back into one where the terminal is too narrow to pair them.
+    - The whole popup fits the height tools/screenshots.py shoots it at, so
+      a layout that grows is caught here rather than by someone noticing a
+      cropped picture months later.
     - '?' typed into a text field stays a '?'.
 """
 
@@ -20,6 +25,8 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
+from textual.containers import VerticalScroll
+from textual.widget import Widget
 from textual.widgets import Input, Label, Static, TextArea
 
 from zecret import __version__
@@ -42,6 +49,13 @@ from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
 TODAY = dt.date.today()
+
+#: The height tools/screenshots.py shoots the help popup at. Written out
+#: rather than imported: tools/ is not in the sdist, and these tests have to
+#: run from one. It guards the direction that actually goes wrong -- a page
+#: that grows past its picture -- so raise this and ROWS["help"] together if
+#: the help ever genuinely needs more room.
+SHOT_ROWS = 34
 
 
 # Argon2 at test cost, and no pause after a failed unlock: this suite
@@ -184,6 +198,67 @@ async def test_widening_the_terminal_brings_the_logo_back(diary_path):
         assert app.screen.query_one("#help-logo", Static).display is True
 
 
+# --- columns ---------------------------------------------------------------
+
+
+def columns(app: ZecretApp) -> list[Widget]:
+    """The column containers of the first multi-column section."""
+    return list(app.screen.query(".help-columns").first().query(".help-column"))
+
+
+async def test_a_long_section_is_laid_out_in_two_columns(diary_path):
+    """Eighteen keys in one column is a page you scroll; the same eighteen
+    in two is most of a page you do not. Side by side means same top, and
+    different left -- geometry rather than the style that produced it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        left, right = columns(app)
+        assert left.region.y == right.region.y, "columns should sit side by side"
+        assert left.region.x < right.region.x
+        assert len(left.query(".help-key")) == len(right.query(".help-key")), (
+            "eighteen keys should split down the middle"
+        )
+
+
+async def test_a_narrow_terminal_stacks_the_columns(diary_path):
+    """Two columns squeezed until the descriptions truncate tell the reader
+    less than one column they have to scroll."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(40, 40)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        left, right = columns(app)
+        assert left.region.y < right.region.y, "columns should stack, not squeeze"
+
+
+async def test_widening_the_terminal_pairs_the_columns_again(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(40, 40)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        assert columns(app)[0].region.y < columns(app)[1].region.y
+
+        await pilot.resize_terminal(100, 40)
+        await pilot.pause()
+        assert columns(app)[0].region.y == columns(app)[1].region.y
+
+
+async def test_the_whole_popup_fits_the_height_the_screenshots_use(diary_path):
+    """tools/screenshots.py shoots the help at SHOT_ROWS, and nothing fails
+    when a picture is cropped -- so the check lives here instead. Raise both
+    together if the page genuinely needs to grow."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, SHOT_ROWS)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        box = app.screen.query_one("#help-box", VerticalScroll)
+        assert box.virtual_size.height <= box.size.height, (
+            f"the help no longer fits {SHOT_ROWS} rows; screenshots will be cropped"
+        )
+
+
 # --- what is on the page ---------------------------------------------------
 
 
@@ -196,7 +271,18 @@ async def test_every_advertised_key_of_every_screen_is_listed(diary_path):
         await open_help(pilot)
         lines = page_lines(app)
 
-        every_binding = [EntryListScreen.BINDINGS] + [bindings for _title, bindings in SECTIONS]
+        # SECTIONS holds *groups* of binding lists, one per screen the
+        # section merges, so it has to be flattened a level. Passing the
+        # nested list straight to documented_bindings() returns nothing --
+        # a list is not a Binding -- and this check silently covered only
+        # the entry list.
+        every_binding = [EntryListScreen.BINDINGS] + [
+            bindings for _title, groups in SECTIONS for bindings in groups
+        ]
+        assert sum(len(documented_bindings(b)) for b in every_binding) > len(
+            documented_bindings(EntryListScreen.BINDINGS)
+        ), "this check must reach past the entry list"
+
         for bindings in every_binding:
             for binding in documented_bindings(bindings):
                 # Rows are right-aligned within their section, so compare
