@@ -22,6 +22,12 @@ file matters as much as that does.
 
 ### Changed
 
+- **A wide window now shows more of each day.** Rows in the diary list and
+  in search used to stop after sixty characters however much room there
+  was, leaving most of a wide terminal empty beside a cut-off sentence.
+  They now carry the whole of the entry's first line and show as much of it
+  as fits, trimming with an ellipsis only where the window really runs out.
+  Resizing costs nothing: the trimming happens as the row is drawn.
 - **The help popup is wider, and most of it now fits on screen at once.**
   The keys sit in two columns instead of one long list, which takes the
   page from 47 rows to 30 — on an 80×25 terminal every key of the diary is

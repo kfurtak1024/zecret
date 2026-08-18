@@ -38,7 +38,7 @@ from hypothesis import strategies as st
 
 from zecret.crypto import KEY_SIZE, NONCE_SIZE, KdfParams, ZecretDecryptError, decrypt, encrypt
 from zecret.models import Entry
-from zecret.screens.base import EMPTY_BODY, SNIPPET_LENGTH, body_snippet
+from zecret.screens.base import EMPTY_BODY, SNIPPET_CAP, body_snippet
 from zecret.storage import _load_document, _parse_record
 
 # Zecret stores UTC timestamps and local dates, and a diary may hold any
@@ -249,12 +249,14 @@ def test_the_salt_survives_base64(salt: bytes):
 
 @given(body=bodies, length=st.integers(min_value=2, max_value=200))
 def test_a_snippet_never_exceeds_its_length(body: str, length: int):
-    """It stands in for a title in a fixed-width row, so overshooting the
-    bound would push the layout around."""
+    """The row is trimmed to the window at render time, so this bound is
+    not what the reader sees -- it is the guard that keeps one pasted
+    paragraph with no newline out of a label. Overshooting it would defeat
+    the only thing standing between the list and an unbounded string."""
     assert len(body_snippet(body, length)) <= max(length, len(EMPTY_BODY))
 
 
 @given(body=bodies)
 def test_a_snippet_is_never_blank(body: str):
     """Every row has to say something, or the day looks like a gap."""
-    assert body_snippet(body, SNIPPET_LENGTH).strip()
+    assert body_snippet(body, SNIPPET_CAP).strip()

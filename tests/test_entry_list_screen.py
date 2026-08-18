@@ -17,6 +17,10 @@ Required coverage:
     - That refresh keeps the reader where they were: on the day they had
       highlighted, or -- when that day was the one just deleted -- on the
       next older day, which has moved up into its place.
+    - A row carries the entry's whole first line rather than a fixed slice
+      of it, and is clipped to the window at render time. This is what lets
+      a wide terminal show more of a day without any of it being recomputed
+      when the window is resized.
 """
 
 from __future__ import annotations
@@ -868,3 +872,57 @@ async def test_getting_around_an_empty_diary_does_nothing(diary_path):
             await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
         assert app.screen.rows == []
+
+
+# --- how much of a day a row shows -----------------------------------------
+
+
+#: Longer than any row was ever given before, and longer than a narrow
+#: terminal can show -- so a row carrying all of it proves the length is no
+#: longer decided here.
+LONG_FIRST_LINE = "The morning was clear and I walked further than I meant to, " * 3
+
+
+async def test_a_row_carries_the_whole_first_line(diary_path):
+    """The row is given the line; the window decides how much of it shows.
+
+    Rows used to be cut to sixty characters whatever the terminal was, so a
+    wide window showed a lot of empty space beside a truncated day.
+    """
+    seed(diary_path, Entry.new(TODAY, f"{LONG_FIRST_LINE}\nand a second line"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(60, 20)) as pilot:
+        await unlock(pilot)
+        assert snippets(app) == [LONG_FIRST_LINE.strip()], (
+            "the row should hold the whole line even when the terminal cannot show it"
+        )
+
+
+async def test_a_row_still_stops_at_the_first_line(diary_path):
+    """Wider is not taller: the row is a day, and the rest of the day's
+    writing belongs in the editor."""
+    seed(diary_path, Entry.new(TODAY, "The first line.\nThe second line."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(200, 20)) as pilot:
+        await unlock(pilot)
+        assert snippets(app) == ["The first line."]
+
+
+async def test_rows_are_clipped_by_the_window_rather_than_wrapped(diary_path):
+    """The CSS that makes the whole thing work, and the reason no resize
+    handler is needed: the widget trims at render time. A wrapped row would
+    also be two rows tall, which would break the alignment of the list."""
+    seed(diary_path, Entry.new(TODAY, LONG_FIRST_LINE))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(60, 20)) as pilot:
+        await unlock(pilot)
+        rows = [
+            item.query_one(Label)
+            for item in app.screen.query_one("#entries", ListView).children
+            if not item.has_class(HEADING_CLASS)
+        ]
+        assert rows
+        for label in rows:
+            assert label.styles.text_wrap == "nowrap"
+            assert label.styles.text_overflow == "ellipsis"
+            assert label.size.height == 1, "a day must not become two rows"

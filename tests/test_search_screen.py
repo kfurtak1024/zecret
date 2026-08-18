@@ -8,6 +8,9 @@ Required coverage:
       return, with the cursor still on the day that was opened.
     - Escape returns to the list.
     - Searching never writes anything to disk.
+    - A result carries the entry's whole first line and is clipped to the
+      window, the same as a row of the diary list -- the two sit one key
+      apart and would look mismatched if only one of them grew.
 """
 
 from __future__ import annotations
@@ -326,3 +329,39 @@ async def test_the_highlighted_day_is_none_when_the_cursor_is_off_the_results(st
         screen.results = []
         assert screen.highlighted_date is None
         assert screen.row_for(None) == 0
+
+
+# --- how much of a day a result shows --------------------------------------
+
+
+#: Longer than a narrow terminal can show, so a result carrying all of it
+#: proves the length is not decided when the row is built.
+LONG_FIRST_LINE = "The morning was clear and I walked further than I meant to, " * 3
+
+
+async def test_a_result_carries_the_whole_first_line(diary_path):
+    """Search rows grew with the diary list rather than being left behind:
+    the two are one keypress apart, and a stunted result beside a full row
+    reads as a bug in the one that is shorter."""
+    seed(diary_path, Entry.new(TODAY, f"{LONG_FIRST_LINE}\nand a second line"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(60, 20)) as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        assert result_snippets(app) == [LONG_FIRST_LINE.strip()]
+
+
+async def test_results_are_clipped_by_the_window_rather_than_wrapped(diary_path):
+    seed(diary_path, Entry.new(TODAY, LONG_FIRST_LINE))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(60, 20)) as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        rows = [
+            item.query_one(Label) for item in app.screen.query_one("#results", ListView).children
+        ]
+        assert rows
+        for label in rows:
+            assert label.styles.text_wrap == "nowrap"
+            assert label.styles.text_overflow == "ellipsis"
+            assert label.size.height == 1, "a day must not become two rows"

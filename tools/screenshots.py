@@ -68,28 +68,36 @@ THEMES = [("textual-dark", "dark"), ("textual-light", "light")]
 
 #: A fortnight of unremarkable days across two months, so the month
 #: headings and their counts both have something to show.
+#:
+#: A paragraph is one line here, with no hard wrapping inside it. Rows show
+#: as much of the first line as the window holds, so a line broken by hand
+#: at sixty-odd characters would put a row in the shots that stops
+#: mid-sentence with no ellipsis to explain why -- which is what these
+#: looked like when the wrapping was left in. The first day is long enough
+#: to be trimmed at the shot's width, on purpose: one row ending in an
+#: ellipsis shows what the list does with a day that has more to say.
 SAMPLE = [
     (
         dt.date(2026, 8, 13),
-        "Long walk once the rain stopped. The lane past the mill was under\n"
-        "water again, so I went up the hill instead and found an orchard\n"
-        "nobody seems to be picking.\n"
+        "Long walk once the rain stopped. The lane past the mill was under water "
+        "again, so I went up the hill instead and found an orchard nobody seems "
+        "to be picking.\n"
         "\n"
         "Came back the long way. Worth it.",
     ),
     (
         dt.date(2026, 8, 12),
-        "Finished the book about lighthouse keepers. The last chapter was\nworth the slow middle.",
+        "Finished the book about lighthouse keepers. The last chapter was worth the slow middle.",
     ),
     (
         dt.date(2026, 8, 9),
-        "Coffee with Sam. We talked about moving north again, and this time\n"
-        "it sounded less like talking.",
+        "Coffee with Sam. We talked about moving north again, and this time it "
+        "sounded less like talking.",
     ),
     (
         dt.date(2026, 8, 4),
-        "Bread came out flat. Too impatient with the second prove, which is\n"
-        "the same mistake as last time.",
+        "Bread came out flat. Too impatient with the second prove, which is the "
+        "same mistake as last time.",
     ),
     (dt.date(2026, 8, 1), "Quiet start to the month. Spent the evening fixing the gate."),
     (dt.date(2026, 7, 29), "Swam before breakfast. Cold, then not. Rain came in by noon."),

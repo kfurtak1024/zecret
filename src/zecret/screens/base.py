@@ -37,8 +37,17 @@ EMPTY_BODY = "(empty)"
 #: happens, and each screen adds what it means for what you were doing.
 DIARY_CHANGED = "The diary changed on disk — another Zecret may have it open."
 
-#: How much of an entry's first line the list shows before trimming.
-SNIPPET_LENGTH = 60
+#: The most of an entry's first line a row will ever carry. Not a display
+#: width: how much of a row is shown is the terminal's business, decided at
+#: render time by `text-overflow: ellipsis` in app.tcss, so a wide window
+#: shows more of the line and a narrow one trims it with no work here and
+#: nothing to recompute when the window changes size.
+#:
+#: This is the cap behind that -- what stops one pasted paragraph with no
+#: newline in it from putting fifty kilobytes into a label that then throws
+#: nearly all of it away. Far past any terminal's width, so it never cuts a
+#: line someone could otherwise have read.
+SNIPPET_CAP = 500
 
 
 def today() -> dt.date:
@@ -83,18 +92,33 @@ def format_day_long(date: dt.date) -> str:
     return f"{date:%A, %d %B %Y}"
 
 
-def body_snippet(body: str, length: int = SNIPPET_LENGTH) -> str:
-    """The entry's first non-blank line, trimmed to `length`.
+def body_snippet(body: str, length: int = SNIPPET_CAP) -> str:
+    """The entry's first non-blank line, capped at `length`.
 
     With no titles, this is what tells one day apart from another in a
-    list -- the diary equivalent of a subject line.
+    list -- the diary equivalent of a subject line. The row is given the
+    whole line and the terminal decides how much of it fits; `length` is a
+    guard against a pathological line, not the width of anything.
+
+    Scanned a line at a time rather than with splitlines(), which copies
+    the entire body to get at its first line. That costs about six
+    microseconds an entry on a long one against a tenth of that here --
+    real, but a rounding error next to the cost of mounting the rows, so
+    this is written the cheap way because there is no reason to write it
+    the expensive way, not because it was ever the slow part.
     """
-    first = next((line.strip() for line in body.splitlines() if line.strip()), "")
-    if not first:
-        return EMPTY_BODY
-    if len(first) <= length:
-        return first
-    return f"{first[: length - 1].rstrip()}…"
+    start = 0
+    while start < len(body):
+        end = body.find("\n", start)
+        if end == -1:
+            end = len(body)
+        first = body[start:end].strip()
+        if first:
+            if len(first) <= length:
+                return first
+            return f"{first[: length - 1].rstrip()}…"
+        start = end + 1
+    return EMPTY_BODY
 
 
 def entry_summary(entry: Entry) -> str:

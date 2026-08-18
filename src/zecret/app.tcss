@@ -103,6 +103,20 @@ SettingsScreen {
         background: transparent;
     }
 
+    /* A row shows as much of the entry's first line as the window has room
+       for, and trims what will not fit with an ellipsis. Done here rather
+       than by measuring the text in Python: the widget already knows how
+       wide it is at render time, so a resize costs nothing, where
+       recomputing the rows would mean rebuilding every one of them on
+       every event of a window drag. Rows must not wrap either -- a row is
+       a day, and a day that took two lines would break the alignment the
+       whole list is read by. */
+    & > ListItem > Label {
+        width: 100%;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+
     /* The selected row is the one thing the eye should find instantly. */
     & > ListItem.-highlight {
         background: $accent-muted;

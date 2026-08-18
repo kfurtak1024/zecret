@@ -101,6 +101,16 @@ Keep this layering strict:
   mapping and knows nothing about it. Sorting, grouping and wording are the
   screen's business — don't push them down into storage to save the screen
   a `sorted()`.
+- **How wide a row is belongs to the terminal, not to Python.** A list row
+  carries the entry's whole first line and `app.tcss` trims it at render
+  time (`text-wrap: nowrap` + `text-overflow: ellipsis`), so a wide window
+  shows more of a day for free. Never compute the trim from a measured
+  width: that makes the row text depend on the size, which means rebuilding
+  on resize, and `refresh_entries()` is a full clear-and-remount that takes
+  over a second at 1500 entries — on every event of a window drag.
+  `SNIPPET_CAP` in `screens/base.py` is a guard against one pasted
+  paragraph with no newline in it, not a display width; it is far past any
+  terminal, and shortening it back into a width would undo this.
 
 Interface note: `DiaryFile.create_new()` and `DiaryFile.unlock()` return
 `(DiaryFile, key)`, not just the `DiaryFile`. The derived key has to reach
