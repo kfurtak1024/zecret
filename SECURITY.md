@@ -16,8 +16,8 @@ will be kept posted. If you want credit in the advisory, say so and you
 will get it.
 
 Please include what you need to make the problem reproducible: the version
-(`zecret --help` or the version on the help popup), the platform, and the
-steps. A proof of concept against a scratch diary — `zecret --path
+(`zecret --version`, or the tagline on the help popup), the platform, and
+the steps. A proof of concept against a scratch diary — `zecret --path
 /tmp/scratch.enc` — is more useful than one against anything you care
 about.
 
@@ -68,8 +68,12 @@ that *is* worth reporting.
   use, and Zecret does not lock pages into RAM. Either may reach swap or a
   core dump. Full-disk encryption is the answer to that, not this program.
 - **`~/.zecret/config.json` is plaintext.** It holds the chosen theme and
-  nothing else — no entry text, no dates, nothing derived from your key —
-  because the lock screen has to be themed before there is a key.
+  how long the diary may sit idle before locking, and nothing else — no
+  entry text, no dates, nothing derived from your key. Both have to be
+  known before the diary is open: the lock screen is themed too, and the
+  idle timer runs from launch rather than from unlocking. A reader of that
+  file learns your taste in colours and how patient you are, and nothing
+  about what you wrote.
 - **Anyone who can already run code as you has won.** A keylogger, a
   debugger attached to the process, or a modified Zecret is outside what a
   local encrypted file can defend against.
