@@ -68,6 +68,9 @@ Your settings follow you rather than the file, so a diary opened with
 build you are working on, say — `--config /some/where.json` or
 `ZECRET_CONFIG_PATH` gives that run preferences of its own.
 
+`zecret --help` lists both flags and both environment variables, and
+`zecret --version` says which Zecret you have without opening the diary.
+
 On first launch there is no diary yet, so Zecret asks you to choose a
 master password and creates one. Every launch after that asks for that
 password to unlock it.

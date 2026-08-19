@@ -12,6 +12,14 @@ file matters as much as that does.
 
 ### Added
 
+- **`zecret --version`**, which answers what you are running without asking
+  for your password. The version was already in the help popup, but that is
+  on the other side of the unlock screen — an odd place to keep the one
+  fact a bug report needs.
+- **`zecret --help` now names `ZECRET_DIARY_PATH` and
+  `ZECRET_CONFIG_PATH`.** Both have existed for a while and neither
+  appeared anywhere the command itself would tell you about, which made
+  them documentation you had to already know to look for.
 - **Preferences can live somewhere else too.** `--config /some/where.json`,
   or `ZECRET_CONFIG_PATH`, points one run at a different settings file. The
   default has not moved and neither has the rule behind it: your settings

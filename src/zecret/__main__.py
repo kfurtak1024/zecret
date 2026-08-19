@@ -4,7 +4,13 @@ Supports:
     zecret                              # default diary and preferences
     zecret --path /custom/diary.enc     # override diary location
     zecret --config /custom/prefs.json  # override preferences location
+    zecret --version                    # print the version and exit
     (or env vars ZECRET_DIARY_PATH / ZECRET_CONFIG_PATH)
+
+Both environment variables are named in `--help`'s epilog rather than left
+to this docstring. A variable nothing prints is a variable nobody finds:
+`--help` is the only description of the command line a user ever sees, and
+until they can read it there, the flags look like the whole interface.
 
 The two are independent, and neither implies the other. Preferences are
 settings for the person rather than for the file, so a diary opened with
@@ -25,8 +31,18 @@ import argparse
 import os
 from pathlib import Path
 
+from zecret import __version__
 from zecret.app import ZecretApp
 from zecret.storage import DEFAULT_DIARY_PATH
+
+ENVIRONMENT_HELP = """\
+environment variables:
+  ZECRET_DIARY_PATH    same as --path, for every run in this shell
+  ZECRET_CONFIG_PATH   same as --config, likewise
+
+A flag wins over the matching variable, and a variable set to nothing at
+all counts as unset rather than as the current directory.
+"""
 
 
 def _from_env(name: str) -> Path | None:
@@ -43,7 +59,21 @@ def _from_env(name: str) -> Path | None:
 def main() -> None:
     """Parse args/env, construct ZecretApp, and run it."""
     parser = argparse.ArgumentParser(
-        prog="zecret", description="A modern, encrypted terminal diary."
+        prog="zecret",
+        description="A modern, encrypted terminal diary.",
+        epilog=ENVIRONMENT_HELP,
+        # The epilog is laid out in columns; the default formatter would
+        # reflow it into a paragraph.
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"zecret {__version__}",
+        # The help popup shows this too, but only once the diary is open --
+        # so without this, saying which version misbehaved means first
+        # unlocking it. What you run should be answerable without a password.
+        help="Show the version and exit.",
     )
     parser.add_argument(
         "--path",

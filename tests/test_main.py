@@ -6,6 +6,9 @@ Required coverage:
     - The two are independent: neither flag implies anything about the other.
     - An empty environment variable counts as unset, not as `.`.
     - The app is constructed with those paths and then run.
+    - --version prints the installed version and launches nothing.
+    - --help names both environment variables, which is the only place a
+      user can discover them.
 
 CI additionally runs `zecret --help` against an installed copy, which is
 the only way to catch the console script being wired up wrongly; these
@@ -25,6 +28,7 @@ from pathlib import Path
 import pytest
 
 import zecret.__main__ as entry_point
+from zecret import __version__
 from zecret.storage import DEFAULT_DIARY_PATH
 
 
@@ -91,6 +95,29 @@ def test_an_unknown_flag_is_refused(launched, monkeypatch):
     with pytest.raises(SystemExit):
         entry_point.main()
     assert launched.runs == 0, "nothing may launch on a bad command line"
+
+
+def test_version_is_printed_and_nothing_is_launched(launched, monkeypatch, capsys):
+    """Asking what you are running must not open a diary to answer -- the
+    help popup already covers the case where you are past the password."""
+    monkeypatch.setattr("sys.argv", ["zecret", "--version"])
+    with pytest.raises(SystemExit) as exit_code:
+        entry_point.main()
+    assert exit_code.value.code == 0
+    assert capsys.readouterr().out.strip() == f"zecret {__version__}"
+    assert launched.runs == 0
+
+
+def test_help_names_both_environment_variables(launched, monkeypatch, capsys):
+    """--help is the only description of the command line a user reads, so a
+    variable missing from it is a variable nobody finds."""
+    monkeypatch.setattr("sys.argv", ["zecret", "--help"])
+    with pytest.raises(SystemExit):
+        entry_point.main()
+    printed = capsys.readouterr().out
+    assert "ZECRET_DIARY_PATH" in printed
+    assert "ZECRET_CONFIG_PATH" in printed
+    assert launched.runs == 0
 
 
 def test_preferences_are_left_to_the_app_by_default(launched, monkeypatch):
