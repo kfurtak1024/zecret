@@ -360,7 +360,11 @@ patch number, not a retry. This is why `check` and `verify` run first.
   conventions at the top: theme variables only (never hard-coded colors,
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
-  spacing. The one break from that grouping is the `:light` section at the
+  spacing. Text starts at the same column on every full-width screen — the
+  gutter lines the *borders* up, and `Input` and `TextArea` pad their
+  insides by different amounts, so lining up what is read takes a rule of
+  its own; `tests/test_chrome.py` fails if the two drift apart again. The
+  one break from that grouping is the `:light` section at the
   foot of the file, which exists because light and dark stack depth in
   opposite directions and no theme variable can say so — the reasoning is
   written there. Adding a card means adding it to that selector list too,

@@ -153,8 +153,15 @@ SettingsScreen {
 
 /* --- SearchScreen ------------------------------------------------------- */
 
+/* The 1-cell padding is TextArea's, not Input's. Input pads by 2 inside
+   its border and TextArea by 1, so with both bordered at the same column
+   the query sat one cell right of the results listed directly under it --
+   and one cell right of the editor, which is the other full-width field
+   in the app. The margin lines the borders up; this lines the text up,
+   which is the part anyone actually reads down. */
 #query {
     margin: 0 2;
+    padding: 0 1;
     border: round $border-blurred;
 
     &:focus {

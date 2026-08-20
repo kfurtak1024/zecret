@@ -13,6 +13,10 @@ Required coverage:
     - A modal shows its own key. Without a footer of its own it let the
       entry list's bar show through, advertising eight keys that do
       nothing while a question has focus and none of the one that does.
+    - Text lines up down the left edge of every screen. The gutter in
+      app.tcss lines the borders up; what a reader follows is where the
+      text starts, and Input and TextArea pad their insides by different
+      amounts, so the two do not follow from each other.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Footer, Input
+from textual.widgets import Footer, Input, Label, ListView, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
@@ -155,6 +159,41 @@ async def test_reaching_the_diary_before_unlocking_is_a_programming_error(diary_
         await pilot.pause()
         with pytest.raises(RuntimeError):
             _ = app.unlocked
+
+
+# --- alignment -------------------------------------------------------------
+
+
+#: Where text begins on every full-width screen, in columns from the left:
+#: the 2-cell gutter, its border, and one cell inside that.
+TEXT_COLUMN = 4
+
+
+async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
+    """The search box used to sit one cell right of the results under it.
+    Input pads its inside by two cells and TextArea by one, so bordering
+    them at the same column is not the same as lining their text up --
+    which is the edge a reader's eye actually runs down."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 20)) as pilot:
+        await unlock(pilot)
+        rows = app.screen.query_one("#entries", ListView).children
+        assert rows[-1].query_one(Label).region.x == TEXT_COLUMN, "an entry row"
+
+        await pilot.press("slash")
+        await pilot.pause()
+        app.screen.query_one("#query", Input).value = "A"
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen.query_one("#query", Input).content_region.x == TEXT_COLUMN, "the query"
+        results = app.screen.query_one("#results", ListView).children
+        assert results[-1].query_one(Label).region.x == TEXT_COLUMN, "a result row"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen.query_one("#body", TextArea).content_region.x == TEXT_COLUMN, "the editor"
 
 
 # --- the key bar -----------------------------------------------------------

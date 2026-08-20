@@ -38,6 +38,11 @@ file matters as much as that does.
   as that screen was torn down, then reappeared a moment later over your
   entries, announcing a diary you had just opened. Nothing said before a
   lock carries across it now, in either direction.
+- **The search box lines up with its results.** It sat one cell to the
+  right of the days listed underneath it, and of the editor on the next
+  screen over — a text field pads its inside by more than a text area
+  does, so bordering them at the same place was not enough to line up what
+  you read.
 - **The key bar tells the truth while a question is on screen.** Asking
   which day to write about, or whether to delete an entry, left the entry
   list's bar showing underneath — eight keys, none of which did anything
