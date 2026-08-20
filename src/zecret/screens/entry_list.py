@@ -90,17 +90,20 @@ class EntryListScreen(ZecretScreen):
         Binding("d", "delete_entry", "Delete"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
-        # Shift-L, leaving l to the hjkl cluster below. A letter rather than
-        # an app-wide chord: locking from inside the editor would have to
-        # decide what to do with half-written text, and pressing escape
-        # first already answers that question properly.
+        # A chord rather than a letter, and the same chord the editor
+        # carries: locking is the one thing you want to press without first
+        # working out which screen you are on, and a bare letter cannot be
+        # bound where there is text to type into. ctrl+l is what a password
+        # manager locks with, and Textual leaves it free -- no widget in
+        # this app binds it, and the terminal's own clear-screen meaning
+        # belongs to a shell prompt, which is not what is running here.
         #
         # Shown, which the rest of this group's weight of use would not
         # earn it. Whether someone can find this key is a security property
         # and not a convenience: a writer stepping away who does not know
         # it either quits, losing where they were, or leaves the diary open
         # on the screen. That is not true of 'r' or of the movement keys.
-        Binding("L", "lock", "Lock"),
+        Binding("ctrl+l", "lock", "Lock"),
         # Bound here rather than app-wide on purpose: a '?' typed into the
         # editor, the search box or a password field must stay a '?'.
         Binding("question_mark", "help", "Help", key_display="?"),

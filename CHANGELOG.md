@@ -12,12 +12,19 @@ file matters as much as that does.
 
 ### Added
 
-- **Lock is in the key bar.** <kbd>L</kbd> has always put the diary away
-  without quitting, but it was only ever listed under <kbd>?</kbd>, which
-  is the wrong place for it: someone getting up from the desk is not the
-  person who stops to read the help page first. It now sits between
-  Settings and Help at the bottom of the entry list, where the choice to
-  lock can be made at the moment it occurs to you.
+- **Lock is <kbd>ctrl</kbd>+<kbd>l</kbd> now, and it is in the key bar.**
+  Locking used to be <kbd>L</kbd>, listed only under <kbd>?</kbd> and
+  working only on the entry list — but someone getting up from the desk is
+  not the person who stops to read the help page first, and a bare letter
+  cannot be pressed while there is text to type into. The chord is what a
+  password manager locks with, it sits between Settings and Help at the
+  bottom of the list, and it works while you are writing.
+- **Locking while writing saves the day first.** Press it mid-entry and
+  Zecret files what you have written, then asks for your password again.
+  The alternative was a question left on the screen with the diary open
+  behind it, which is the opposite of what the key is for. An untouched
+  day just locks; one that cannot be saved keeps you where you are with
+  the reason.
 
 ### Fixed
 

@@ -5,8 +5,12 @@ whoever is at the terminal. Locking is what makes walking away survivable,
 so what it forgets matters as much as what it shows.
 
 Required coverage:
-    - 'L' locks: the diary and key are gone from the app, the entry list is
-      gone from the screen, and the lock screen is asking for a password.
+    - ctrl+l locks: the diary and key are gone from the app, the entry list
+      is gone from the screen, and the lock screen is asking for a password.
+    - ctrl+l from the editor saves the day first, so locking on the way out
+      of the room neither loses the writing nor leaves a question on the
+      screen with the diary open behind it. An untouched editor just locks;
+      one that cannot save stays put with the reason.
     - Unlocking again works, and comes back to the entry list.
     - The idle timer locks once the wait has passed, and does not before.
     - Typing puts the wait back to the start.
@@ -77,16 +81,87 @@ def go_quiet(app: ZecretApp, minutes: float) -> None:
     app.last_activity = time.monotonic() - minutes * 60
 
 
+# --- locking from the editor -----------------------------------------------
+
+
+async def test_ctrl_l_in_the_editor_saves_before_locking(diary_path):
+    """Lock is pressed on the way out of the room. Asking about the text
+    would leave the diary open on the screen behind the question, so this
+    is the one place the app saves for you."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        app.screen.query_one("#body", TextArea).text = "Half a thought."
+        await pilot.pause()
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, UnlockScreen)
+        assert not app.is_unlocked
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[TODAY].body == "Half a thought.", "the writing must be on disk"
+
+
+async def test_ctrl_l_in_an_untouched_editor_just_locks(diary_path):
+    """Nothing typed is nothing to save -- and nothing to refuse over
+    either, which an empty day would otherwise be."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, UnlockScreen)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert TODAY not in reopened.entries, "an empty day must not be filed"
+
+
+async def test_a_save_that_fails_locks_nothing(diary_path, monkeypatch):
+    """A lock that threw the text away to get to the password prompt would
+    be the very thing saving before locking is for."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "Do not lose this."
+        await pilot.pause()
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(DiaryFile, "save", boom)
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen), "must not have locked"
+        assert app.is_unlocked
+        assert app.screen.query_one("#body", TextArea).text == "Do not lose this."
+
+
 # --- locking by hand -------------------------------------------------------
 
 
-async def test_shift_l_locks_the_diary(diary_path):
+async def test_ctrl_l_locks_the_diary(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         assert isinstance(app.screen, EntryListScreen)
 
-        await pilot.press("L")
+        await pilot.press("ctrl+l")
         await pilot.pause()
         await pilot.pause()
 
@@ -100,7 +175,7 @@ async def test_locking_takes_the_entries_off_the_screen(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("L")
+        await pilot.press("ctrl+l")
         await pilot.pause()
         await pilot.pause()
 
@@ -111,7 +186,7 @@ async def test_the_diary_can_be_unlocked_again(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        await pilot.press("L")
+        await pilot.press("ctrl+l")
         await pilot.pause()
         await pilot.pause()
 

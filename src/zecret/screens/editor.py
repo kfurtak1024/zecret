@@ -14,6 +14,10 @@ there is no separate "unsaved draft" state to manage across screens.
 Because there is no draft state, leaving with unsaved changes would lose
 them outright, so backing out of a modified entry asks for confirmation
 first. A save that fails keeps you on the screen with your text intact.
+
+Locking is the exception to that asking. ctrl+l saves the day and then
+locks, rather than putting a question on the screen and leaving the diary
+open behind it while it waits for an answer -- see action_save_and_lock.
 """
 
 from __future__ import annotations
@@ -36,6 +40,9 @@ DISCARD_QUESTION = "Discard your unsaved changes?"
 #: Shown for an empty body and for one that is only whitespace, which
 #: amounts to the same thing and reads the same way in the list.
 EMPTY_ENTRY = "Nothing to save — write something first."
+#: Said after ctrl+l, because the saving is the part you would not
+#: otherwise know happened -- the lock screen speaks for itself.
+SAVED_AND_LOCKED = "Saved, and locked."
 
 
 class EditorScreen(FormScreen):
@@ -46,6 +53,11 @@ class EditorScreen(FormScreen):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+s", "save", "Save", priority=True),
         Binding("escape", "back", "Back", priority=True),
+        # Reachable here, unlike the old shift-L on the entry list, because
+        # a chord means something of its own inside a text field. What it
+        # does with half-written text is the question that kept locking off
+        # this screen; action_save_and_lock answers it.
+        Binding("ctrl+l", "save_and_lock", "Lock", priority=True),
     ]
 
     def __init__(self, date: dt.date) -> None:
@@ -112,6 +124,17 @@ class EditorScreen(FormScreen):
     # --- actions -----------------------------------------------------------
 
     def action_save(self) -> None:
+        if self._save():
+            self.dismiss()
+
+    def _save(self) -> bool:
+        """Persist the day's text, and say whether it reached disk.
+
+        Split out of action_save because locking needs the same work
+        without the leaving: a caller that gets False back should stay
+        where it is, since the error is already on the screen and the text
+        is still only in the widget.
+        """
         body = self.body_text
         # Blank means blank, not just zero-length: a body of spaces and
         # newlines is what the list already renders as "(empty)", so
@@ -120,7 +143,7 @@ class EditorScreen(FormScreen):
         # any is asked with the whitespace taken off.
         if not body.strip():
             self.set_error(EMPTY_ENTRY)
-            return
+            return False
 
         diary, key = self.zecret.unlocked
         existing = self.entry
@@ -145,11 +168,32 @@ class EditorScreen(FormScreen):
             # reached disk.
             self.set_error(save_error(error))
             self.notify("The entry was not saved.", severity="error")
-            return
+            return False
 
         # Now the edit is the day's entry, so leaving is no longer "unsaved".
         self.entry = entry
-        self.dismiss()
+        return True
+
+    def action_save_and_lock(self) -> None:
+        """Put the day away, and the diary with it.
+
+        Saves rather than asking. Lock is what you press on the way out of
+        the room, so it must not stop to put a question on the screen and
+        then leave the diary open behind it while it waits to be answered
+        -- which is what backing out does, correctly, since backing out is
+        not a promise about who can read this.
+
+        Nothing typed yet means nothing to save: an untouched editor locks
+        straight away rather than refusing over an empty day. A day that
+        will not save -- blank, or a diary that changed underneath this one
+        -- keeps you here with the reason, because a lock that quietly threw
+        the text away would be the very thing this avoids.
+        """
+        if not self.modified:
+            self.zecret.lock()
+            return
+        if self._save():
+            self.zecret.lock(SAVED_AND_LOCKED)
 
     def action_back(self) -> None:
         if not self.modified:

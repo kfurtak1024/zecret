@@ -180,12 +180,16 @@ async def test_every_advertised_key_fits_an_eighty_column_terminal(diary_path):
         assert isinstance(app.screen, EntryListScreen)
         bar = footer_text(app)
 
-        missing = [
-            f"{binding.key_display or binding.key} {binding.description}"
+        # Asked of the app rather than read off the binding: the footer
+        # renders a chord the way Textual spells it, so ctrl+l is "^l"
+        # there and comparing against the raw key name would look for
+        # something the bar never contained.
+        advertised = [
+            f"{app.get_key_display(binding)} {binding.description}"
             for binding in documented_bindings(EntryListScreen.BINDINGS)
             if binding.show
-            if f"{binding.key_display or binding.key} {binding.description}" not in bar
         ]
+        missing = [entry for entry in advertised if entry not in bar]
         assert not missing, (
             f"the footer at {NARROWEST} columns does not fully show: {missing}\ngot: {bar!r}"
         )
@@ -200,7 +204,7 @@ async def test_the_key_bar_advertises_lock(diary_path):
     async with app.run_test(size=(NARROWEST, 16)) as pilot:
         await unlock(pilot)
         assert isinstance(app.screen, EntryListScreen)
-        assert "L Lock" in footer_text(app)
+        assert "^l Lock" in footer_text(app)
 
 
 async def test_the_footer_is_compact_on_every_screen(diary_path):

@@ -333,6 +333,15 @@ patch number, not a retry. This is why `check` and `verify` run first.
 - Type hints everywhere. `uv run mypy` enforces this; keep it green.
   Textual's `App`/`Screen` are generic, so subclasses need a parameter —
   `Screen[None]` unless the screen returns a value via `dismiss()`.
+- **Locking by hand saves; the idle timer refuses.** `ctrl+l` in the
+  editor calls `EditorScreen._save()` and locks only if it returned True.
+  The timer does the opposite — `blocks_lock` holds it off entirely — and
+  the two are not inconsistent: a keypress means someone is leaving the
+  room now, so the diary must actually close, and a question left on the
+  screen would keep it open behind that question. A timer has nobody to
+  ask and nothing to promise, so it waits instead. Quitting takes the
+  third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
+  about who can read this.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.
@@ -366,10 +375,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   description ("Another day" is the long one) or dropping one to
   `show=False`, which costs only its place in the bar.
   `tests/test_chrome.py` fails when anything advertised stops fitting.
-  `L` is in the bar rather than hidden because being able to find it is a
-  security property — someone stepping away who cannot see it quits, or
-  leaves the diary open — which is the bar earning its width rather than a
-  key winning a popularity contest.
+  `ctrl+l` is in the bar rather than hidden because being able to find it
+  is a security property — someone stepping away who cannot see it quits,
+  or leaves the diary open — which is the bar earning its width rather
+  than a key winning a popularity contest.
 - **Bindings are declared in reading order**, because the help popup lists
   them in that order: what you do often, then what you do rarely, then how
   you move around.
