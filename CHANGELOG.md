@@ -33,11 +33,13 @@ file matters as much as that does.
 
 ### Fixed
 
-- **"Locked." no longer flashes back up after you unlock.** The message
-  shown when the diary locks was outliving the lock screen: it went away
-  as that screen was torn down, then reappeared a moment later over your
-  entries, announcing a diary you had just opened. Nothing said before a
-  lock carries across it now, in either direction.
+- **Messages no longer flash back up on the next screen.** "Saved." and
+  "Locked." outlived the screens they were said on: each went away as that
+  screen was left, then reappeared seconds later somewhere it made no
+  sense — "Locked." over the entries you had just unlocked, "Saved." over
+  the empty day you had just opened to write something else. A message now
+  ends when you start the next thing, and only follows you back to where
+  you came from.
 - **The search box lines up with its results.** It sat one cell to the
   right of the days listed underneath it, and of the editor on the next
   screen over — a text field pads its inside by more than a text area

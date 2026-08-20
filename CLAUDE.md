@@ -371,11 +371,16 @@ patch number, not a retry. This is why `check` and `verify` run first.
   or it will look right in dark and vanish in light. Screens carry a `SUB_TITLE` so the header says where you are.
 - **Notifications belong to the app, not to the screen that raised one.**
   Textual holds them for their timeout and redraws the live ones onto
-  whichever screen is current, so a toast rides across a screen change --
-  which made "Locked." vanish with the lock screen and pop back up over
-  the entry list. `lock()` and `_on_unlocked()` both call
-  `clear_notifications()`: locking and unlocking are session boundaries,
-  and nothing said on one side of one still applies on the other.
+  whichever screen is current, so in an app that changes screens as often
+  as this one every toast flickered: it vanished with the screen it was
+  raised over and reappeared on the next, out of context — "Saved." over
+  the empty editor you had just opened, "Locked." over the entries you had
+  just unlocked. `ZecretApp.push_screen` calls `clear_notifications()`,
+  and that asymmetry is the rule: **pushing** is starting something new,
+  so what was said about the last thing is finished; **popping** is the
+  end of the thing being spoken about, which is how "Saved." reaches the
+  list the editor returns to. Anything that pushes a screen and then
+  notifies must do it in that order — see `lock()`.
 - **Every screen carries a `DiaryFooter`, modals included.** A
   `ModalScreen` renders over the screen it was opened from rather than
   replacing it, so one without a footer does not show *no* bar -- it shows

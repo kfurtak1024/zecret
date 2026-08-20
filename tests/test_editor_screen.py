@@ -8,6 +8,9 @@ Required coverage:
       in the list, and says so on the way back -- a revised day looks no
       different in the list once you are there.
     - A refused save says nothing about having saved.
+    - The message does not follow you into the next thing you open. A
+      notification is the app's and outlives the screen that raised it, so
+      "Saved." used to reappear over the empty editor opened next.
     - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
@@ -405,6 +408,31 @@ async def test_saving_says_so_over_the_list_it_returns_to(diary_path):
         await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
         assert SAVED in [notification.message for notification in app._notifications]
+
+
+async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_path):
+    """Textual keeps a notification for its timeout and redraws the live
+    ones onto whichever screen is current, so this one went away with the
+    editor it was raised in, arrived over the list -- which is wanted --
+    and then turned up again over the next empty editor, announcing a save
+    that had nothing to do with the day now on the screen."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.pause()
+        assert SAVED in [n.message for n in app._notifications], "wanted on the list"
+
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert [n.message for n in app._notifications] == [], "not wanted over the next day"
 
 
 async def test_a_refused_save_does_not_claim_to_have_saved(diary_path):

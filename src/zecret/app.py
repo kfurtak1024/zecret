@@ -28,11 +28,15 @@ rather than once per binding.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
+from typing import Literal, overload
 
 from textual import events
 from textual.app import App
+from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
+from textual.widget import AwaitMount
 
 from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_THEME, Config
 from zecret.screens.base import ZecretScreen
@@ -132,17 +136,62 @@ class ZecretApp(App[None]):
         """
         self.theme = theme if theme in self.available_themes else DEFAULT_THEME
 
-    def _on_unlocked(self, _result: None) -> None:
-        """Called once UnlockScreen dismisses, i.e. the diary is open.
+    # Mirrored from App, which overloads on wait_for_dismiss to say which
+    # of the two return types you get. An override has to carry the same
+    # shape or every caller in the app loses that.
+    @overload
+    def push_screen(
+        self,
+        screen: Screen[ScreenResultType] | str,
+        callback: ScreenResultCallbackType[ScreenResultType] | None = None,
+        wait_for_dismiss: Literal[False] = False,
+        *,
+        mode: str | None = None,
+    ) -> AwaitMount: ...
 
-        Clearing first because a notification belongs to the app, not to
-        the screen that raised it, and Textual draws the live ones onto
-        whichever screen is current. "Locked." therefore outlived the lock
-        screen: it went away as that screen was torn down and came back a
-        moment later over the entry list, announcing a state the diary had
-        just left. Unlocking ends everything the lock screen had to say.
+    @overload
+    def push_screen(
+        self,
+        screen: Screen[ScreenResultType] | str,
+        callback: ScreenResultCallbackType[ScreenResultType] | None = None,
+        wait_for_dismiss: Literal[True] = True,
+        *,
+        mode: str | None = None,
+    ) -> asyncio.Future[ScreenResultType]: ...
+
+    def push_screen(
+        self,
+        screen: Screen[ScreenResultType] | str,
+        callback: ScreenResultCallbackType[ScreenResultType] | None = None,
+        wait_for_dismiss: bool = False,
+        *,
+        mode: str | None = None,
+    ) -> AwaitMount | asyncio.Future[ScreenResultType]:
+        """Push a screen, and drop whatever was still being said.
+
+        A notification belongs to the app rather than to the screen that
+        raised one, and Textual keeps it for its timeout and draws the live
+        ones onto whichever screen is current. In an app that changes
+        screens as often as this one, that made every toast flicker: it
+        went away with the screen it was raised over and reappeared on the
+        next, seconds later and out of context -- "Saved." greeting the
+        empty editor you had just opened to write something else.
+
+        Pushing is starting something new, so what was said about the last
+        thing is finished. Popping is not: it is the end of the thing that
+        was being said about, which is how "Saved." reaches the list the
+        editor returns to. That asymmetry is the whole rule, and it is why
+        this is here rather than in a timeout somebody has to tune.
         """
         self.clear_notifications()
+        # Split rather than passed through, so the flag reaches the base as
+        # the literal its overloads are keyed on.
+        if wait_for_dismiss:
+            return super().push_screen(screen, callback, True, mode=mode)
+        return super().push_screen(screen, callback, False, mode=mode)
+
+    def _on_unlocked(self, _result: None) -> None:
+        """Called once UnlockScreen dismisses, i.e. the diary is open."""
         self.push_screen(EntryListScreen())
 
     async def action_quit(self) -> None:
@@ -226,11 +275,9 @@ class ZecretApp(App[None]):
             self.pop_screen()
         self.diary = None
         self.key = None
-        # The other half of the same rule: nothing said to the screens
-        # being torn down here still applies to the lock screen replacing
-        # them, and a stale toast would ride across the boundary the same
-        # way. Cleared before the new one, so only this is left.
-        self.clear_notifications()
+        # Pushing clears what the torn-down screens were saying, so this
+        # notify has to come after it -- which is also the order that
+        # reads right: put the diary away, then say so.
         self.push_screen(UnlockScreen(creating=False), self._on_unlocked)
         self.notify(message)
 
