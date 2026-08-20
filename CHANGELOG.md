@@ -19,6 +19,11 @@ file matters as much as that does.
   cannot be pressed while there is text to type into. The chord is what a
   password manager locks with, it sits between Settings and Help at the
   bottom of the list, and it works while you are writing.
+- **Saving says so.** <kbd>ctrl</kbd>+<kbd>s</kbd> returns you to the
+  list, where a day you have just revised looks exactly as it did before —
+  so nothing on the screen told you the save had happened rather than, say,
+  a stray <kbd>esc</kbd> having thrown it away. It now says "Saved." on the
+  way back, the way locking already said "Locked."
 - **Locking while writing saves the day first.** Press it mid-entry and
   Zecret files what you have written, then asks for your password again.
   The alternative was a question left on the screen with the diary open

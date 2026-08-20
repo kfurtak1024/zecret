@@ -40,6 +40,11 @@ DISCARD_QUESTION = "Discard your unsaved changes?"
 #: Shown for an empty body and for one that is only whitespace, which
 #: amounts to the same thing and reads the same way in the list.
 EMPTY_ENTRY = "Nothing to save — write something first."
+#: Said on the way back to the list. Saving pops this screen, and a day
+#: that was already written looks no different in the list afterwards --
+#: so without a word for it, the only difference between a save and a
+#: discard was which key you believed you had pressed.
+SAVED = "Saved."
 #: Said after ctrl+l, because the saving is the part you would not
 #: otherwise know happened -- the lock screen speaks for itself.
 SAVED_AND_LOCKED = "Saved, and locked."
@@ -125,6 +130,11 @@ class EditorScreen(FormScreen):
 
     def action_save(self) -> None:
         if self._save():
+            # Before the dismiss, but it outlives it: a notification is the
+            # app's rather than this screen's, so it is still there to be
+            # read over the list this returns to. See ZecretApp.lock, which
+            # is where that outliving had to be stopped.
+            self.notify(SAVED)
             self.dismiss()
 
     def _save(self) -> bool:

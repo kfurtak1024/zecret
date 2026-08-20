@@ -5,7 +5,9 @@ Required coverage:
       prefilled if it is not -- never a second entry for the same day.
     - Enter opens the selected day prefilled.
     - Saving a new entry persists it to disk under its date and shows it
-      in the list.
+      in the list, and says so on the way back -- a revised day looks no
+      different in the list once you are there.
+    - A refused save says nothing about having saved.
     - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
@@ -32,7 +34,7 @@ from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import DIARY_CHANGED, format_day_long
 from zecret.screens.confirm import ConfirmScreen
-from zecret.screens.editor import EMPTY_ENTRY, EditorScreen
+from zecret.screens.editor import EMPTY_ENTRY, SAVED, EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
@@ -385,6 +387,38 @@ async def test_a_new_empty_editor_backs_out_without_asking(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_saving_says_so_over_the_list_it_returns_to(diary_path):
+    """The editor pops on save, and an edited day looks the same in the
+    list as it did before -- so nothing on the screen distinguished a save
+    that worked from one that never happened."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert SAVED in [notification.message for notification in app._notifications]
+
+
+async def test_a_refused_save_does_not_claim_to_have_saved(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "   \n  ")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert SAVED not in [notification.message for notification in app._notifications]
 
 
 # --- quitting --------------------------------------------------------------
