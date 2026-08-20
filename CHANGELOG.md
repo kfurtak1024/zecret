@@ -28,6 +28,11 @@ file matters as much as that does.
 
 ### Fixed
 
+- **The key bar tells the truth while a question is on screen.** Asking
+  which day to write about, or whether to delete an entry, left the entry
+  list's bar showing underneath — eight keys, none of which did anything
+  until the question was answered, and no sign of the <kbd>esc</kbd> that
+  did. Both now carry their own bar saying so.
 - **The light themes no longer read as one flat sheet of grey.** Zecret
   drew every card as a lift off the page behind it, which is how depth
   works on a dark background and not at all how it works on a pale one —

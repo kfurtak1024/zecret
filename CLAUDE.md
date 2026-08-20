@@ -365,6 +365,13 @@ patch number, not a retry. This is why `check` and `verify` run first.
   opposite directions and no theme variable can say so — the reasoning is
   written there. Adding a card means adding it to that selector list too,
   or it will look right in dark and vanish in light. Screens carry a `SUB_TITLE` so the header says where you are.
+- **Every screen carries a `DiaryFooter`, modals included.** A
+  `ModalScreen` renders over the screen it was opened from rather than
+  replacing it, so one without a footer does not show *no* bar -- it shows
+  the bar underneath, whose keys are all dead while the modal has focus.
+  `tests/test_chrome.py` checks that a modal advertises its own key and
+  not the list's. `HelpScreen` is the exception and stays one: its box
+  fills the terminal and says "esc or ? to close" in its own corner.
 - **`show` is a layout decision, not a documentation one.** A binding's
   `show=True` puts it in the footer and nothing more; the help popup lists
   every binding either way (`documented_bindings()` in `screens/help.py`).

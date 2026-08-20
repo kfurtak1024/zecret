@@ -10,6 +10,9 @@ Required coverage:
       every screen wears the same compact footer.
     - Lock is one of the keys the bar advertises. Being able to find it is
       what the bar is for here, so this is not a styling detail.
+    - A modal shows its own key. Without a footer of its own it let the
+      entry list's bar show through, advertising eight keys that do
+      nothing while a question has focus and none of the one that does.
 """
 
 from __future__ import annotations
@@ -207,13 +210,33 @@ async def test_the_key_bar_advertises_lock(diary_path):
         assert "^l Lock" in footer_text(app)
 
 
+async def test_a_modal_advertises_its_own_key_and_not_the_list_behind_it(diary_path):
+    """A ModalScreen renders over the screen it was opened from, so with no
+    footer of its own the list's bar stayed on show -- every key on it dead
+    while the question had focus, and 'esc Cancel' displayed nowhere
+    despite being declared show=True."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 20)) as pilot:
+        await unlock(pilot)
+        for key in ("a", "d"):
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+            bar = footer_text(app)
+            assert "esc Cancel" in bar, f"{key!r} opened a modal with no key of its own: {bar!r}"
+            assert "n Today" not in bar, f"{key!r} left the list's dead keys on show: {bar!r}"
+            await pilot.press("escape")
+            await pilot.pause()
+            await pilot.pause()
+
+
 async def test_the_footer_is_compact_on_every_screen(diary_path):
     """One screen quietly using the roomy footer would look like a bug on
     the way in and out of it."""
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(NARROWEST, 20)) as pilot:
         await unlock(pilot)
-        for key in ("n", "escape", "slash", "escape", "s"):
+        for key in ("n", "escape", "slash", "escape", "s", "escape", "a", "escape", "d"):
             await pilot.press(key)
             await pilot.pause()
             await pilot.pause()
