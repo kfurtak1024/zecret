@@ -62,8 +62,10 @@ src/zecret/
 │                 # access to the app, FormScreen for the screens with
 │                 # fields and an error line, the date/snippet formatting
 │                 # every screen shares, and the wording for a refused
-│                 # save), header.py (the title bar), confirm.py (yes/no
-│                 # modal) and date_prompt.py (which-day modal).
+│                 # save), header.py (both bars -- the title above and the
+│                 # keys below, which every screen wears including the
+│                 # modals), confirm.py (yes/no modal) and date_prompt.py
+│                 # (which-day modal).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -397,7 +399,7 @@ patch number, not a retry. This is why `check` and `verify` run first.
   navigation unaddable and left `enter` documented but invisible.
 - **The key bar fits 80 columns.** `DiaryFooter` (`screens/header.py`) is
   Textual's `Footer` in its compact spelling. The entry list's eight
-  advertised keys take 71 of the 80 a terminal defaults to, which spends
+  advertised keys take 72 of the 80 a terminal defaults to, which spends
   the room that used to be spare: the next key means either shortening a
   description ("Another day" is the long one) or dropping one to
   `show=False`, which costs only its place in the bar.

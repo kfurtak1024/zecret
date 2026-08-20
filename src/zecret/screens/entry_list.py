@@ -81,7 +81,7 @@ class EntryListScreen(ZecretScreen):
 
     #: `show` decides what goes in the footer and nothing else -- the help
     #: popup lists every binding here regardless. The bar holds about eighty
-    #: columns and these eight fill seventy-one of them, so the room that
+    #: columns and these eight fill seventy-two of them, so the room that
     #: was spare is now spent; everything below them is no less real for
     #: being found through '?' instead.
     BINDINGS: ClassVar[list[BindingType]] = [
