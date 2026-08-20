@@ -139,8 +139,15 @@ async def editor(pilot: Pilot[None]) -> None:
 
 
 async def date(pilot: Pilot[None]) -> None:
-    """The which-day modal."""
-    await pilot.press("g")
+    """The which-day modal.
+
+    'a', not 'g': 'g' jumps to the newest entry, so this shot was the
+    entry list again -- the same picture as entries-*.png, filed under a
+    name saying it was the modal. Nothing can fail on that, which is what
+    the note at the end of this script is about.
+    """
+    await pilot.press("a")
+    await pilot.pause()
     await pilot.pause()
 
 
