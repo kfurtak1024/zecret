@@ -360,7 +360,11 @@ patch number, not a retry. This is why `check` and `verify` run first.
   conventions at the top: theme variables only (never hard-coded colors,
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
-  spacing. Screens carry a `SUB_TITLE` so the header says where you are.
+  spacing. The one break from that grouping is the `:light` section at the
+  foot of the file, which exists because light and dark stack depth in
+  opposite directions and no theme variable can say so — the reasoning is
+  written there. Adding a card means adding it to that selector list too,
+  or it will look right in dark and vanish in light. Screens carry a `SUB_TITLE` so the header says where you are.
 - **`show` is a layout decision, not a documentation one.** A binding's
   `show=True` puts it in the footer and nothing more; the help popup lists
   every binding either way (`documented_bindings()` in `screens/help.py`).

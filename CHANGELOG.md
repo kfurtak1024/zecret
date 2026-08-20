@@ -28,6 +28,17 @@ file matters as much as that does.
 
 ### Fixed
 
+- **The light themes no longer read as one flat sheet of grey.** Zecret
+  drew every card as a lift off the page behind it, which is how depth
+  works on a dark background and not at all how it works on a pale one —
+  so on Light, Solarized Light and Catppuccin Latte the cards dissolved
+  into the page, the title bar stopped looking like a bar, and the editor
+  came out as a wash of grey with a floating orange rectangle in it. Light
+  themes now put paper on a desk: the page you write on is lighter than
+  what surrounds it, the bars are darker, and the selected day is the calm
+  blue the rest of the app already selects things with instead of a
+  fluorescent orange stripe. Each theme keeps its own colour — Solarized
+  is still cream, Latte is still cool. The dark themes are untouched.
 - **Quitting no longer throws away a half-written entry.** Backing out of
   the editor has always asked before discarding unsaved text, and the idle
   timer has always refused to lock over it — but <kbd>ctrl</kbd>+<kbd>q</kbd>
