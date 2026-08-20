@@ -13,6 +13,9 @@
    - Rules are grouped by the role a widget plays (panel, title, hint,
      error, list), not by the screen it happens to live on -- which is why
      selectors here list several ids at once.
+   - One exception to that grouping, at the foot of the file: what the
+     light themes need, which cuts across every role and is explained
+     where it is written.
 */
 
 /* --- Title bar ---------------------------------------------------------- */
@@ -150,8 +153,15 @@ SettingsScreen {
 
 /* --- SearchScreen ------------------------------------------------------- */
 
+/* The 1-cell padding is TextArea's, not Input's. Input pads by 2 inside
+   its border and TextArea by 1, so with both bordered at the same column
+   the query sat one cell right of the results listed directly under it --
+   and one cell right of the editor, which is the other full-width field
+   in the app. The margin lines the borders up; this lines the text up,
+   which is the part anyone actually reads down. */
 #query {
     margin: 0 2;
+    padding: 0 1;
     border: round $border-blurred;
 
     &:focus {
@@ -317,4 +327,80 @@ HelpScreen {
     &:focus {
         border: round $accent;
     }
+}
+
+/* --- Light themes ------------------------------------------------------- */
+
+/* Everything above is written in theme variables, and that is what lets
+   all eight themes in the picker work from one stylesheet. What a variable
+   cannot express is that light and dark stack depth in opposite
+   directions.
+
+   On a dark page a raised thing is lighter than what is behind it, and
+   Textual's dark palette spaces its three greys far enough apart to show
+   that: $background #121212, $surface #1E1E1E, $panel #242F38. Its light
+   palette does not -- #E0E0E0, #D8D8D8 and #D0D0D0, eight steps apart
+   each. Drawn the same way, every card in the app dissolves into the page
+   behind it and the title bar stops reading as a bar at all; the editor
+   became one flat wash of grey with a floating orange rectangle in it.
+
+   So the light half inverts the model rather than repeating it: cards are
+   paper, lighter than the page they sit on, and the bars are darker than
+   it. `:light` is one of Textual's own pseudo-classes, so this stays a
+   single stylesheet in theme variables -- not a second palette to keep in
+   sync, and still not a hard-coded color anywhere. The derived shades keep
+   each theme's hue, which is why Solarized stays cream and Latte stays
+   cool rather than both flattening to white. */
+
+/* Darker than the page, not lighter, so the bar has an edge to it. */
+DiaryHeader:light {
+    background: $panel-darken-1;
+}
+
+/* Paper on a desk. Every card in the app is one selector list because
+   they are all the same idea -- see the panel rules above. */
+#unlock-box:light,
+#settings-box:light,
+#help-box:light,
+#confirm-box:light,
+#date-box:light,
+#entries:light,
+#results:light {
+    background: $surface-lighten-1;
+}
+
+/* The page you write on, most of all. A TextArea takes no background from
+   the theme's surface, so on a light theme the editor came out the same
+   grey as everything around it -- the one screen in the app that should
+   look like something to write on. */
+#editor-box #body:light {
+    background: $surface-lighten-1;
+}
+
+/* $accent is the same #FEA62B in Textual's light theme as in its dark one
+   -- it is not re-tuned for a pale background, and a full-width row of it
+   is a fluorescent slab rather than a highlight. $block-cursor-* is what
+   Textual selects a row with everywhere else, so the list now agrees with
+   the Select and OptionList on the settings screen instead of shouting
+   over them. Dark keeps the orange: on a dark page it reads as warmth. */
+#entries:focus > ListItem.-highlight:light,
+#results:focus > ListItem.-highlight:light {
+    background: $block-cursor-background;
+    color: $block-cursor-foreground;
+}
+
+/* Textual's light themes point their footer keys at $primary and leave
+   $accent at the dark theme's orange, so a card framed in $accent sat next
+   to a blue key bar with nothing relating the two. In light the frame
+   follows $border -- which is $primary, and so is the selected row above
+   -- and the app reads in one hue instead of three. $accent is still the
+   heading color, where the light palette resolves it to a brown that sits
+   quietly on paper. Dark is untouched: there, $accent is the whole point. */
+#unlock-box:light,
+#settings-box:light,
+#help-box:light,
+#date-box:light,
+#query:focus:light,
+#editor-box #body:focus:light {
+    border: round $border;
 }

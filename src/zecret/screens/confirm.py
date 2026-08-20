@@ -14,6 +14,8 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label
 
+from zecret.screens.header import DiaryFooter
+
 
 class ConfirmScreen(ModalScreen[bool]):
     """Yes/no modal. Dismisses True to confirm, False to cancel."""
@@ -33,6 +35,13 @@ class ConfirmScreen(ModalScreen[bool]):
             with Horizontal(id="confirm-buttons"):
                 yield Button(self.confirm_label, variant="error", id="confirm-yes")
                 yield Button("Cancel", variant="primary", id="confirm-no")
+        # The screen underneath keeps rendering its own bar, and every
+        # key on it is dead while this question has focus -- so without
+        # one of our own the terminal advertises eight keys that do
+        # nothing and hides the one that does. See CLAUDE.md on `show`
+        # being a layout decision: it is only a decision where there is a
+        # footer for it to decide about.
+        yield DiaryFooter()
 
     def on_mount(self) -> None:
         # Focus Cancel, not the destructive button: a stray Enter should not

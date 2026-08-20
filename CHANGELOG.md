@@ -10,6 +10,67 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-20
+
+### Added
+
+- **Lock is <kbd>ctrl</kbd>+<kbd>l</kbd> now, and it is in the key bar.**
+  Locking used to be <kbd>L</kbd>, listed only under <kbd>?</kbd> and
+  working only on the entry list — but someone getting up from the desk is
+  not the person who stops to read the help page first, and a bare letter
+  cannot be pressed while there is text to type into. The chord is what a
+  password manager locks with, it sits between Settings and Help at the
+  bottom of the list, and it works while you are writing.
+- **Saving says so.** <kbd>ctrl</kbd>+<kbd>s</kbd> returns you to the
+  list, where a day you have just revised looks exactly as it did before —
+  so nothing on the screen told you the save had happened rather than, say,
+  a stray <kbd>esc</kbd> having thrown it away. It now says "Saved." on the
+  way back, the way locking already said "Locked."
+- **Locking while writing saves the day first.** Press it mid-entry and
+  Zecret files what you have written, then asks for your password again.
+  The alternative was a question left on the screen with the diary open
+  behind it, which is the opposite of what the key is for. An untouched
+  day just locks; one that cannot be saved keeps you where you are with
+  the reason.
+
+### Fixed
+
+- **Messages no longer flash back up on the next screen.** "Saved." and
+  "Locked." outlived the screens they were said on: each went away as that
+  screen was left, then reappeared seconds later somewhere it made no
+  sense — "Locked." over the entries you had just unlocked, "Saved." over
+  the empty day you had just opened to write something else. A message now
+  ends when you start the next thing, and only follows you back to where
+  you came from.
+- **The search box lines up with its results.** It sat one cell to the
+  right of the days listed underneath it, and of the editor on the next
+  screen over — a text field pads its inside by more than a text area
+  does, so bordering them at the same place was not enough to line up what
+  you read.
+- **The key bar tells the truth while a question is on screen.** Asking
+  which day to write about, or whether to delete an entry, left the entry
+  list's bar showing underneath — eight keys, none of which did anything
+  until the question was answered, and no sign of the <kbd>esc</kbd> that
+  did. Both now carry their own bar saying so.
+- **The light themes no longer read as one flat sheet of grey.** Zecret
+  drew every card as a lift off the page behind it, which is how depth
+  works on a dark background and not at all how it works on a pale one —
+  so on Light, Solarized Light and Catppuccin Latte the cards dissolved
+  into the page, the title bar stopped looking like a bar, and the editor
+  came out as a wash of grey with a floating orange rectangle in it. Light
+  themes now put paper on a desk: the page you write on is lighter than
+  what surrounds it, the bars are darker, and the selected day is the calm
+  blue the rest of the app already selects things with instead of a
+  fluorescent orange stripe. Each theme keeps its own colour — Solarized
+  is still cream, Latte is still cool. The dark themes are untouched.
+- **Quitting no longer throws away a half-written entry.** Backing out of
+  the editor has always asked before discarding unsaved text, and the idle
+  timer has always refused to lock over it — but <kbd>ctrl</kbd>+<kbd>q</kbd>
+  went straight out, taking the entry with it. It now asks the same
+  question, and cancelling leaves you where you were with your text intact.
+  Nothing changes when there is nothing unsaved: <kbd>q</kbd> from the
+  entry list still just quits.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
@@ -118,6 +179,7 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kfurtak1024/zecret/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kfurtak1024/zecret/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kfurtak1024/zecret/releases/tag/v0.1.0

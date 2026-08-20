@@ -56,14 +56,16 @@ src/zecret/
 ├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
 ├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
 ├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
-├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock.
+├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock, guarded quit.
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
 │                 # fields and an error line, the date/snippet formatting
 │                 # every screen shares, and the wording for a refused
-│                 # save), header.py (the title bar), confirm.py (yes/no
-│                 # modal) and date_prompt.py (which-day modal).
+│                 # save), header.py (both bars -- the title above and the
+│                 # keys below, which every screen wears including the
+│                 # modals), confirm.py (yes/no modal) and date_prompt.py
+│                 # (which-day modal).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -333,6 +335,15 @@ patch number, not a retry. This is why `check` and `verify` run first.
 - Type hints everywhere. `uv run mypy` enforces this; keep it green.
   Textual's `App`/`Screen` are generic, so subclasses need a parameter —
   `Screen[None]` unless the screen returns a value via `dismiss()`.
+- **Locking by hand saves; the idle timer refuses.** `ctrl+l` in the
+  editor calls `EditorScreen._save()` and locks only if it returned True.
+  The timer does the opposite — `blocks_lock` holds it off entirely — and
+  the two are not inconsistent: a keypress means someone is leaving the
+  room now, so the diary must actually close, and a question left on the
+  screen would keep it open behind that question. A timer has nobody to
+  ask and nothing to promise, so it waits instead. Quitting takes the
+  third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
+  about who can read this.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.
@@ -351,7 +362,34 @@ patch number, not a retry. This is why `check` and `verify` run first.
   conventions at the top: theme variables only (never hard-coded colors,
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
-  spacing. Screens carry a `SUB_TITLE` so the header says where you are.
+  spacing. Text starts at the same column on every full-width screen — the
+  gutter lines the *borders* up, and `Input` and `TextArea` pad their
+  insides by different amounts, so lining up what is read takes a rule of
+  its own; `tests/test_chrome.py` fails if the two drift apart again. The
+  one break from that grouping is the `:light` section at the
+  foot of the file, which exists because light and dark stack depth in
+  opposite directions and no theme variable can say so — the reasoning is
+  written there. Adding a card means adding it to that selector list too,
+  or it will look right in dark and vanish in light. Screens carry a `SUB_TITLE` so the header says where you are.
+- **Notifications belong to the app, not to the screen that raised one.**
+  Textual holds them for their timeout and redraws the live ones onto
+  whichever screen is current, so in an app that changes screens as often
+  as this one every toast flickered: it vanished with the screen it was
+  raised over and reappeared on the next, out of context — "Saved." over
+  the empty editor you had just opened, "Locked." over the entries you had
+  just unlocked. `ZecretApp.push_screen` calls `clear_notifications()`,
+  and that asymmetry is the rule: **pushing** is starting something new,
+  so what was said about the last thing is finished; **popping** is the
+  end of the thing being spoken about, which is how "Saved." reaches the
+  list the editor returns to. Anything that pushes a screen and then
+  notifies must do it in that order — see `lock()`.
+- **Every screen carries a `DiaryFooter`, modals included.** A
+  `ModalScreen` renders over the screen it was opened from rather than
+  replacing it, so one without a footer does not show *no* bar -- it shows
+  the bar underneath, whose keys are all dead while the modal has focus.
+  `tests/test_chrome.py` checks that a modal advertises its own key and
+  not the list's. `HelpScreen` is the exception and stays one: its box
+  fills the terminal and says "esc or ? to close" in its own corner.
 - **`show` is a layout decision, not a documentation one.** A binding's
   `show=True` puts it in the footer and nothing more; the help popup lists
   every binding either way (`documented_bindings()` in `screens/help.py`).
@@ -360,12 +398,16 @@ patch number, not a retry. This is why `check` and `verify` run first.
   width. Do not couple the two back together — that coupling is what made
   navigation unaddable and left `enter` documented but invisible.
 - **The key bar fits 80 columns.** `DiaryFooter` (`screens/header.py`) is
-  Textual's `Footer` in its compact spelling. The entry list's seven
-  advertised keys take about 64 of the 80 a terminal defaults to, so there
-  is room for one more — after that, either shorten a description
-  ("Another day" is the long one) or drop a key to `show=False`, which now
-  costs only its place in the bar. `tests/test_chrome.py` fails when
-  anything advertised stops fitting.
+  Textual's `Footer` in its compact spelling. The entry list's eight
+  advertised keys take 72 of the 80 a terminal defaults to, which spends
+  the room that used to be spare: the next key means either shortening a
+  description ("Another day" is the long one) or dropping one to
+  `show=False`, which costs only its place in the bar.
+  `tests/test_chrome.py` fails when anything advertised stops fitting.
+  `ctrl+l` is in the bar rather than hidden because being able to find it
+  is a security property — someone stepping away who cannot see it quits,
+  or leaves the diary open — which is the bar earning its width rather
+  than a key winning a popularity contest.
 - **Bindings are declared in reading order**, because the help popup lists
   them in that order: what you do often, then what you do rarely, then how
   you move around.

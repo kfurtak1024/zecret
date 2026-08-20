@@ -7,6 +7,10 @@ passed explicitly everywhere (tmp_path), but the preferences path has a
 default that a test constructing ZecretApp would otherwise fall through to
 -- reading, and on a theme change writing, the user's own config file.
 
+And reading back what the app is currently saying, which several suites
+check and none of them should be reaching into Textual's internals to do
+twice.
+
 And keeping Argon2 at test cost. Every test that opens a diary derives a
 key at least twice, and at the real parameters (64 MiB, three passes) that
 is most of the suite's runtime. `cheap_kdf` is opt-in rather than autouse
@@ -17,11 +21,13 @@ whatever cheap numbers it had quietly been handed.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 import zecret.app
+from zecret.app import ZecretApp
 from zecret.crypto import KdfParams
 
 #: Real Argon2id, at cost factors that keep the suite quick. The code path
@@ -56,3 +62,22 @@ def cheap_kdf(monkeypatch: pytest.MonkeyPatch) -> None:
         return KdfParams(salt=original().salt, **CHEAP_KDF)
 
     monkeypatch.setattr(KdfParams, "generate", staticmethod(generate))
+
+
+@pytest.fixture
+def notifications() -> Callable[[ZecretApp], list[str]]:
+    """Read back what the app is currently saying, oldest first.
+
+    Textual publishes no handle on the live notifications, and what is on
+    the screen is exactly what the tests using this are about -- so the
+    private list it renders from is the honest thing to read, in one place
+    that says so rather than in a comprehension copied into each suite.
+
+    A notification outlives the screen that raised it, which is the whole
+    reason these are worth asserting on: see ZecretApp.push_screen.
+    """
+
+    def messages(app: ZecretApp) -> list[str]:
+        return [notification.message for notification in app._notifications]
+
+    return messages

@@ -22,6 +22,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, MaskedInput
 
 from zecret.screens.base import today
+from zecret.screens.header import DiaryFooter
 
 PROMPT = "Which day?"
 HINT = "Enter a date as YYYY-MM-DD."
@@ -56,6 +57,13 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
             )
             yield Label(HINT, id="date-hint")
             yield Label("", id="date-error")
+        # The screen underneath keeps rendering its own bar, and every
+        # key on it is dead while this question has focus -- so without
+        # one of our own the terminal advertises eight keys that do
+        # nothing and hides the one that does. See CLAUDE.md on `show`
+        # being a layout decision: it is only a decision where there is a
+        # footer for it to decide about.
+        yield DiaryFooter()
 
     def on_mount(self) -> None:
         self.query_one("#date", MaskedInput).focus()

@@ -5,11 +5,20 @@ Required coverage:
       prefilled if it is not -- never a second entry for the same day.
     - Enter opens the selected day prefilled.
     - Saving a new entry persists it to disk under its date and shows it
-      in the list.
+      in the list, and says so on the way back -- a revised day looks no
+      different in the list once you are there.
+    - A refused save says nothing about having saved.
+    - The message does not follow you into the next thing you open. A
+      notification is the app's and outlives the screen that raised it, so
+      "Saved." used to reappear over the empty editor opened next.
     - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
       unchanged leaves immediately.
+    - Quitting with unsaved changes asks too. ctrl+q is Textual's own
+      app-wide binding and used to exit on the spot, throwing the text away
+      by the one route that never prompted and never appeared in the key
+      bar; both spellings of quit now go through the same question.
     - An empty entry is refused.
     - A save that fails keeps the user on the screen with their text, and
       leaves the diary able to retry.
@@ -28,7 +37,7 @@ from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import DIARY_CHANGED, format_day_long
 from zecret.screens.confirm import ConfirmScreen
-from zecret.screens.editor import EMPTY_ENTRY, EditorScreen
+from zecret.screens.editor import EMPTY_ENTRY, SAVED, EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
@@ -381,6 +390,166 @@ async def test_a_new_empty_editor_backs_out_without_asking(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_saving_says_so_over_the_list_it_returns_to(diary_path, notifications):
+    """The editor pops on save, and an edited day looks the same in the
+    list as it did before -- so nothing on the screen distinguished a save
+    that worked from one that never happened."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert SAVED in notifications(app)
+
+
+async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_path, notifications):
+    """Textual keeps a notification for its timeout and redraws the live
+    ones onto whichever screen is current, so this one went away with the
+    editor it was raised in, arrived over the list -- which is wanted --
+    and then turned up again over the next empty editor, announcing a save
+    that had nothing to do with the day now on the screen."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.pause()
+        assert SAVED in notifications(app), "wanted on the list"
+
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert notifications(app) == [], "not wanted over the next day"
+
+
+async def test_a_refused_save_does_not_claim_to_have_saved(diary_path, notifications):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "   \n  ")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert SAVED not in notifications(app)
+
+
+# --- quitting --------------------------------------------------------------
+
+
+async def test_ctrl_q_with_unsaved_changes_asks_before_quitting(diary_path):
+    """The hole this closes: escape asks, and the idle lock refuses to fire,
+    but ctrl+q used to exit outright -- and being Textual's own binding it
+    is not in the key bar to warn anyone that it would."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert app.is_running, "quitting must not have happened yet"
+        assert isinstance(app.screen, ConfirmScreen)
+
+
+async def test_cancelling_the_quit_keeps_you_editing(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        await pilot.press("escape")  # dismisses the modal as "cancel"
+        await pilot.pause()
+        await pilot.pause()
+        assert app.is_running
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Changed", "the edit must survive"
+
+
+async def test_confirming_the_quit_leaves(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        assert not app.is_running
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[YESTERDAY].body == "A body", "nothing may be persisted"
+
+
+async def test_ctrl_q_over_the_discard_question_does_not_ask_twice(diary_path):
+    """Escape has already put the question on the screen. A second copy of
+    it on top would hide the first and ask the same thing again."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+        modals = [s for s in app.screen_stack if isinstance(s, ConfirmScreen)]
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert app.is_running
+        assert [s for s in app.screen_stack if isinstance(s, ConfirmScreen)] == modals
+
+
+async def test_quitting_with_nothing_unsaved_does_not_ask(diary_path):
+    """The guard is about unsaved writing, not about quitting. A list with
+    no editor over it has nothing to lose, so 'q' still just leaves."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert isinstance(app.screen, EntryListScreen)
+        await pilot.press("q")
+        await pilot.pause()
+        assert not app.is_running
+
+
+async def test_an_unmodified_editor_quits_without_asking(diary_path):
+    """Opening a day and reading it is not unsaved work."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert not app.is_running
 
 
 # --- save failures ---------------------------------------------------------

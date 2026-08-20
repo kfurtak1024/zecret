@@ -11,12 +11,17 @@ would produce) and watches the same four reactives Textual's header does:
 screen title and sub-title, falling back to the app's.
 
 DiaryFooter is Textual's Footer in its compact spelling, which is one place
-rather than five so the bar cannot end up looking different depending on
-which screen you are on. Compact because the entry list advertises nine
-keys and the roomy spelling needs 102 columns to lay them out; a terminal
-is 80, and a footer that stops mid-word at "? Hel" is worse than a tight
-one. It fits 80 exactly, so this is the setting that gives way if the app
-ever grows another key -- see the note in CLAUDE.md.
+rather than seven so the bar cannot end up looking different depending on
+which screen you are on. Every screen composes one, the two modals
+included: a ModalScreen renders over the screen it was opened from rather
+than replacing it, so one without a footer shows the bar underneath -- whose
+keys are all dead while the modal has focus.
+
+Compact because the entry list advertises eight keys and the roomy spelling
+needs far more than a terminal's eighty columns to lay them out; at eighty
+it stopped mid-word at "? Hel". Compact, those eight come to seventy-two,
+so this is the setting that gives way if the app ever grows another key --
+see the note in CLAUDE.md.
 """
 
 from __future__ import annotations
