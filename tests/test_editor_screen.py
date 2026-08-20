@@ -392,7 +392,7 @@ async def test_a_new_empty_editor_backs_out_without_asking(diary_path):
         assert isinstance(app.screen, EntryListScreen)
 
 
-async def test_saving_says_so_over_the_list_it_returns_to(diary_path):
+async def test_saving_says_so_over_the_list_it_returns_to(diary_path, notifications):
     """The editor pops on save, and an edited day looks the same in the
     list as it did before -- so nothing on the screen distinguished a save
     that worked from one that never happened."""
@@ -407,10 +407,10 @@ async def test_saving_says_so_over_the_list_it_returns_to(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
-        assert SAVED in [notification.message for notification in app._notifications]
+        assert SAVED in notifications(app)
 
 
-async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_path):
+async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_path, notifications):
     """Textual keeps a notification for its timeout and redraws the live
     ones onto whichever screen is current, so this one went away with the
     editor it was raised in, arrived over the list -- which is wanted --
@@ -426,16 +426,16 @@ async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_pat
         await pilot.press("ctrl+s")
         await pilot.pause()
         await pilot.pause()
-        assert SAVED in [n.message for n in app._notifications], "wanted on the list"
+        assert SAVED in notifications(app), "wanted on the list"
 
         await pilot.press("n")
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EditorScreen)
-        assert [n.message for n in app._notifications] == [], "not wanted over the next day"
+        assert notifications(app) == [], "not wanted over the next day"
 
 
-async def test_a_refused_save_does_not_claim_to_have_saved(diary_path):
+async def test_a_refused_save_does_not_claim_to_have_saved(diary_path, notifications):
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -446,7 +446,7 @@ async def test_a_refused_save_does_not_claim_to_have_saved(diary_path):
         await pilot.press("ctrl+s")
         await pilot.pause()
         assert isinstance(app.screen, EditorScreen)
-        assert SAVED not in [notification.message for notification in app._notifications]
+        assert SAVED not in notifications(app)
 
 
 # --- quitting --------------------------------------------------------------
