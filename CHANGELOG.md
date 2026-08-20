@@ -10,6 +10,8 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-20
+
 ### Added
 
 - **Lock is <kbd>ctrl</kbd>+<kbd>l</kbd> now, and it is in the key bar.**
@@ -177,6 +179,7 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kfurtak1024/zecret/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kfurtak1024/zecret/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kfurtak1024/zecret/releases/tag/v0.1.0
