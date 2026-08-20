@@ -152,6 +152,7 @@ thrown away by a timer. Change the wait, or turn it off, in settings.
 | <kbd>q</kbd> | entry list | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save and return |
 | <kbd>esc</kbd> | anywhere | Back (asks first if you have unsaved edits) |
+| <kbd>ctrl</kbd>+<kbd>q</kbd> | anywhere | Quit (asks first if you have unsaved edits) |
 
 Getting around a long diary: <kbd>j</kbd>/<kbd>k</kbd> or the arrow keys move
 a day at a time, <kbd>g</kbd>/<kbd>G</kbd> (or <kbd>home</kbd>/<kbd>end</kbd>)

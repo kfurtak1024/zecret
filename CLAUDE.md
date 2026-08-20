@@ -56,7 +56,7 @@ src/zecret/
 ├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
 ├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
 ├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
-├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock.
+├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock, guarded quit.
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with

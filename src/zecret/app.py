@@ -19,6 +19,11 @@ quiet and puts it away again: lock() forgets both, tears the screens down
 and goes back to UnlockScreen. Everything to do with that is here rather
 than in a screen, for the same reason routing is -- it is about the session
 as a whole, not about anything on show.
+
+Quitting is guarded from here for the same reason. It is the other way a
+screen full of unsaved writing can vanish, and it arrives by two keys, so
+the question about throwing that writing away is asked once in action_quit
+rather than once per binding.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from textual.app import App
 
 from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_THEME, Config
 from zecret.screens.base import ZecretScreen
+from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
@@ -39,6 +45,11 @@ from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
 #: password is not a mystery.
 LOCKED_BY_TIMEOUT = "Locked after a spell of quiet."
 LOCKED_BY_HAND = "Locked."
+
+#: Asked before a quit that would throw away what is on the screen. Worded
+#: like the editor's own discard question because it is the same question,
+#: reached by a different key.
+QUIT_QUESTION = "Discard your unsaved changes and quit?"
 
 
 class ZecretApp(App[None]):
@@ -124,6 +135,39 @@ class ZecretApp(App[None]):
     def _on_unlocked(self, _result: None) -> None:
         """Called once UnlockScreen dismisses, i.e. the diary is open."""
         self.push_screen(EntryListScreen())
+
+    async def action_quit(self) -> None:
+        """Quit -- but never silently over something half-written.
+
+        Both spellings dispatch this one action: 'q' on the entry list, and
+        ctrl+q, which Textual binds app-wide with priority so that a screen
+        made of text fields still has a way out. They are two keys because
+        a bare 'q' cannot be bound where there is something to type into,
+        not because they are two behaviours, so the question is asked once
+        here rather than per binding.
+
+        Textual's own action_quit exits immediately. That is the right
+        thing everywhere except over an editor holding unsaved text, which
+        would lose it -- without the prompt that backing out of that very
+        screen gives, and without even appearing in the key bar to warn
+        that it might. The test is the one the idle lock already uses: what
+        must not be locked away unasked must not be quit away unasked.
+        """
+        if not self.locking_would_lose_work():
+            self.exit()
+            return
+        # A question is already on the screen -- the editor's own discard
+        # prompt, most likely, since that is what ctrl+q interrupts. Asking
+        # the same thing again on top of it buries the first copy under a
+        # second, so let the one already showing be answered.
+        if isinstance(self.screen, ConfirmScreen):
+            return
+        self.push_screen(ConfirmScreen(QUIT_QUESTION, confirm_label="Quit"), self._quit_confirmed)
+
+    def _quit_confirmed(self, confirmed: bool | None) -> None:
+        """Leave on yes; on no, stay exactly where the question was asked."""
+        if confirmed:
+            self.exit()
 
     def lock_if_idle(self) -> None:
         """Lock the diary if it has been left alone long enough.

@@ -19,6 +19,16 @@ file matters as much as that does.
   Settings and Help at the bottom of the entry list, where the choice to
   lock can be made at the moment it occurs to you.
 
+### Fixed
+
+- **Quitting no longer throws away a half-written entry.** Backing out of
+  the editor has always asked before discarding unsaved text, and the idle
+  timer has always refused to lock over it — but <kbd>ctrl</kbd>+<kbd>q</kbd>
+  went straight out, taking the entry with it. It now asks the same
+  question, and cancelling leaves you where you were with your text intact.
+  Nothing changes when there is nothing unsaved: <kbd>q</kbd> from the
+  entry list still just quits.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
