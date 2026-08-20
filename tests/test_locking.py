@@ -22,6 +22,11 @@ Required coverage:
     - Locking from search, and from an entry opened through search, tears
       everything down without a screen underneath trying to redraw itself
       from a diary that is no longer open.
+    - "Locked." does not follow you back in. A notification is held by the
+      app rather than by the screen that raised it, so it used to vanish
+      with the lock screen and reappear over the entry list a moment
+      later, announcing a diary that had just been opened. Nothing said
+      before a lock crosses it in either direction.
 
 Elapsed time is faked by moving app.last_activity into the past, and the
 lock check is called directly. A test that actually waited fifteen minutes
@@ -79,6 +84,62 @@ async def unlock(pilot) -> None:
 def go_quiet(app: ZecretApp, minutes: float) -> None:
     """Pretend nothing has happened for `minutes`."""
     app.last_activity = time.monotonic() - minutes * 60
+
+
+# --- what the toasts say ---------------------------------------------------
+
+
+def messages(app: ZecretApp) -> list[str]:
+    """The notifications still live, in the order they were raised.
+
+    Textual keeps no public handle on these, and what is on the screen is
+    what this suite is about -- so the private list it renders from is the
+    honest thing to read.
+    """
+    return [notification.message for notification in app._notifications]
+
+
+async def test_locking_says_so(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+        assert messages(app) == [zecret.app.LOCKED_BY_HAND]
+
+
+async def test_unlocking_takes_the_locked_message_away(diary_path):
+    """It used to disappear with the lock screen and come back over the
+    entry list, still counting down its five seconds."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+        assert messages(app), "the lock should have said something"
+
+        await unlock(pilot)
+        assert isinstance(app.screen, EntryListScreen)
+        assert messages(app) == [], "the lock screen's message must not follow you in"
+
+
+async def test_locking_clears_what_the_screens_below_were_saying(diary_path):
+    """The same boundary in the other direction: a toast from the diary
+    has nothing to say to a password prompt."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("r")  # "Reloaded -- 1 entry."
+        await pilot.pause()
+        await pilot.pause()
+        assert len(messages(app)) == 1
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+        assert messages(app) == [zecret.app.LOCKED_BY_HAND]
 
 
 # --- locking from the editor -----------------------------------------------

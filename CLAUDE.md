@@ -365,6 +365,13 @@ patch number, not a retry. This is why `check` and `verify` run first.
   opposite directions and no theme variable can say so — the reasoning is
   written there. Adding a card means adding it to that selector list too,
   or it will look right in dark and vanish in light. Screens carry a `SUB_TITLE` so the header says where you are.
+- **Notifications belong to the app, not to the screen that raised one.**
+  Textual holds them for their timeout and redraws the live ones onto
+  whichever screen is current, so a toast rides across a screen change --
+  which made "Locked." vanish with the lock screen and pop back up over
+  the entry list. `lock()` and `_on_unlocked()` both call
+  `clear_notifications()`: locking and unlocking are session boundaries,
+  and nothing said on one side of one still applies on the other.
 - **Every screen carries a `DiaryFooter`, modals included.** A
   `ModalScreen` renders over the screen it was opened from rather than
   replacing it, so one without a footer does not show *no* bar -- it shows

@@ -133,7 +133,16 @@ class ZecretApp(App[None]):
         self.theme = theme if theme in self.available_themes else DEFAULT_THEME
 
     def _on_unlocked(self, _result: None) -> None:
-        """Called once UnlockScreen dismisses, i.e. the diary is open."""
+        """Called once UnlockScreen dismisses, i.e. the diary is open.
+
+        Clearing first because a notification belongs to the app, not to
+        the screen that raised it, and Textual draws the live ones onto
+        whichever screen is current. "Locked." therefore outlived the lock
+        screen: it went away as that screen was torn down and came back a
+        moment later over the entry list, announcing a state the diary had
+        just left. Unlocking ends everything the lock screen had to say.
+        """
+        self.clear_notifications()
         self.push_screen(EntryListScreen())
 
     async def action_quit(self) -> None:
@@ -217,6 +226,11 @@ class ZecretApp(App[None]):
             self.pop_screen()
         self.diary = None
         self.key = None
+        # The other half of the same rule: nothing said to the screens
+        # being torn down here still applies to the lock screen replacing
+        # them, and a stale toast would ride across the boundary the same
+        # way. Cleared before the new one, so only this is left.
+        self.clear_notifications()
         self.push_screen(UnlockScreen(creating=False), self._on_unlocked)
         self.notify(message)
 
