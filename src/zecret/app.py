@@ -186,7 +186,13 @@ class ZecretApp(App[None]):
         self.clear_notifications()
         # Split rather than passed through, so the flag reaches the base as
         # the literal its overloads are keyed on.
-        if wait_for_dismiss:
+        #
+        # Textual raises NoActiveWorker if this is awaited outside a
+        # worker, and Zecret runs none -- so the True arm is unreachable
+        # here and stays only because an override may not accept less than
+        # what it overrides. Exercising it would test Textual rather than
+        # this app, so it is excluded instead of covered by a fiction.
+        if wait_for_dismiss:  # pragma: no cover
             return super().push_screen(screen, callback, True, mode=mode)
         return super().push_screen(screen, callback, False, mode=mode)
 

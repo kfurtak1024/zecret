@@ -15,8 +15,10 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
+    # 3.13 alone, and deliberately: requires-python permits newer
+    # interpreters, but a classifier is a claim of support and nothing
+    # here tests one. It goes back when CI runs on it.
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Security :: Cryptography",
     "Topic :: Utilities",
     "Typing :: Typed",
