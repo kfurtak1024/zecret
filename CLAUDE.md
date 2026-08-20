@@ -360,12 +360,16 @@ patch number, not a retry. This is why `check` and `verify` run first.
   width. Do not couple the two back together — that coupling is what made
   navigation unaddable and left `enter` documented but invisible.
 - **The key bar fits 80 columns.** `DiaryFooter` (`screens/header.py`) is
-  Textual's `Footer` in its compact spelling. The entry list's seven
-  advertised keys take about 64 of the 80 a terminal defaults to, so there
-  is room for one more — after that, either shorten a description
-  ("Another day" is the long one) or drop a key to `show=False`, which now
-  costs only its place in the bar. `tests/test_chrome.py` fails when
-  anything advertised stops fitting.
+  Textual's `Footer` in its compact spelling. The entry list's eight
+  advertised keys take 71 of the 80 a terminal defaults to, which spends
+  the room that used to be spare: the next key means either shortening a
+  description ("Another day" is the long one) or dropping one to
+  `show=False`, which costs only its place in the bar.
+  `tests/test_chrome.py` fails when anything advertised stops fitting.
+  `L` is in the bar rather than hidden because being able to find it is a
+  security property — someone stepping away who cannot see it quits, or
+  leaves the diary open — which is the bar earning its width rather than a
+  key winning a popularity contest.
 - **Bindings are declared in reading order**, because the help popup lists
   them in that order: what you do often, then what you do rarely, then how
   you move around.

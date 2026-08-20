@@ -8,6 +8,8 @@ Required coverage:
       not advertise it.
     - Every key the entry list advertises fits an 80-column terminal, and
       every screen wears the same compact footer.
+    - Lock is one of the keys the bar advertises. Being able to find it is
+      what the bar is for here, so this is not a styling detail.
 """
 
 from __future__ import annotations
@@ -187,6 +189,18 @@ async def test_every_advertised_key_fits_an_eighty_column_terminal(diary_path):
         assert not missing, (
             f"the footer at {NARROWEST} columns does not fully show: {missing}\ngot: {bar!r}"
         )
+
+
+async def test_the_key_bar_advertises_lock(diary_path):
+    """Hidden, this key was reachable only through '?'. Someone stepping
+    away who cannot find it quits instead, or leaves the diary open on the
+    screen -- which makes its place in the bar a security decision rather
+    than a matter of taste."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 16)) as pilot:
+        await unlock(pilot)
+        assert isinstance(app.screen, EntryListScreen)
+        assert "L Lock" in footer_text(app)
 
 
 async def test_the_footer_is_compact_on_every_screen(diary_path):

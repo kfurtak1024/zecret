@@ -81,21 +81,34 @@ class EntryListScreen(ZecretScreen):
 
     #: `show` decides what goes in the footer and nothing else -- the help
     #: popup lists every binding here regardless. The bar holds about eighty
-    #: columns and these seven fill sixty-four of them, which leaves room
-    #: for the next one; everything below them is no less real for being
-    #: found through '?' instead.
+    #: columns and these eight fill seventy-one of them, so the room that
+    #: was spare is now spent; everything below them is no less real for
+    #: being found through '?' instead.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("n", "today", "Today"),
         Binding("a", "another_day", "Another day"),
         Binding("d", "delete_entry", "Delete"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
+        # Shift-L, leaving l to the hjkl cluster below. A letter rather than
+        # an app-wide chord: locking from inside the editor would have to
+        # decide what to do with half-written text, and pressing escape
+        # first already answers that question properly.
+        #
+        # Shown, which the rest of this group's weight of use would not
+        # earn it. Whether someone can find this key is a security property
+        # and not a convenience: a writer stepping away who does not know
+        # it either quits, losing where they were, or leaves the diary open
+        # on the screen. That is not true of 'r' or of the movement keys.
+        Binding("L", "lock", "Lock"),
         # Bound here rather than app-wide on purpose: a '?' typed into the
         # editor, the search box or a password field must stay a '?'.
         Binding("question_mark", "help", "Help", key_display="?"),
         # "app.quit", not "quit": a binding's action is dispatched on the
         # node that declares it, and a Screen has no action_quit -- an
-        # unqualified "quit" here silently does nothing.
+        # unqualified "quit" here silently does nothing. The app's is
+        # Zecret's own override, so this key and ctrl+q ask the same
+        # question about unsaved writing rather than one of them not.
         Binding("q", "app.quit", "Quit"),
         # --- real, but not worth the width -------------------------------
         # ListView has focus and handles Enter itself, posting Selected --
@@ -106,11 +119,6 @@ class EntryListScreen(ZecretScreen):
         # shadows it in the bar anyway: it never rendered there.
         Binding("enter", "open_entry", "Open", show=False),
         Binding("r", "reload", "Reload", show=False),
-        # Shift-L, leaving l to the hjkl cluster below. A letter rather than
-        # an app-wide chord: locking from inside the editor would have to
-        # decide what to do with half-written text, and pressing escape
-        # first already answers that question properly.
-        Binding("L", "lock", "Lock", show=False),
         # --- getting around ----------------------------------------------
         # A diary kept for years is a long list, and arrow keys alone make
         # its far end hundreds of presses away. j/k/g/G are what a terminal

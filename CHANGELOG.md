@@ -10,6 +10,15 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **Lock is in the key bar.** <kbd>L</kbd> has always put the diary away
+  without quitting, but it was only ever listed under <kbd>?</kbd>, which
+  is the wrong place for it: someone getting up from the desk is not the
+  person who stops to read the help page first. It now sits between
+  Settings and Help at the bottom of the entry list, where the choice to
+  lock can be made at the moment it occurs to you.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
