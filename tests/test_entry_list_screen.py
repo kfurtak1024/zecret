@@ -11,6 +11,9 @@ Required coverage:
     - 'a' offers another day to write about and opens the editor on it;
       backing out of the prompt changes nothing.
     - Delete asks for confirmation first; cancelling changes nothing.
+    - That question has two answers and not three: the modal offers to
+      save where there is writing to save, and a deletion has nothing
+      between going ahead and leaving the day alone.
     - Confirmed delete removes the entry from memory AND from disk, and
       leaves the other entries intact.
     - The list refreshes from app.diary whenever the screen is resumed.
@@ -29,7 +32,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label, ListView, MaskedInput
+from textual.widgets import Button, Input, Label, ListView, MaskedInput
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
@@ -365,6 +368,22 @@ async def test_delete_asks_for_confirmation_first(diary_path):
         assert isinstance(app.screen, ConfirmScreen)
         assert app.diary is not None
         assert len(app.diary.entries) == 1, "nothing may be deleted before confirming"
+
+
+async def test_the_delete_question_offers_no_third_answer(diary_path):
+    """The modal grew a "save first" button for the questions about
+    unsaved writing. A deletion has no third road between going through
+    with it and leaving the day alone, so it must not sprout one."""
+    seed(diary_path, Entry.new(YESTERDAY, "Keep me"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("d")
+        await pilot.pause()
+        assert not app.screen.query("#confirm-save")
+        assert app.screen.focused is app.screen.query_one("#confirm-no", Button), (
+            "a stray enter must not delete anything"
+        )
 
 
 async def test_the_confirmation_names_the_day(diary_path):

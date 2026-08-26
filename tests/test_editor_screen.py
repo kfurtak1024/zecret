@@ -5,20 +5,36 @@ Required coverage:
       prefilled if it is not -- never a second entry for the same day.
     - Enter opens the selected day prefilled.
     - Saving a new entry persists it to disk under its date and shows it
-      in the list, and says so on the way back -- a revised day looks no
-      different in the list once you are there.
-    - A refused save says nothing about having saved.
+      in the list once you go back.
+    - Saving does not leave: the text, the cursor and the screen all stay
+      where they were, so the day can be carried on and saved again. It
+      says "Saved." because nothing else on the screen moves to show it.
+    - A day that has not changed since the last save is not rewritten --
+      ctrl+s is now a reflex, and each press would otherwise restamp an
+      entry nobody edited.
+    - Escape after a save leaves without asking: nothing is unsaved.
+    - A refused save says nothing about having saved, and a save that
+      works clears the error the refused one left on the screen.
     - The message does not follow you into the next thing you open. A
       notification is the app's and outlives the screen that raised it, so
       "Saved." used to reappear over the empty editor opened next.
+    - ctrl+home and ctrl+end reach the start and end of the entry, and
+      count as moving rather than as editing.
+    - ctrl+a selects the whole entry, the way it does everywhere else --
+      Textual binds it to "start of line", which home still does.
     - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
       unchanged leaves immediately.
-    - Quitting with unsaved changes asks too. ctrl+q is Textual's own
-      app-wide binding and used to exit on the spot, throwing the text away
-      by the one route that never prompted and never appeared in the key
-      bar; both spellings of quit now go through the same question.
+    - That question offers to save as well as to discard, and saving is
+      what a stray enter lands on -- it is the answer that throws nothing
+      away. A save that is refused keeps you in the day rather than
+      leaving on the strength of writing that never reached disk.
+    - Quitting with unsaved changes asks too, with the same three answers.
+      ctrl+q is Textual's own app-wide binding and used to exit on the
+      spot, throwing the text away by the one route that never prompted
+      and never appeared in the key bar; both spellings of quit now go
+      through the same question.
     - An empty entry is refused.
     - A save that fails keeps the user on the screen with their text, and
       leaves the diary able to retry.
@@ -31,13 +47,13 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label, ListView, TextArea
+from textual.widgets import Button, Input, Label, ListView, TextArea
 
-from zecret.app import ZecretApp
+from zecret.app import SAVE_AND_QUIT, ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import DIARY_CHANGED, format_day_long
 from zecret.screens.confirm import ConfirmScreen
-from zecret.screens.editor import EMPTY_ENTRY, SAVED, EditorScreen
+from zecret.screens.editor import EMPTY_ENTRY, SAVE_AND_GO_BACK, SAVED, EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
@@ -81,6 +97,19 @@ async def unlock(pilot) -> None:
 async def type_body(pilot, body: str) -> None:
     """Fill the open editor's text."""
     pilot.app.screen.query_one("#body", TextArea).text = body
+    await pilot.pause()
+
+
+async def save_and_leave(pilot) -> None:
+    """ctrl+s, then escape -- what writing a day and going back now takes.
+
+    Saving keeps you in the day, so every test that wants the list back
+    presses the key that leaves as well.
+    """
+    await pilot.press("ctrl+s")
+    await pilot.pause()
+    await pilot.press("escape")
+    await pilot.pause()
     await pilot.pause()
 
 
@@ -168,9 +197,7 @@ async def test_saving_a_new_entry_persists_it_under_today(diary_path):
         await pilot.press("n")
         await pilot.pause()
         await type_body(pilot, "It was cold.")
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        await pilot.pause()
+        await save_and_leave(pilot)
 
         assert isinstance(app.screen, EntryListScreen), "should return to the list"
         assert len(app.diary.entries) == 1
@@ -189,9 +216,7 @@ async def test_a_new_entry_appears_in_the_list(diary_path):
         await pilot.press("n")
         await pilot.pause()
         await type_body(pilot, "Morning walk. It was cold.")
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        await pilot.pause()
+        await save_and_leave(pilot)
         assert "Morning walk. It was cold." in " ".join(row_labels(app))
 
 
@@ -206,9 +231,7 @@ async def test_writing_today_twice_edits_the_same_entry(diary_path):
             await pilot.press("n")
             await pilot.pause()
             await type_body(pilot, text)
-            await pilot.press("ctrl+s")
-            await pilot.pause()
-            await pilot.pause()
+            await save_and_leave(pilot)
 
         assert set(app.diary.entries) == {TODAY}
 
@@ -262,6 +285,182 @@ async def test_surrounding_whitespace_is_kept_on_a_body_that_has_text(diary_path
         await pilot.press("ctrl+s")
         await pilot.pause()
         assert app.diary.entry_for(TODAY).body == "  indented thought\n"
+
+
+# --- saving without leaving ------------------------------------------------
+
+
+async def test_saving_keeps_you_in_the_day_with_the_text_and_the_cursor(diary_path):
+    """An entry is written over an evening, not in one keystroke: being
+    returned to the list on every ctrl+s meant pressing 'n' and finding
+    your place again to add the next line."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Two lines\nof it")
+        body = app.screen.query_one("#body", TextArea)
+        body.move_cursor((1, 3))
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen), "saving must not leave"
+        assert app.screen.body_text == "Two lines\nof it"
+        assert body.cursor_location == (1, 3), "the cursor must not be thrown to the top"
+        assert app.diary.entry_for(TODAY).body == "Two lines\nof it"
+
+
+async def test_carrying_on_after_a_save_and_saving_again(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "First thought.")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await type_body(pilot, "First thought. And a second.")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entry_for(TODAY).body == "First thought. And a second."
+    assert len(reopened.entries) == 1
+
+
+async def test_escape_after_saving_leaves_without_asking(diary_path):
+    """A saved day is not unsaved work, so there is nothing to discard."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.screen.blocks_lock is False, "nothing is unsaved any more"
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_saving_an_unchanged_day_does_not_rewrite_the_file(diary_path):
+    """ctrl+s is now pressed every few sentences out of habit. Writing on
+    every press would restamp a day nobody edited and turn another Zecret's
+    saving into a conflict over an entry this one was not changing."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        saved = diary_path.read_bytes()
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert diary_path.read_bytes() == saved, "a second save had nothing to write"
+        assert isinstance(app.screen, EditorScreen)
+
+
+async def test_a_save_clears_the_error_the_last_attempt_left(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("ctrl+s")  # refused: nothing written yet
+        await pilot.pause()
+        assert str(app.screen.query_one("#editor-error", Label).content) == EMPTY_ENTRY
+
+        await type_body(pilot, "Something, at last.")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert str(app.screen.query_one("#editor-error", Label).content) == ""
+
+
+# --- getting around the day ------------------------------------------------
+
+
+async def test_ctrl_home_and_ctrl_end_reach_both_ends_of_the_entry(diary_path):
+    """Textual's TextArea has home and end for the line and the page keys
+    for a screenful, but nothing for the two ends of the text itself."""
+    body = "\n".join(f"Line {number}" for number in range(60))
+    seed(diary_path, Entry.new(YESTERDAY, body))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((30, 2))
+
+        await pilot.press("ctrl+end")
+        await pilot.pause()
+        assert text_area.cursor_location == (59, len("Line 59"))
+
+        await pilot.press("ctrl+home")
+        await pilot.pause()
+        assert text_area.cursor_location == (0, 0)
+
+
+async def test_going_to_either_end_does_not_change_the_text(diary_path):
+    """Movement only: a key that quietly counted as an edit would put the
+    discard question in front of someone who had merely looked."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body\nover two lines"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("ctrl+end")
+        await pilot.press("ctrl+home")
+        await pilot.pause()
+        assert app.screen.body_text == "A body\nover two lines"
+        assert app.screen.modified is False
+
+
+async def test_ctrl_a_selects_the_whole_entry(diary_path):
+    """Textual binds ctrl+a to readline's "start of line", and put select-
+    all on f7, where nobody finds it."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body\nover two lines"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((1, 5))
+
+        await pilot.press("ctrl+a")
+        await pilot.pause()
+        assert text_area.selected_text == "A body\nover two lines"
+
+
+async def test_home_still_goes_to_the_start_of_the_line(diary_path):
+    """What ctrl+a used to do is not lost -- it is on the key most people
+    reach for first."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body\nover two lines"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((1, 5))
+
+        await pilot.press("home")
+        await pilot.pause()
+        assert text_area.cursor_location == (1, 0)
+        assert text_area.selected_text == ""
 
 
 # --- editing ---------------------------------------------------------------
@@ -379,6 +578,72 @@ async def test_confirming_the_discard_drops_the_changes(diary_path):
     assert reopened.entries[YESTERDAY].body == "A body"
 
 
+async def test_the_question_offers_to_save_and_that_is_what_is_focused(diary_path):
+    """Escape is pressed to get back to the list, so being told the only
+    ways to do that were to lose the last paragraph or to stay put made an
+    ordinary key into a small trap. Saving is also the answer that throws
+    nothing away, which is why a stray enter lands on it."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+        save = app.screen.query_one("#confirm-save", Button)
+        assert str(save.label) == SAVE_AND_GO_BACK
+        assert app.screen.focused is save
+
+
+async def test_saving_from_the_question_keeps_the_writing_and_leaves(diary_path, notifications):
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.click("#confirm-save")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert SAVED in notifications(app)
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[YESTERDAY].body == "Changed"
+
+
+async def test_a_refused_save_from_the_question_keeps_you_in_the_day(diary_path, monkeypatch):
+    """Leaving on the strength of a save that did not happen would lose
+    exactly the text the answer was trying to keep."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(type(app.diary), "save", boom)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.click("#confirm-save")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Changed"
+        assert "No space left" in str(app.screen.query_one("#editor-error", Label).content)
+
+
 async def test_a_new_empty_editor_backs_out_without_asking(diary_path):
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
@@ -392,10 +657,10 @@ async def test_a_new_empty_editor_backs_out_without_asking(diary_path):
         assert isinstance(app.screen, EntryListScreen)
 
 
-async def test_saving_says_so_over_the_list_it_returns_to(diary_path, notifications):
-    """The editor pops on save, and an edited day looks the same in the
-    list as it did before -- so nothing on the screen distinguished a save
-    that worked from one that never happened."""
+async def test_saving_says_so_over_the_day_you_are_still_writing(diary_path, notifications):
+    """Nothing on the screen moves when a save lands -- the same text is
+    still there, in the same place -- so without a word for it the keypress
+    is indistinguishable from one the app never received."""
     seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -405,17 +670,15 @@ async def test_saving_says_so_over_the_list_it_returns_to(diary_path, notificati
         await type_body(pilot, "Changed")
         await pilot.press("ctrl+s")
         await pilot.pause()
-        await pilot.pause()
-        assert isinstance(app.screen, EntryListScreen)
+        assert isinstance(app.screen, EditorScreen), "saving must not leave"
         assert SAVED in notifications(app)
 
 
 async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_path, notifications):
     """Textual keeps a notification for its timeout and redraws the live
-    ones onto whichever screen is current, so this one went away with the
-    editor it was raised in, arrived over the list -- which is wanted --
-    and then turned up again over the next empty editor, announcing a save
-    that had nothing to do with the day now on the screen."""
+    ones onto whichever screen is current, so this one used to turn up
+    again over the next empty editor, announcing a save that had nothing to
+    do with the day now on the screen."""
     seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -425,9 +688,11 @@ async def test_the_saved_message_does_not_follow_you_into_the_next_day(diary_pat
         await type_body(pilot, "Changed")
         await pilot.press("ctrl+s")
         await pilot.pause()
-        await pilot.pause()
-        assert SAVED in notifications(app), "wanted on the list"
+        assert SAVED in notifications(app), "wanted over the day just saved"
 
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
         await pilot.press("n")
         await pilot.pause()
         await pilot.pause()
@@ -503,6 +768,68 @@ async def test_confirming_the_quit_leaves(diary_path):
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert reopened.entries[YESTERDAY].body == "A body", "nothing may be persisted"
+
+
+async def test_quitting_can_save_the_day_on_the_way_out(diary_path):
+    """The same third answer the editor's own question offers, worded for
+    where this key was heading."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        save = app.screen.query_one("#confirm-save", Button)
+        assert str(save.label) == SAVE_AND_QUIT
+        await pilot.click("#confirm-save")
+        await pilot.pause()
+        assert not app.is_running
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[YESTERDAY].body == "Changed"
+
+
+async def test_a_refused_save_does_not_quit(diary_path, monkeypatch):
+    """Quitting on the strength of a save that did not happen would lose
+    the writing by the one road that was chosen to keep it."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Changed")
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(type(app.diary), "save", boom)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        await pilot.click("#confirm-save")
+        await pilot.pause()
+
+        assert app.is_running, "the text is still only in the widget"
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Changed"
+
+
+async def test_a_screen_with_nothing_to_lose_saves_nothing_and_says_it_worked(diary_path):
+    """The two halves have to agree: blocks_lock says whether a screen is
+    holding anything, save_pending writes it. A screen answering False to
+    the first must not answer False to the second, or quitting from a list
+    that has nothing to save would refuse to quit."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert isinstance(app.screen, EntryListScreen)
+        assert app.screen.blocks_lock is False
+        assert app.screen.save_pending() is True
+        assert app.save_unsaved_work() is True, "nothing to save is not a failure to save"
 
 
 async def test_ctrl_q_over_the_discard_question_does_not_ask_twice(diary_path):
@@ -629,9 +956,7 @@ async def test_saving_again_after_a_failure_succeeds(diary_path, monkeypatch):
         assert app.diary.entries == {}, "a failed save must not linger in memory"
 
         monkeypatch.setattr(type(app.diary), "save", real_save)
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        await pilot.pause()
+        await save_and_leave(pilot)
         assert isinstance(app.screen, EntryListScreen)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)

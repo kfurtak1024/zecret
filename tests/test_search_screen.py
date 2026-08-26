@@ -225,7 +225,11 @@ async def test_results_refresh_after_editing_from_search(stocked):
 
         app.screen.query_one("#body", TextArea).text = "Evening walk. Frost on the grass."
         await pilot.pause()
+        # Saving keeps you in the day; escape is what comes back here, and
+        # asks nothing once the day is saved.
         await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.press("escape")
         await pilot.pause()
         await pilot.pause()
 

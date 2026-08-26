@@ -10,6 +10,40 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **The editor's missing text keys.** <kbd>ctrl</kbd>+<kbd>home</kbd> goes
+  to the start of the entry you are writing and
+  <kbd>ctrl</kbd>+<kbd>end</kbd> to the end of it; the editor had
+  <kbd>home</kbd> and <kbd>end</kbd> for the line you were on and the page
+  keys for a screenful, but nothing for the text itself, so the top of a
+  day written at length was a long way from its bottom.
+  <kbd>ctrl</kbd>+<kbd>a</kbd> now selects the whole entry rather than
+  jumping to the start of the line, which is what <kbd>home</kbd> is for.
+  None of the three appear under <kbd>?</kbd>: that page is about the
+  diary, and these do here what they do in every other editor.
+
+- **Leaving a half-written day offers to save it.** Both
+  <kbd>esc</kbd> and <kbd>ctrl</kbd>+<kbd>q</kbd> stopped to ask before
+  throwing unsaved writing away, but the only answers were to lose it or
+  to stay where you were — so the safe reply to a question about your own
+  writing was "no". Each now has a third: **Save and go back**, or **Save
+  and quit**, and that is the button a stray <kbd>enter</kbd> lands on. A
+  save that cannot happen keeps you in the day with the reason rather than
+  leaving on the strength of it. Deleting an entry still asks the plain
+  two-answer question — there is nothing to save there.
+
+### Changed
+
+- **<kbd>ctrl</kbd>+<kbd>s</kbd> no longer closes the day.** It writes what
+  you have and hands the cursor straight back, where before it filed the
+  entry and returned you to the list — so saving part-way through an
+  evening meant pressing <kbd>n</kbd> and finding your place again to add
+  the next line, and the safe habit cost more than not having it.
+  <kbd>esc</kbd> is what goes back, and it no longer asks anything once you
+  have saved. Pressing <kbd>ctrl</kbd>+<kbd>s</kbd> on a day you have not
+  touched since the last save does nothing at all rather than rewriting it.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added

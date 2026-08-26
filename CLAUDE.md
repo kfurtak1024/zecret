@@ -344,6 +344,43 @@ patch number, not a retry. This is why `check` and `verify` run first.
   ask and nothing to promise, so it waits instead. Quitting takes the
   third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
   about who can read this.
+- **The question about unsaved writing has three answers.** `ConfirmScreen`
+  dismisses a `Choice` — `CONFIRM`, `SAVE` or `CANCEL` — and grows a third
+  button whenever it is given a `save_label`. Both ways of leaving a
+  half-written day offer it (escape, and `ctrl+q` through the app), and
+  deleting an entry does not: there is no road between going through with
+  a deletion and leaving the day alone, so that question stays two-answer
+  and keeps its focus on Cancel. Where saving is on offer the focus starts
+  there instead — it is the answer that throws nothing away, which is the
+  same rule as before and not an exception to it. `SAVE` reaches the
+  editor through `ZecretScreen.save_pending()`, the counterpart of
+  `blocks_lock`: a screen that says it is holding something unsaved must
+  be able to write it on request. A refused save never leaves — the error
+  is already on that screen's own line, and leaving would lose exactly
+  what the answer was keeping.
+- **Saving is not leaving.** `ctrl+s` writes the day and stays in it —
+  an entry is written over an evening, and being returned to the list on
+  every save meant pressing `n` and finding your place again to add the
+  next line. `escape` is the only key that leaves the editor, and after a
+  save it has nothing to ask about. `_save()` returns True without writing
+  when nothing has changed since the last one: the key is a reflex, and a
+  write per press would restamp `updated_at` on a day nobody edited and
+  turn another Zecret's saving into a `ZecretConflictError` over an entry
+  this session was not changing.
+- **Text-editing keys belong to the widget, not to the screen.**
+  `EditorScreen.BINDINGS` holds three keys and they are all about the
+  *diary* — save it, lock it, go back. Everything about the writing lives
+  on `DiaryTextArea`, which is Textual's `TextArea` plus the keys it is
+  missing: `ctrl+home` / `ctrl+end` for the two ends of the entry, and
+  `ctrl+a` rebound from readline's "start of line" (which `home` still
+  does) to select-all, where every other editor puts it. That split is
+  what keeps them off the help popup and the key bar, both of which are
+  generated from screen `BINDINGS` — and it is the right answer rather
+  than a trick, since the popup does not list `ctrl+z`, `ctrl+k` or the
+  arrow keys either, and a reader who has used an editor knows them.
+  `tests/test_help_screen.py` fails if one of these keys reaches the page.
+  Add the next such key to `DiaryTextArea`; add it to the screen only if
+  it does something to the diary.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.

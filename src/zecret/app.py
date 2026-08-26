@@ -23,7 +23,9 @@ as a whole, not about anything on show.
 Quitting is guarded from here for the same reason. It is the other way a
 screen full of unsaved writing can vanish, and it arrives by two keys, so
 the question about throwing that writing away is asked once in action_quit
-rather than once per binding.
+rather than once per binding. That question offers to save on the way out,
+which is why the app can ask a screen to write what it is holding --
+save_pending() on ZecretScreen, the counterpart of blocks_lock.
 """
 
 from __future__ import annotations
@@ -39,8 +41,8 @@ from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
 from textual.widget import AwaitMount
 
 from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_THEME, Config
-from zecret.screens.base import ZecretScreen
-from zecret.screens.confirm import ConfirmScreen
+from zecret.screens.base import UNSAVED_CHANGES, ZecretScreen
+from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
@@ -50,10 +52,10 @@ from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
 LOCKED_BY_TIMEOUT = "Locked after a spell of quiet."
 LOCKED_BY_HAND = "Locked."
 
-#: Asked before a quit that would throw away what is on the screen. Worded
-#: like the editor's own discard question because it is the same question,
-#: reached by a different key.
-QUIT_QUESTION = "Discard your unsaved changes and quit?"
+#: The answer to the unsaved-changes question that quits without losing
+#: anything. The editor's own wording for the same button says "go back",
+#: since that is where escape was heading; this one says where ctrl+q was.
+SAVE_AND_QUIT = "Save and quit"
 
 
 class ZecretApp(App[None]):
@@ -226,12 +228,41 @@ class ZecretApp(App[None]):
         # second, so let the one already showing be answered.
         if isinstance(self.screen, ConfirmScreen):
             return
-        self.push_screen(ConfirmScreen(QUIT_QUESTION, confirm_label="Quit"), self._quit_confirmed)
+        self.push_screen(
+            ConfirmScreen(UNSAVED_CHANGES, confirm_label="Quit", save_label=SAVE_AND_QUIT),
+            self._quit_answered,
+        )
 
-    def _quit_confirmed(self, confirmed: bool | None) -> None:
-        """Leave on yes; on no, stay exactly where the question was asked."""
-        if confirmed:
-            self.exit()
+    def _quit_answered(self, choice: Choice | None) -> None:
+        """Leave on Quit, and on Save and quit once the writing is down.
+
+        Anything else -- Cancel, escape, no answer at all -- stays exactly
+        where the question was asked. So does a save that could not
+        happen: the screen holding the text says why on its own error
+        line, and quitting on top of that would lose the very thing the
+        answer was trying to keep.
+        """
+        if choice not in (Choice.CONFIRM, Choice.SAVE):
+            return
+        if choice is Choice.SAVE and not self.save_unsaved_work():
+            return
+        self.exit()
+
+    def save_unsaved_work(self) -> bool:
+        """Have every screen holding something unsaved write it out.
+
+        The counterpart of locking_would_lose_work, over the same stack
+        and for the same reason: in practice one editor, but a screen
+        under a modal is still holding what it is holding. Every one of
+        them is asked before the answer is worked out -- short-circuiting
+        would save some of the writing and abandon the rest.
+        """
+        saved = [
+            screen.save_pending()
+            for screen in self.screen_stack
+            if isinstance(screen, ZecretScreen) and screen.blocks_lock
+        ]
+        return all(saved)
 
     def lock_if_idle(self) -> None:
         """Lock the diary if it has been left alone long enough.

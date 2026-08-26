@@ -274,11 +274,20 @@ HelpScreen {
     background: $background 60%;
 }
 
+/* Wide enough for three buttons side by side, which is what the
+   questions about unsaved writing ask. Still inside an eighty-column
+   terminal with room to spare -- the help popup is wider than this -- and
+   it keeps the delete question, the longest sentence this modal carries,
+   on one line. */
 #confirm-box {
-    width: 60;
+    width: 70;
+    max-width: 100%;
     height: auto;
     padding: 1 2;
-    /* Red framing, because every use of this modal is destructive. */
+    /* Red framing: this modal is only ever raised because something is
+       about to be lost. That two of its three answers now keep the
+       writing is the buttons' business -- the frame is about why you are
+       being stopped, not about which way out you take. */
     border: round $error;
     background: $surface;
 }
@@ -293,8 +302,58 @@ HelpScreen {
     align-horizontal: right;
 }
 
+/* One width for every answer, wide enough for the longest label this
+   modal carries ("Save and go back") plus the frame focus draws around
+   it. Textual sizes a button to its own text against a floor of sixteen
+   cells, which left three answers to one question at three different
+   widths -- and made "Cancel" almost as wide as "Save and go back", so
+   the row read as a near-miss rather than as a set. Widen this and
+   #confirm-box together, and leave a cell clear at each end for the frame
+   focus draws over them. */
 #confirm-buttons Button {
+    width: 20;
     margin-left: 2;
+}
+
+/* The gap goes *between* the answers, so the row needs exactly as much
+   room as the buttons and the gaps between them -- three of these and two
+   gaps is 64, which is what #confirm-box holds. A margin on the first one
+   as well put the row two cells over that, and since it is aligned right
+   it was the last button that hung off the end: Cancel lost the right
+   edge of its focus frame to the clip, and only Cancel, only when
+   focused, which is a thing you see rather than a thing that fails. */
+#confirm-buttons Button:first-of-type {
+    margin-left: 0;
+}
+
+/* Focus draws a frame right round the button.
+   Textual's own answer is to reverse the label, which on a filled button
+   swaps its fill for the page behind it: the answer being offered was the
+   one that looked switched off, and the two beside it looked chosen.
+   Marking the top and bottom edges in $accent instead fixed the reading
+   but not the seeing -- an accent bar against the green of Save measures
+   1.16:1, against the 1.7-2.1:1 that the unfocused buttons' own shading
+   already has, so the cue was fainter than the decoration it competed
+   with, and it was carried by hue alone on the one pairing (orange on
+   green) that colour blindness takes away.
+   A closed frame is a change of shape, which survives both: its outer
+   edge sits against the modal's own background wherever the fill is too
+   close in tone to read against. $accent because that is what marks the
+   focused thing everywhere else here -- the search box, the page you
+   write on.
+   `outline` rather than `border`, which is the whole reason this rule can
+   exist at all: a Textual border is drawn inside the widget and takes its
+   two columns out of the content, so a button visibly narrowed by two
+   cells as you tabbed onto it -- and a label one cell longer would have
+   wrapped rather than shrunk. An outline is painted over the edge it sits
+   on, so the answer stays exactly the size it was and only the two cells
+   at its ends change colour. The elsewhere-in-this-file version of the
+   same trick is a border that is always there and only changes colour on
+   focus; a Button already spends its border on the shading that makes it
+   look like a button, so there is none spare to recolour. */
+#confirm-buttons Button:focus {
+    text-style: bold;
+    outline: tall $accent;
 }
 
 /* --- DatePromptScreen (modal) ------------------------------------------- */

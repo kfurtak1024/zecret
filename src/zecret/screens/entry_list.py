@@ -31,7 +31,9 @@ entries, so everything that maps a selection back to an entry goes through
 self.rows.
 
 The delete confirmation uses the shared ConfirmScreen modal (screens/
-confirm.py), as does discarding unsaved edits in the editor.
+confirm.py), as does leaving unsaved edits in the editor. That modal
+offers a third answer, "save first", where there is something to save;
+this question does not take it, since a deletion has no such road.
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ from zecret.screens.base import (
     save_error,
     today,
 )
-from zecret.screens.confirm import ConfirmScreen
+from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
@@ -411,14 +413,19 @@ class EntryListScreen(ZecretScreen):
         if date is not None:
             self.open_day(date)
 
-    def confirm_delete(self, entry: Entry) -> Callable[[bool | None], None]:
-        """Build the callback ConfirmScreen dismisses into."""
+    def confirm_delete(self, entry: Entry) -> Callable[[Choice | None], None]:
+        """Build the callback ConfirmScreen dismisses into.
 
-        def on_confirmed(confirmed: bool | None) -> None:
-            if confirmed:
+        Two answers here, not three: the modal offers to save where there
+        is something to save, and a deletion has no third road between
+        going through with it and leaving the day alone.
+        """
+
+        def on_answered(choice: Choice | None) -> None:
+            if choice is Choice.CONFIRM:
                 self.delete_entry(entry)
 
-        return on_confirmed
+        return on_answered
 
     def delete_entry(self, entry: Entry) -> None:
         """Remove the day's entry and persist immediately."""
