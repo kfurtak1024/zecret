@@ -105,6 +105,13 @@ class ZecretApp(App[None]):
         # When something last happened. Monotonic, so the diary does not
         # stay open an hour longer because a clock went backwards.
         self.last_activity = time.monotonic()
+        # Whether the editor covers what is written on it -- see
+        # EditorScreen.action_toggle_mask. Session state rather than a
+        # preference: it lives here so that going back to the list and
+        # opening another day keeps it on, and it is deliberately not in
+        # config.py, because a diary that opened unreadable would be a
+        # puzzle before it was a protection.
+        self.masked = False
 
     def on_mount(self) -> None:
         """Apply the saved theme, then push UnlockScreen, which prompts to

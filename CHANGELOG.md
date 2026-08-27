@@ -12,6 +12,17 @@ file matters as much as that does.
 
 ### Added
 
+- **Cover the page while you write.** <kbd>ctrl</kbd>+<kbd>r</kbd> puts
+  every word in the entry behind a bar except the one your cursor is
+  touching, the way a declassified document arrives. It is for writing
+  somewhere with a seat behind you: the bars stay until you press it
+  again, and they follow you from one day to the next rather than lifting
+  every time you open an entry. What it hides is what you have already
+  written — the word you are typing is revealed as you type it — and it is
+  not a substitute for locking, since the bars are on the screen rather
+  than on the diary. The writing underneath is untouched, so what you save
+  is what you wrote.
+
 - **The editor's missing text keys.** <kbd>ctrl</kbd>+<kbd>home</kbd> goes
   to the start of the entry you are writing and
   <kbd>ctrl</kbd>+<kbd>end</kbd> to the end of it; the editor had

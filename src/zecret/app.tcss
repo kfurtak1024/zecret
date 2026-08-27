@@ -186,6 +186,58 @@ SettingsScreen {
     }
 }
 
+/* The ink a masked word is drawn in (ctrl+r). Each covered character is
+   swapped for a three-quarter block, so this is the colour of the bars
+   themselves against the ordinary page behind them -- no background here,
+   because the quarter of the cell the bar does not fill is what puts a
+   gap between one line of redaction and the next.
+
+   The colour still has to be opaque, since the handful of characters too
+   wide to swap are covered by painting them in ink the colour of their
+   own background instead (DiaryTextArea.get_line). That rules out
+   $text-muted and the other `auto` shades, which a background cannot
+   take at all, and anything with a percentage: those blend against
+   different grounds for text than for background, so the two come out a
+   shade apart and the character is legible again.
+
+   Two rules rather than one because a bar is a different problem on a
+   dark page than on a pale one, and no single variable is right for both
+   -- the same reason the `:light` section at the foot of this file
+   exists. Note that the pseudo-class has to sit on the *widget*: a
+   component class does not answer to `:light` itself.
+
+   Slate on dark, at 2.7:1 against the page. Full-strength ink there is a
+   wall of light to sit in front of, and brighter than anything else in
+   the app -- the point is to cover the writing, not to shout. */
+DiaryTextArea > .diary-text-area--mask {
+    color: $panel-lighten-3;
+}
+
+/* Charcoal on a pale page, at 7.4:1. Pure black is what a censor's marker
+   actually leaves and it is tempting for that reason, but a screenful of
+   it is harsh to write behind, and a diary is not a document being
+   released. Dark enough that nothing shows through, quiet enough to sit
+   with. */
+DiaryTextArea:light > .diary-text-area--mask {
+    color: $foreground-lighten-2;
+}
+
+/* Selecting text while it is masked. TextArea paints the selection after
+   the mask and sets both colours, which back when every character was
+   hidden by colour alone meant ctrl+a laid the whole entry bare on a
+   screen that was supposed to be covered. Swapping the glyphs closed that
+   -- a character that is not there cannot be revealed -- but the wide
+   characters are still hidden by colour, so the selection gets a bar of
+   its own and the hole stays shut for them too.
+   $accent, which is the colour this app already selects with: the
+   highlighted row in the entry list wears it too. It is legible against
+   the mask in either theme, which $foreground-darken-1 is not -- on a
+   pale theme the two come out a hair apart. */
+DiaryTextArea.-masked > .text-area--selection {
+    color: $accent;
+    background: $accent;
+}
+
 /* --- HelpScreen (modal) ------------------------------------------------- */
 
 /* Wide enough for two columns of keys side by side, and never taller than
@@ -409,7 +461,13 @@ HelpScreen {
    single stylesheet in theme variables -- not a second palette to keep in
    sync, and still not a hard-coded color anywhere. The derived shades keep
    each theme's hue, which is why Solarized stays cream and Latte stays
-   cool rather than both flattening to white. */
+   cool rather than both flattening to white.
+
+   Not quite everything the light themes change is here: the mask's bar
+   colour (ctrl+r, up with the editor) keeps its `:light` rule beside the
+   rule it overrides, because the two have to hold identical colours for a
+   word to stay covered and splitting them across the file is how one of
+   them gets changed alone. */
 
 /* Darker than the page, not lighter, so the bar has an edge to it. */
 DiaryHeader:light {

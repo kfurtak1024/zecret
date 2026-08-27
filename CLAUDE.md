@@ -367,9 +367,40 @@ patch number, not a retry. This is why `check` and `verify` run first.
   write per press would restamp `updated_at` on a day nobody edited and
   turn another Zecret's saving into a `ZecretConflictError` over an entry
   this session was not changing.
+- **The mask is drawn, never written.** `ctrl+r` covers every word in the
+  editor but the one the cursor touches. It happens in
+  `DiaryTextArea.get_line`, the hook Textual's own docstring offers for
+  exactly this, on the way to the screen and never in the document.
+  Masking by rewriting the text would file an entry full of blocks, and it
+  is the one mistake here that cannot be taken back.
+  Each covered character is swapped for `BAR`, a three-quarter block: the
+  same number of characters and the same number of cells, so the cursor,
+  the wrapping and the selection all still land where they should, and the
+  quarter-cell it leaves empty is what separates one line of redaction
+  from the next. **Only single-cell characters are swapped.** A bar is one
+  cell, so a two-cell character replaced by one would shorten the line and
+  lose the widget's place in it; those keep their own glyph and are
+  painted in ink the colour of their own background instead — which is
+  why the mask's colour must still be opaque and identical for text and
+  background.
+  Three things paint after `get_line`: TextArea caches rendered lines
+  (cleared in `watch_masked`), the cursor line's highlight (switched off
+  while masked) and the selection (given a bar of its own in `app.tcss`,
+  keyed on the `-masked` class). Each of them used to hand back what the
+  mask had covered, back when every character was hidden by colour alone
+  — `ctrl+a` laid the whole entry bare. Swapping the glyphs closed that
+  for ordinary text, and the mitigations stay because the wide-character
+  path still depends on colour. Anything else that draws over the editor
+  has to be checked against the same three.
+  The state lives on `ZecretApp.masked` so it survives opening another
+  day, and is deliberately **not** in `config.py`: a diary that opened
+  unreadable would be a puzzle before it was a protection. It is a screen
+  someone can read over your shoulder, not a cipher -- it hides what you
+  wrote earlier, since the word being typed is revealed as it is typed.
 - **Text-editing keys belong to the widget, not to the screen.**
-  `EditorScreen.BINDINGS` holds three keys and they are all about the
-  *diary* — save it, lock it, go back. Everything about the writing lives
+  `EditorScreen.BINDINGS` holds four keys and they are all about the
+  *diary* — save it, lock it, cover it, go back. Everything about the
+  writing itself lives
   on `DiaryTextArea`, which is Textual's `TextArea` plus the keys it is
   missing: `ctrl+home` / `ctrl+end` for the two ends of the entry, and
   `ctrl+a` rebound from readline's "start of line" (which `home` still
@@ -407,7 +438,14 @@ patch number, not a retry. This is why `check` and `verify` run first.
   foot of the file, which exists because light and dark stack depth in
   opposite directions and no theme variable can say so — the reasoning is
   written there. Adding a card means adding it to that selector list too,
-  or it will look right in dark and vanish in light. Screens carry a `SUB_TITLE` so the header says where you are.
+  or it will look right in dark and vanish in light. The mask's `:light`
+  rule is the exception to *that*, and stays beside the rule it overrides:
+  the two are a matched pair whose colours must be identical for a word to
+  stay covered, so parting them by two hundred lines invites exactly the
+  edit that half-lifts the bars. A `:light` override belongs at the foot
+  unless it is one of a pair like that. Note also that the pseudo-class
+  has to sit on the widget — a component class does not answer to
+  `:light` itself, which is what makes the mask need a widget selector. Screens carry a `SUB_TITLE` so the header says where you are.
 - **Notifications belong to the app, not to the screen that raised one.**
   Textual holds them for their timeout and redraws the live ones onto
   whichever screen is current, so in an app that changes screens as often

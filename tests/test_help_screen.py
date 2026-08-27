@@ -59,7 +59,7 @@ TODAY = dt.date.today()
 #: run from one. It guards the direction that actually goes wrong -- a page
 #: that grows past its picture -- so raise this and ROWS["help"] together if
 #: the help ever genuinely needs more room.
-SHOT_ROWS = 34
+SHOT_ROWS = 35
 
 
 # Argon2 at test cost, and no pause after a failed unlock: this suite

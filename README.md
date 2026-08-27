@@ -43,6 +43,7 @@ password only you know, in a terminal you already have open.
 - 📄 **One portable file** — back it up by copying it; it is useless without your password
 - 🌗 **Light and dark** — eight themes, picked in settings and remembered
 - 🔒 **Locks itself** — walks away when you do, and asks for your password again
+- ⬛ **Covers the page** — one key bars every word but the one under your cursor, for writing in public
 - 🚫 **Offline by design** — no networking of any kind
 
 ## Install
@@ -142,6 +143,26 @@ on the screen with the diary open behind it. A half-written entry holds the
 *timer* off rather than being thrown away by it. Change the wait, or turn
 it off, in settings.
 
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/masked-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/masked-light.png">
+  <img alt="The same entry with every word covered by a bar, except the one under the cursor" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/masked-dark.png" width="760">
+</picture>
+</div>
+
+Locking covers the diary you have walked away from. <kbd>ctrl</kbd>+<kbd>r</kbd>
+covers the one in front of you: every word goes under a bar except the one
+your cursor is touching, so you can keep writing on a train without the seat
+behind you reading the page. Press it again to lift the bars, and they stay
+lifted or lowered as you move between days.
+
+It hides what you have already written, and that is the honest claim: the
+word you are typing is revealed as you type it, so someone determined to
+watch you write still can. It is also not a substitute for locking — the
+bars are on the screen, not on the diary. The text underneath is untouched,
+so what you save is what you wrote.
+
 ### Keys
 
 | Key | Where | Does |
@@ -157,6 +178,7 @@ it off, in settings.
 | <kbd>?</kbd> | entry list | Help — every key, on one page |
 | <kbd>q</kbd> | entry list | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save, and carry on writing |
+| <kbd>ctrl</kbd>+<kbd>r</kbd> | editor | Cover the writing, leaving only the word you are on |
 | <kbd>esc</kbd> | anywhere | Back (offers to save first if you have unsaved edits) |
 | <kbd>ctrl</kbd>+<kbd>q</kbd> | anywhere | Quit (offers to save first if you have unsaved edits) |
 
