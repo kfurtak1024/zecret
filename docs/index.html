@@ -366,6 +366,10 @@ footer p.right { margin-left: auto; }
         <p>Walk away and the diary closes behind you, asking for your password again. A half-written entry holds it open rather than being thrown away by a timer.</p>
       </div>
       <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6" width="7" height="3" rx="1" fill="currentColor" stroke="none"/><rect x="12" y="6" width="9" height="3" rx="1" fill="currentColor" stroke="none"/><rect x="3" y="12" width="5" height="3" rx="1" fill="currentColor" stroke="none"/><rect x="10" y="12" width="11" height="3" rx="1" fill="currentColor" stroke="none"/><rect x="3" y="18" width="9" height="3" rx="1" fill="currentColor" stroke="none"/></svg>Covers the page</h3>
+        <p>Writing on a train? One key puts every word behind a bar except the one your cursor is touching. It hides what you have already written &mdash; the word you are typing is revealed as you type it &mdash; and the text underneath is untouched, so what you save is what you wrote.</p>
+      </div>
+      <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12h20"/><path d="M12 2a15 15 0 010 20 15 15 0 010-20z"/><circle cx="12" cy="12" r="10"/><path d="M4 4l16 16"/></svg>Offline by design</h3>
         <p>No networking of any kind, in any code path. Nothing to opt out of, and nothing to audit for leaks.</p>
       </div>
@@ -489,14 +493,17 @@ footer p.right { margin-left: auto; }
         <tr><td><kbd>ctrl</kbd> + <kbd>l</kbd></td><td>entry list, editor</td><td class="what">Lock the diary without quitting — saves the day you are writing first</td></tr>
         <tr><td><kbd>?</kbd></td><td>entry list</td><td class="what">Help</td></tr>
         <tr><td><kbd>q</kbd></td><td>entry list</td><td class="what">Quit</td></tr>
-        <tr><td><kbd>ctrl</kbd> + <kbd>s</kbd></td><td>editor</td><td class="what">Save and return</td></tr>
+        <tr><td><kbd>ctrl</kbd> + <kbd>s</kbd></td><td>editor</td><td class="what">Save, and carry on writing</td></tr>
+        <tr><td><kbd>ctrl</kbd> + <kbd>r</kbd></td><td>editor</td><td class="what">Cover the writing, leaving only the word you are on</td></tr>
         <tr><td><kbd>esc</kbd></td><td>anywhere</td><td class="what">Back</td></tr>
       </tbody>
     </table>
 
-    <p class="sub" style="margin-top:1.5rem"><kbd>ctrl</kbd> + <kbd>q</kbd> quits from anywhere, including a screen with a password box on it where a bare <kbd>q</kbd> would only be typed. It asks first if you are part-way through writing a day, exactly as backing out of that day does.</p>
+    <p class="sub" style="margin-top:1.5rem"><kbd>ctrl</kbd> + <kbd>q</kbd> quits from anywhere, including a screen with a password box on it where a bare <kbd>q</kbd> would only be typed. It asks first if you are part-way through writing a day, exactly as backing out of that day does — and either question offers to save the day on the way out, so the choice is never between losing the last paragraph and staying put.</p>
 
     <p class="sub" style="margin-top:1.5rem">Getting around a long diary: <kbd>j</kbd> and <kbd>k</kbd> or the arrow keys move a day at a time, <kbd>g</kbd> and <kbd>G</kbd> (or <kbd>home</kbd> and <kbd>end</kbd>) jump to the newest and oldest entries, and the page keys move a screenful. None of these crowd the bar at the bottom; all of them are listed under <kbd>?</kbd>.</p>
+
+    <p class="sub" style="margin-top:1.5rem">Inside a day, the editor answers to the usual text-editing keys — <kbd>ctrl</kbd> + <kbd>home</kbd> and <kbd>ctrl</kbd> + <kbd>end</kbd> for the two ends of the entry, <kbd>ctrl</kbd> + <kbd>a</kbd> to select all of it, and the rest of what your fingers already know. Those are the one thing <kbd>?</kbd> does not list: it is a page about the diary, and these mean here exactly what they mean everywhere else.</p>
   </div>
 </section>
 

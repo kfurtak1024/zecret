@@ -16,6 +16,10 @@ Required coverage:
     - The whole popup fits the height tools/screenshots.py shoots it at, so
       a layout that grows is caught here rather than by someone noticing a
       cropped picture months later.
+    - The text-editing keys are not on it. The page documents what Zecret
+      does with a diary; ctrl+home, ctrl+end and ctrl+a mean in the editor
+      exactly what they mean in every other editor, and listing them would
+      raise the question of why ctrl+z and the arrow keys are absent.
     - '?' typed into a text field stays a '?'.
 """
 
@@ -55,7 +59,7 @@ TODAY = dt.date.today()
 #: run from one. It guards the direction that actually goes wrong -- a page
 #: that grows past its picture -- so raise this and ROWS["help"] together if
 #: the help ever genuinely needs more room.
-SHOT_ROWS = 34
+SHOT_ROWS = 35
 
 
 # Argon2 at test cost, and no pause after a failed unlock: this suite
@@ -335,6 +339,22 @@ async def test_keys_kept_out_of_the_footer_are_still_listed(diary_path):
             assert any(line.endswith(binding.description) for line in lines), (
                 f"{binding.key} is bound but documented nowhere"
             )
+
+
+async def test_the_text_editing_keys_are_not_on_the_page(diary_path):
+    """They are the widget's, not the screen's, and that is the whole
+    reason they are bound there: this page lists what Zecret does with a
+    diary. ctrl+home and ctrl+a do here what they do in every other editor,
+    and putting them up would invite the question of where ctrl+z, ctrl+k
+    and the arrow keys went -- which are just as real and just as absent.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        page = " ".join(page_lines(app))
+        for key in ("^home", "^end", "^a"):
+            assert key not in page, f"{key} is the text area's key, not the diary's"
 
 
 # --- '?' elsewhere ---------------------------------------------------------

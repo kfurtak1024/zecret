@@ -13,6 +13,16 @@ Required coverage:
     - A modal shows its own key. Without a footer of its own it let the
       entry list's bar show through, advertising eight keys that do
       nothing while a question has focus and none of the one that does.
+    - The answers to a question are all one width, and every label fits
+      the width it is given -- the buttons are sized in app.tcss rather
+      than by their own text, so a longer label would be cut in silence.
+    - None of them hangs off the end of the row. The row is aligned right,
+      so a couple of cells too many are taken off the *last* button, which
+      is where the focus frame's right hand side is drawn -- silently, and
+      only on the answer that is focused by default.
+    - Taking focus does not resize one. The frame is painted over the
+      button's edge rather than carved out of its inside, so the answer
+      you are about to press is exactly the size of the two beside it.
     - Text lines up down the left edge of every screen. The gutter in
       app.tcss lines the borders up; what a reader follows is where the
       text starts, and Input and TextArea pad their insides by different
@@ -267,6 +277,133 @@ async def test_a_modal_advertises_its_own_key_and_not_the_list_behind_it(diary_p
             await pilot.press("escape")
             await pilot.pause()
             await pilot.pause()
+
+
+# --- the confirmation modal ------------------------------------------------
+
+
+#: What a button spends on something other than its label: a cell of
+#: Textual's line-pad each side, and a cell at each end kept clear for the
+#: frame focus paints over them.
+BUTTON_CHROME = 2 + 2
+
+
+async def test_every_answer_is_one_width_and_holds_its_label(diary_path):
+    """The buttons are given a width in app.tcss rather than sized to their
+    own text, which is what makes three answers to one question read as a
+    set. The cost of a fixed width is that a longer label would wrap onto a
+    second line the moment focus reached it -- taking the button's height
+    with it, and the row's alignment -- so the labels are measured against
+    the width they will have when focused, not the wider one they sit at
+    the rest of the time."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 20)) as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "Changed"
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        buttons = list(app.screen.query("#confirm-buttons Button"))
+        assert len(buttons) == 3, "save, discard and cancel"
+        # The region, not the size: `size` is the content box, which the
+        # focused button's frame takes two cells out of. What has to match
+        # is the space each button occupies in the row.
+        widths = {button.region.width for button in buttons}
+        assert len(widths) == 1, f"the answers are different widths: {widths}"
+
+        width = widths.pop()
+        for button in buttons:
+            label = str(button.label)
+            assert len(label) + BUTTON_CHROME <= width, (
+                f"{label!r} does not fit a {width}-cell button once focus frames it"
+            )
+
+        # The one that is focused is the proof: it is carrying the frame
+        # now, and it is still the same height as the two beside it.
+        heights = {button.region.height for button in buttons}
+        assert len(heights) == 1, f"a label wrapped: {heights}"
+
+
+async def test_taking_focus_does_not_resize_a_button(diary_path):
+    """The frame is an outline, painted over the button's own edge, rather
+    than a border, which Textual draws inside the widget and takes out of
+    the content. With a border the focused answer narrowed by two columns
+    as you tabbed onto it -- and a label one cell longer than ours would
+    have wrapped instead of shrinking, taking the row's alignment with it.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 20)) as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "Changed"
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        buttons = list(app.screen.query("#confirm-buttons Button"))
+        assert any(app.screen.focused is button for button in buttons), (
+            "one of them must be focused, or this proves nothing"
+        )
+        # The content box, not the region: the region stayed put even when
+        # the frame was eating into it, which is what made this invisible
+        # to the width check above.
+        insides = {button.content_region.width for button in buttons}
+        assert len(insides) == 1, f"focus changed a button's size: {insides}"
+
+
+async def test_no_answer_hangs_off_the_end_of_its_row(diary_path):
+    """The row is right-aligned, so a row of buttons two cells wider than
+    the space for it loses those cells from the *last* button -- and the
+    two that go missing are the ones the focus frame draws down the right
+    hand side. Cancel is the last answer in both questions and the one
+    focused by default in the delete one, so it came out framed on three
+    sides and open on the fourth. Nothing failed: the layout was fine, the
+    button was fine, and two columns were simply not drawn.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 20)) as pilot:
+        await unlock(pilot)
+
+        for key, expected in (("d", 2), ("escape", 0)):
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+            if not expected:
+                continue
+
+            row = app.screen.query_one("#confirm-buttons")
+            buttons = list(app.screen.query("#confirm-buttons Button"))
+            assert len(buttons) == expected
+            for button in buttons:
+                assert row.content_region.contains_region(button.region), (
+                    f"{str(button.label)!r} is cut off: {button.region} "
+                    f"is not inside {row.content_region}"
+                )
+
+        # And the same for the three-answer question, which is the wider
+        # of the two and so the one with no room to spare.
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "Changed"
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        row = app.screen.query_one("#confirm-buttons")
+        buttons = list(app.screen.query("#confirm-buttons Button"))
+        assert len(buttons) == 3
+        for button in buttons:
+            assert row.content_region.contains_region(button.region), (
+                f"{str(button.label)!r} is cut off: {button.region} "
+                f"is not inside {row.content_region}"
+            )
 
 
 async def test_the_footer_is_compact_on_every_screen(diary_path):

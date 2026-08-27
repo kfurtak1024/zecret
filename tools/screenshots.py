@@ -49,6 +49,7 @@ COLUMNS = 100
 ROWS = {
     "entries": 18,
     "editor": 20,
+    "masked": 20,
     "date": 18,
     "search": 20,
     # The whole popup: logo, every key -- navigation included, which is
@@ -57,7 +58,7 @@ ROWS = {
     # it tracks the layout rather than being padded for safety. Guarded by
     # SHOT_ROWS in tests/test_help_screen.py, since a cropped screenshot is
     # not something any test can see.
-    "help": 34,
+    "help": 35,
 }
 
 #: Width of the rendered PNGs, matching what the README embeds.
@@ -138,6 +139,25 @@ async def editor(pilot: Pilot[None]) -> None:
     await pilot.pause()
 
 
+async def masked(pilot: Pilot[None]) -> None:
+    """The same day with the writing covered (ctrl+r).
+
+    The cursor is put somewhere deliberate first: the one word left
+    readable is the whole point of the picture, and a shot of it sitting
+    at 0,0 on the first word would look like the mask had simply failed
+    to cover the beginning.
+    """
+    from zecret.screens.editor import DiaryTextArea
+
+    await pilot.press("enter")
+    await pilot.pause()
+    pilot.app.screen.query_one("#body", DiaryTextArea).move_cursor((0, 28))
+    await pilot.pause()
+    await pilot.press("ctrl+r")
+    await pilot.pause()
+    await pilot.pause()
+
+
 async def date(pilot: Pilot[None]) -> None:
     """The which-day modal.
 
@@ -173,6 +193,7 @@ async def help_popup(pilot: Pilot[None]) -> None:
 SHOTS: dict[str, Callable[[Pilot[None]], Awaitable[None]]] = {
     "entries": entries,
     "editor": editor,
+    "masked": masked,
     "date": date,
     "search": search,
     "help": help_popup,

@@ -37,6 +37,13 @@ EMPTY_BODY = "(empty)"
 #: happens, and each screen adds what it means for what you were doing.
 DIARY_CHANGED = "The diary changed on disk — another Zecret may have it open."
 
+#: Said when leaving would lose what is on the screen. One sentence for
+#: both ways of leaving -- backing out of the day and quitting the app --
+#: because it is one situation, and the buttons underneath are where the
+#: two differ. Stated rather than asked: with three answers on offer, a
+#: question would be pulling for one of them.
+UNSAVED_CHANGES = "Your changes to this day are not saved."
+
 #: The most of an entry's first line a row will ever carry. Not a display
 #: width: how much of a row is shown is the terminal's business, decided at
 #: render time by `text-overflow: ellipsis` in app.tcss, so a wide window
@@ -167,6 +174,20 @@ class ZecretScreen(Screen[None]):
         stack before it locks.
         """
         return False
+
+    def save_pending(self) -> bool:
+        """Persist what blocks_lock is holding, and say whether it landed.
+
+        The other half of blocks_lock: a screen that claims to be holding
+        something unsaved has to be able to save it on request, which is
+        what answering "save first" to the quit question calls. False
+        means the save did not happen and whoever asked should stay put --
+        the screen has already said why on its own error line.
+
+        A screen with nothing to lose has nothing to do here, and saying
+        it succeeded is the truth for it.
+        """
+        return True
 
 
 class FormScreen(ZecretScreen):

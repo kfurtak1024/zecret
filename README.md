@@ -43,6 +43,7 @@ password only you know, in a terminal you already have open.
 - 📄 **One portable file** — back it up by copying it; it is useless without your password
 - 🌗 **Light and dark** — eight themes, picked in settings and remembered
 - 🔒 **Locks itself** — walks away when you do, and asks for your password again
+- ⬛ **Covers the page** — one key bars every word but the one under your cursor, for writing in public
 - 🚫 **Offline by design** — no networking of any kind
 
 ## Install
@@ -90,10 +91,13 @@ password to unlock it.
 </div>
 
 Press <kbd>n</kbd> to write about today, <kbd>ctrl</kbd>+<kbd>s</kbd> to
-save. A day holds one entry, so pressing <kbd>n</kbd> again later opens what
-you already wrote rather than starting a second page — the evening simply
-continues the morning. Every save re-writes the diary file atomically, so
-there is no draft state to lose track of.
+save. Saving leaves you in the day with the cursor where you left it, so you
+can keep going and save again; <kbd>esc</kbd> is what goes back, and if you
+have not saved it offers to before it does. A day holds
+one entry, so pressing <kbd>n</kbd> again later opens what you already wrote
+rather than starting a second page — the evening simply continues the
+morning. Every save re-writes the diary file atomically, so there is no
+draft state to lose track of.
 
 <div align="center">
 <picture>
@@ -139,6 +143,26 @@ on the screen with the diary open behind it. A half-written entry holds the
 *timer* off rather than being thrown away by it. Change the wait, or turn
 it off, in settings.
 
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/masked-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/masked-light.png">
+  <img alt="The same entry with every word covered by a bar, except the one under the cursor" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/masked-dark.png" width="760">
+</picture>
+</div>
+
+Locking covers the diary you have walked away from. <kbd>ctrl</kbd>+<kbd>r</kbd>
+covers the one in front of you: every word goes under a bar except the one
+your cursor is touching, so you can keep writing on a train without the seat
+behind you reading the page. Press it again to lift the bars, and they stay
+lifted or lowered as you move between days.
+
+It hides what you have already written, and that is the honest claim: the
+word you are typing is revealed as you type it, so someone determined to
+watch you write still can. It is also not a substitute for locking — the
+bars are on the screen, not on the diary. The text underneath is untouched,
+so what you save is what you wrote.
+
 ### Keys
 
 | Key | Where | Does |
@@ -153,15 +177,22 @@ it off, in settings.
 | <kbd>ctrl</kbd>+<kbd>l</kbd> | entry list, editor | Lock the diary without quitting (saves the day you are writing) |
 | <kbd>?</kbd> | entry list | Help — every key, on one page |
 | <kbd>q</kbd> | entry list | Quit |
-| <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save and return |
-| <kbd>esc</kbd> | anywhere | Back (asks first if you have unsaved edits) |
-| <kbd>ctrl</kbd>+<kbd>q</kbd> | anywhere | Quit (asks first if you have unsaved edits) |
+| <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save, and carry on writing |
+| <kbd>ctrl</kbd>+<kbd>r</kbd> | editor | Cover the writing, leaving only the word you are on |
+| <kbd>esc</kbd> | anywhere | Back (offers to save first if you have unsaved edits) |
+| <kbd>ctrl</kbd>+<kbd>q</kbd> | anywhere | Quit (offers to save first if you have unsaved edits) |
 
 Getting around a long diary: <kbd>j</kbd>/<kbd>k</kbd> or the arrow keys move
 a day at a time, <kbd>g</kbd>/<kbd>G</kbd> (or <kbd>home</kbd>/<kbd>end</kbd>)
 jump to the newest and oldest entries, and <kbd>PgUp</kbd>/<kbd>PgDn</kbd>
 move a screenful. These stay out of the bar at the bottom, which only has
 room for so much — <kbd>?</kbd> lists everything.
+
+Inside a day, the editor answers to the usual text-editing keys, including
+<kbd>ctrl</kbd>+<kbd>home</kbd>/<kbd>ctrl</kbd>+<kbd>end</kbd> for the two
+ends of the entry and <kbd>ctrl</kbd>+<kbd>a</kbd> to select all of it.
+Those are not listed under <kbd>?</kbd>: it is a page about the diary, and
+they mean here what they mean in every other editor.
 
 ## How it works
 
