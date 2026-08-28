@@ -440,6 +440,10 @@ HelpScreen {
 #date-box {
     width: 44;
     height: auto;
+    /* Never taller than the terminal, and scrolling inside its border if
+       it would be: what a short window should cost is the bottom of the
+       calendar, not the field the answer is typed into. */
+    max-height: 100%;
     padding: 1 2;
     border: round $accent;
     background: $surface;
@@ -463,6 +467,74 @@ HelpScreen {
     &:focus {
         border: round $accent;
     }
+}
+
+#date-legend {
+    width: 100%;
+    color: $text-muted;
+}
+
+/* --- The month grid (inside the which-day modal) ------------------------ */
+
+/* Full width with the month centred in it, rather than a 28-column widget
+   nudged into place with a margin: the grid is a fixed 28 columns wide and
+   the card it sits in is not obliged to stay 44. Six rows of days plus the
+   two headings, always -- a month drawn to its own height would resize the
+   card under the reader on every page. */
+MonthCalendar {
+    width: 100%;
+    height: 8;
+    content-align-horizontal: center;
+    margin: 1 0;
+}
+
+MonthCalendar > .month-calendar--month {
+    color: $text-accent;
+    text-style: bold;
+}
+
+MonthCalendar > .month-calendar--heading {
+    color: $text-muted;
+}
+
+MonthCalendar > .month-calendar--day {
+    color: $foreground;
+}
+
+/* The mark is a glyph as well as a colour, so this says "written" twice
+   over -- on purpose, since which days are marked is what the grid is
+   read for. */
+MonthCalendar > .month-calendar--written {
+    color: $text-accent;
+    text-style: bold;
+}
+
+/* Today. Painted over whichever of the rules above the day already
+   answers to, so it must set nothing but the style it adds: today is
+   usually a written day and always where the cursor starts, and a colour
+   here would take that day's own colour away from it. Underlined, because
+   an underline is the one thing none of the others use. */
+MonthCalendar > .month-calendar--today {
+    text-style: underline;
+}
+
+/* A day that has not happened. Zecret files no future entries, and the
+   cursor will not go there either. */
+MonthCalendar > .month-calendar--unavailable {
+    color: $text-disabled;
+}
+
+/* Where the cursor is, drawn the way the entry list draws its selected
+   row -- soft while the grid is not focused, solid while it is, which is
+   the only signal the grid gives that the keys now belong to it. */
+MonthCalendar > .month-calendar--cursor {
+    background: $accent-muted;
+    text-style: bold;
+}
+
+MonthCalendar:focus > .month-calendar--cursor {
+    background: $accent;
+    color: $block-cursor-foreground;
 }
 
 /* --- Light themes ------------------------------------------------------- */
@@ -527,6 +599,15 @@ DiaryHeader:light {
    over them. Dark keeps the orange: on a dark page it reads as warmth. */
 #entries:focus > ListItem.-highlight:light,
 #results:focus > ListItem.-highlight:light {
+    background: $block-cursor-background;
+    color: $block-cursor-foreground;
+}
+
+/* The same substitution for the calendar's cursor, which is the same idea
+   drawn at four columns instead of a whole row. The pseudo-class sits on
+   the widget rather than on the component class, which cannot answer to
+   it -- see the note about the mask above. */
+MonthCalendar:focus:light > .month-calendar--cursor {
     background: $block-cursor-background;
     color: $block-cursor-foreground;
 }

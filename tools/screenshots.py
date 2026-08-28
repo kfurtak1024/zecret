@@ -50,7 +50,10 @@ ROWS = {
     "entries": 18,
     "editor": 20,
     "masked": 20,
-    "date": 18,
+    # The which-day modal is a field, a month of days and a legend, which
+    # is most of a short terminal -- and a shot that cut the calendar in
+    # half would be showing the one thing this screen is for going wrong.
+    "date": 26,
     "search": 20,
     # The whole popup: logo, every key -- navigation included, which is
     # most of them -- and the notes underneath. Two columns of keys brought
@@ -106,6 +109,11 @@ SAMPLE = [
     (dt.date(2026, 7, 18), "Rain all day. Made soup, read, did not go out once."),
 ]
 
+#: The day the which-day shot is left on: a day of the sample's own month
+#: that has not been written, with written days either side of it, since
+#: what the calendar is for is showing where the gaps are.
+SHOT_DATE = dt.date(2026, 8, 5)
+
 #: What the search shot has been typed into it. Narrows eight days to three,
 #: which shows the filter doing something -- "the" matches almost
 #: everything and demonstrates nothing.
@@ -159,14 +167,25 @@ async def masked(pilot: Pilot[None]) -> None:
 
 
 async def date(pilot: Pilot[None]) -> None:
-    """The which-day modal.
+    """The which-day modal, over a month the sample diary was written in.
 
     'a', not 'g': 'g' jumps to the newest entry, so this shot was the
     entry list again -- the same picture as entries-*.png, filed under a
     name saying it was the modal. Nothing can fail on that, which is what
     the note at the end of this script is about.
+
+    The field is then typed into rather than left on today, and that is
+    what the picture is about: the calendar follows what is typed, and the
+    month it lands on is the one with the sample's entries in it. Left on
+    today, the shot would show whichever month this was regenerated in --
+    empty of entries in any year but the sample's, which is to say a
+    calendar with nothing to say.
     """
+    from textual.widgets import MaskedInput
+
     await pilot.press("a")
+    await pilot.pause()
+    pilot.app.screen.query_one("#date", MaskedInput).value = SHOT_DATE.isoformat()
     await pilot.pause()
     await pilot.pause()
 

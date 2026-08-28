@@ -128,9 +128,10 @@ branch = true
 
 [tool.coverage.report]
 # The bar is where the suite already stands, so it can only be raised. What
-# is left uncovered is two guards against events the widgets above them
+# is left uncovered is three guards against events the widgets above them
 # cannot actually produce -- a click on a disabled row, an out-of-range
-# selection -- kept because they are what makes those handlers total.
+# selection, a click that lands outside the widget it was delivered to --
+# kept because they are what makes those handlers total.
 fail_under = 99
 show_missing = true
 exclude_also = [

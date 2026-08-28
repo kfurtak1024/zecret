@@ -10,6 +10,23 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **The month you are choosing from.** Pressing <kbd>a</kbd> to write about
+  another day now shows that day's month under the date field, with every
+  day you have already written marked — so the evenings you missed are the
+  ones without a mark, which is a question no date field could answer. The
+  field still has the cursor and still takes a typed date, so knowing the
+  date is no slower than it was; <kbd>tab</kbd> or <kbd>&darr;</kbd> steps
+  into the month, where the arrow keys walk a day at a time, the page keys
+  move a month, <kbd>home</kbd> and <kbd>end</kbd> reach its ends, and
+  <kbd>enter</kbd> takes the day the cursor is on. The calendar follows
+  the typing as it happens — the month appears at the keystroke that names
+  it, and the day as the day goes in — and moving the calendar writes the
+  date back into the field. Days that have not happened are
+  greyed and the cursor will not go there, which is the same rule the
+  screen already applied to a typed date.
+
 ### Changed
 
 - **Choosing a master password says what it costs to forget it.** Both the

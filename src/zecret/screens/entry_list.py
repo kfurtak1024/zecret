@@ -7,7 +7,8 @@ Responsibilities:
       heading names the month, the rows under it need only the weekday and
       day of the month.
     - Keybindings: 'n' write today -> EditorScreen, 'a' pick another day
-      -> DatePromptScreen -> EditorScreen, 'enter' open selected day
+      -> DatePromptScreen (given the days already written, which its
+      calendar marks) -> EditorScreen, 'enter' open selected day
       -> EditorScreen, 'd' delete selected (with confirmation modal),
       'r' re-read the file, '/' -> SearchScreen, 's' -> SettingsScreen,
       'L' lock, 'q' quit. Plus getting around a long diary: j/k, g/G,
@@ -290,8 +291,17 @@ class EntryListScreen(ZecretScreen):
 
     def action_another_day(self) -> None:
         """Write about a day other than today -- one you missed, or one you
-        want to add to."""
-        self.app.push_screen(DatePromptScreen(), self.open_chosen_day)
+        want to add to.
+
+        The days already written go with the question: the modal marks
+        them on its calendar, and it is this screen that has the diary
+        open to be asked. A frozenset of the keys, so what the modal holds
+        cannot drift from the diary or be changed by it.
+        """
+        diary, _ = self.zecret.unlocked
+        self.app.push_screen(
+            DatePromptScreen(written=frozenset(diary.entries)), self.open_chosen_day
+        )
 
     def action_search(self) -> None:
         self.app.push_screen(SearchScreen())

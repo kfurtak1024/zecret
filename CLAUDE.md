@@ -61,11 +61,13 @@ src/zecret/
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
 │                 # fields and an error line, the date/snippet formatting
-│                 # every screen shares, and the wording for a refused
-│                 # save), header.py (both bars -- the title above and the
-│                 # keys below, which every screen wears including the
-│                 # modals), confirm.py (yes/no modal) and date_prompt.py
-│                 # (which-day modal).
+│                 # every screen shares, the warning about a forgotten
+│                 # password, and the wording for a refused save),
+│                 # header.py (both bars -- the title above and the keys
+│                 # below, which every screen wears including the modals),
+│                 # confirm.py (yes/no modal), date_prompt.py (which-day
+│                 # modal) and calendar.py (the month grid inside it,
+│                 # which is a widget rather than a screen).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -397,6 +399,28 @@ patch number, not a retry. This is why `check` and `verify` run first.
   unreadable would be a puzzle before it was a protection. It is a screen
   someone can read over your shoulder, not a cipher -- it hides what you
   wrote earlier, since the word being typed is revealed as it is typed.
+- **Zecret has one widget of its own: `MonthCalendar`.** Textual ships no
+  calendar, so `screens/calendar.py` is one — a month laid out, walked with
+  the arrow keys, marking every day the diary already holds an entry for.
+  That mark is why it exists: a date field answers "which day did I mean",
+  and only a month laid out answers "which days have I missed".
+  It owns nothing. The date belongs to the field above it; the grid posts
+  `DateChanged` and `DatePicked` for `DatePromptScreen` to act on, which is
+  what lets typing and pointing both work without either being the
+  authority.
+  The two follow each other, and the asymmetry between the directions is
+  what keeps them from fighting: the grid **announces** its moves and the
+  field writes them down, while the field moves the grid **quietly**
+  (`MonthCalendar.show`, which sets the reactive without its watcher). That
+  is not an optimisation. Following happens as the date is typed, from the
+  keystroke that names a month, so an announcement in that direction would
+  come back as "write this date into the field" and finish a date under the
+  cursor of the person still typing it.
+  Its cursor clamps to today rather than refusing to move, so no key is
+  dead where the next day is one the screen would turn down anyway. Which
+  days are written is handed in by the caller (`frozenset(diary.entries)`),
+  not looked up: a modal that reached for storage would be the one screen
+  in the app that does.
 - **The editor wraps before it paints.** Textual wraps a `TextArea` when
   it handles the `Resize` message, which is queued — so the compositor has
   already drawn the widget at the new size by the time it arrives, and
@@ -419,7 +443,9 @@ patch number, not a retry. This is why `check` and `verify` run first.
   arrow keys either, and a reader who has used an editor knows them.
   `tests/test_help_screen.py` fails if one of these keys reaches the page.
   Add the next such key to `DiaryTextArea`; add it to the screen only if
-  it does something to the diary.
+  it does something to the diary. The same split is why `MonthCalendar`
+  carries the arrow and page keys, and why the date field's `down` lives
+  on a `DateInput` subclass rather than on `DatePromptScreen`.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.

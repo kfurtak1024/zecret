@@ -37,6 +37,7 @@ password only you know, in a terminal you already have open.
 
 - 📅 **One entry a day** — each day is a page, named by its date; come back and it is the same page
 - 🗓️ **Grouped by month** — the diary reads as months, each headed with how much of it you wrote
+- 📆 **The month at a glance** — choosing a day shows the month around it, with the days you have written marked
 - 🔐 **Encrypted at rest** — Argon2id key derivation, AES-256-GCM per entry
 - ✍️ **Keyboard-driven** — a fast Textual TUI, no mouse required
 - 🔎 **Instant search** — live filtering across everything you have written
@@ -107,12 +108,18 @@ draft state to lose track of.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-light.png">
-  <img alt="A modal asking which day to write about, prefilled with a date" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png" width="760">
+  <img alt="A modal asking which day to write about: a date field above a month of days, with the ones already written marked" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png" width="760">
 </picture>
 </div>
 
-Missed a day? Press <kbd>a</kbd> and type the date. Anything up to today is
-fair game; days that have not happened yet are refused.
+Missed a day? Press <kbd>a</kbd> and type the date. Under the field is the
+month it falls in, with every day you have already written marked — so the
+evenings you missed are the ones without a mark. <kbd>tab</kbd> (or
+<kbd>&darr;</kbd>) steps into it, the arrow keys walk a day at a time, the
+page keys move a month, and <kbd>enter</kbd> takes the day the cursor is
+on. Type instead and the month appears as you type it, before you have
+finished the date. Anything up to today is fair game, and days that have
+not happened yet are neither offered nor accepted.
 
 <div align="center">
 <picture>
