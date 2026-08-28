@@ -11,6 +11,12 @@ Prose is deliberately not checked. What is checked are the facts a reader
 would act on: which keys exist, how many themes there are, the Argon2
 parameters, and which Python it needs.
 
+The hero's terminal is checked too, and it is the reason this note exists:
+that picture is hand-drawn HTML rather than a screenshot, so it drifts
+exactly the way a screenshot does and nothing renders differently when it
+has. It had lost a key -- the app advertised eight and the page drew seven,
+missing the one that locks the diary.
+
 On keys the check runs both ways but is not symmetric: every key the app
 puts in its footer must be on the page, and no key on the page may be one
 the app does not have. In between sit the bindings that never reach the
@@ -112,6 +118,47 @@ def test_the_page_invents_no_keys(page):
     """A binding removed from the app must not linger on the page."""
     invented = page_keys(page) - app_keys()
     assert not invented, f"docs/index.html advertises keys the app lacks: {sorted(invented)}"
+
+
+# --- the hero's terminal ---------------------------------------------------
+
+
+def bar_key(binding: Binding) -> str:
+    """How the key bar spells a binding, which is not how the table does.
+
+    The bar is a picture of a terminal, so it says what the terminal says:
+    Textual's footer writes a chord in caret notation, where the table
+    below spells it out in <kbd> elements.
+    """
+    key = key_display(binding)
+    return f"^{key.removeprefix('ctrl+')}" if key.startswith("ctrl+") else key
+
+
+def drawn_bar(page: str) -> list[tuple[str, str]]:
+    """The key bar drawn in the hero, as (key, what it says it does)."""
+    bar = re.search(r'<span class="bar">(.*?)</span>\s*</pre>', page, re.S)
+    assert bar, "the hero terminal should still draw a key bar"
+    pairs = re.findall(r'<span class="key">(.*?)</span>([^<]*)', bar.group(1))
+    return [(key, description.strip()) for key, description in pairs]
+
+
+def footer_bar() -> list[tuple[str, str]]:
+    """What the app's own key bar holds, in the order it holds it."""
+    return [
+        (bar_key(binding), binding.description)
+        for binding in documented_bindings(EntryListScreen.BINDINGS)
+        if binding.show
+    ]
+
+
+def test_the_hero_draws_the_key_bar_the_app_has(page):
+    """Every key, worded the same and in the same order.
+
+    The hero is a drawing of the entry list, and a drawing that shows keys
+    the app does not have -- or misses one it does -- is worse than no
+    picture, because it is read as a screenshot.
+    """
+    assert drawn_bar(page) == footer_bar()
 
 
 # --- other claims a reader would act on ------------------------------------

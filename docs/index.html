@@ -187,6 +187,11 @@ a:hover { text-decoration-thickness: 2px; }
 .term .row-on { background: var(--term-accent); color: #14161b; font-weight: 700; display: inline-block; width: 100%; }
 .term .dim { color: var(--term-muted); }
 .term .key { color: var(--term-accent); font-weight: 700; }
+/* The month grid: a day already written, today, and where the cursor is --
+   the same three things the app draws, in the same three ways. */
+.term .mark { color: var(--term-accent); font-weight: 700; }
+.term .today { text-decoration: underline; text-underline-offset: 2px; }
+.term .cur { background: var(--term-accent); color: #14161b; font-weight: 700; }
 .term .bar { display: block; margin-top: 0.9rem; padding-top: 0.55rem; border-top: 1px solid #262a33; }
 
 /* --- sections ----------------------------------------------------------- */
@@ -326,7 +331,7 @@ footer p.right { margin-left: auto; }
   Fri 31   Walked the long way back along the canal. The herons have w…
   Tue 28   Finished the tax forms, badly. Rewarded myself with an appl…
   Sat 25   Rain all day. Read two chapters and slept like something hi…
-<span class="bar"><span class="key">n</span> Today  <span class="key">a</span> Another day  <span class="key">d</span> Delete  <span class="key">/</span> Search  <span class="key">s</span> Settings  <span class="key">?</span> Help  <span class="key">q</span> Quit</span>
+<span class="bar"><span class="key">n</span> Today  <span class="key">a</span> Another day  <span class="key">d</span> Delete  <span class="key">/</span> Search  <span class="key">s</span> Settings  <span class="key">^l</span> Lock  <span class="key">?</span> Help  <span class="key">q</span> Quit</span>
 </pre>
   </div>
 </div>
@@ -344,6 +349,10 @@ footer p.right { margin-left: auto; }
       <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>One entry a day</h3>
         <p>Each day is a page, named by its date. Reopening a day continues it; there is no way to file two entries against one afternoon.</p>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="15" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none"/><circle cx="16" cy="15" r="1.4" fill="currentColor" stroke="none"/></svg>The month at a glance</h3>
+        <p>Choosing a day shows you the month it is in, with every day you have already written marked. Type the date if you know it; look at the calendar when the question is which evenings you have missed.</p>
       </div>
       <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Encrypted at rest</h3>
@@ -373,6 +382,42 @@ footer p.right { margin-left: auto; }
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12h20"/><path d="M12 2a15 15 0 010 20 15 15 0 010-20z"/><circle cx="12" cy="12" r="10"/><path d="M4 4l16 16"/></svg>Offline by design</h3>
         <p>No networking of any kind, in any code path. Nothing to opt out of, and nothing to audit for leaks.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<section id="which-day">
+  <div class="wrap">
+    <h2>Filling in the days you missed</h2>
+    <p class="sub">
+      <kbd>a</kbd> asks which day. The field takes a date straight from the
+      keyboard and the month below follows along as you type it, marking the
+      days already written — so the gaps are the ones without a mark. Days
+      that have not happened are not on offer: a diary records what did.
+    </p>
+
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret — 8 entries</span></div>
+<pre>
+  <span class="head">Which day?</span>
+
+  <span class="dim">╭────────────────────────────────╮</span>
+  <span class="dim">│</span> 2026-08-05                     <span class="dim">│</span>
+  <span class="dim">╰────────────────────────────────╯</span>
+  <span class="dim">Type a date, or tab to the calendar.</span>
+
+  <span class="mark">        August 2026         </span>
+  <span class="dim"> Mo  Tu  We  Th  Fr  Sa  Su </span>
+                        1   2
+    3   4 <span class="cur">  5 </span>  6   7   8 <span class="mark">  9•</span>
+  <span class="mark"> 10• 11• 12•</span><span class="mark today"> 13•</span><span class="dim"> 14  15  16 </span>
+  <span class="dim"> 17  18  19  20  21  22  23 </span>
+  <span class="dim"> 24  25  26  27  28  29  30 </span>
+  <span class="dim"> 31 </span>
+
+  <span class="dim">• a day you have written</span>
+<span class="bar"><span class="key">esc</span> Cancel</span>
+</pre>
     </div>
   </div>
 </section>
@@ -417,7 +462,8 @@ footer p.right { margin-left: auto; }
         see <em>which days</em> you wrote on, though not a word of what they
         say — the dates are the index, and indexes have to be readable to be
         used. And there is no password recovery, by design: nobody, including
-        you, can open the file without the password.
+        you, can open the file without the password — which the app says in
+        as many words, in red, on both of the screens where you choose one.
       </p>
     </div>
   </div>
@@ -489,7 +535,7 @@ footer p.right { margin-left: auto; }
         <tr><td><kbd>d</kbd></td><td>entry list</td><td class="what">Delete the selected day's entry</td></tr>
         <tr><td><kbd>r</kbd></td><td>entry list</td><td class="what">Re-read the file, picking up another Zecret's writing</td></tr>
         <tr><td><kbd>/</kbd></td><td>entry list</td><td class="what">Search</td></tr>
-        <tr><td><kbd>s</kbd></td><td>entry list</td><td class="what">Settings: theme, locking, master password</td></tr>
+        <tr><td><kbd>s</kbd></td><td>entry list</td><td class="what">Settings: theme, locking, and the way to change your master password</td></tr>
         <tr><td><kbd>ctrl</kbd> + <kbd>l</kbd></td><td>entry list, editor</td><td class="what">Lock the diary without quitting — saves the day you are writing first</td></tr>
         <tr><td><kbd>?</kbd></td><td>entry list</td><td class="what">Help</td></tr>
         <tr><td><kbd>q</kbd></td><td>entry list</td><td class="what">Quit</td></tr>
@@ -502,6 +548,8 @@ footer p.right { margin-left: auto; }
     <p class="sub" style="margin-top:1.5rem"><kbd>ctrl</kbd> + <kbd>q</kbd> quits from anywhere, including a screen with a password box on it where a bare <kbd>q</kbd> would only be typed. It asks first if you are part-way through writing a day, exactly as backing out of that day does — and either question offers to save the day on the way out, so the choice is never between losing the last paragraph and staying put.</p>
 
     <p class="sub" style="margin-top:1.5rem">Getting around a long diary: <kbd>j</kbd> and <kbd>k</kbd> or the arrow keys move a day at a time, <kbd>g</kbd> and <kbd>G</kbd> (or <kbd>home</kbd> and <kbd>end</kbd>) jump to the newest and oldest entries, and the page keys move a screenful. None of these crowd the bar at the bottom; all of them are listed under <kbd>?</kbd>.</p>
+
+    <p class="sub" style="margin-top:1.5rem">Choosing a day has two halves, and the keyboard reaches both: type the date into the field, or press <kbd>tab</kbd> (or <kbd>&darr;</kbd>) to step into the month below it, where the arrow keys walk a day at a time, the page keys move a month, <kbd>home</kbd> and <kbd>end</kbd> reach the ends of it, and <kbd>enter</kbd> takes the day the cursor is on. Whichever half you use, the other follows — and the calendar follows the typing as it happens, so the month you are aiming at is on screen before you have finished the date.</p>
 
     <p class="sub" style="margin-top:1.5rem">Inside a day, the editor answers to the usual text-editing keys — <kbd>ctrl</kbd> + <kbd>home</kbd> and <kbd>ctrl</kbd> + <kbd>end</kbd> for the two ends of the entry, <kbd>ctrl</kbd> + <kbd>a</kbd> to select all of it, and the rest of what your fingers already know. Those are the one thing <kbd>?</kbd> does not list: it is a page about the diary, and these mean here exactly what they mean everywhere else.</p>
   </div>

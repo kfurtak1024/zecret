@@ -10,6 +10,52 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-28
+
+### Added
+
+- **The month you are choosing from.** Pressing <kbd>a</kbd> to write about
+  another day now shows that day's month under the date field, with every
+  day you have already written marked — so the evenings you missed are the
+  ones without a mark, which is a question no date field could answer. The
+  field still has the cursor and still takes a typed date, so knowing the
+  date is no slower than it was; <kbd>tab</kbd> or <kbd>&darr;</kbd> steps
+  into the month, where the arrow keys walk a day at a time, the page keys
+  move a month, <kbd>home</kbd> and <kbd>end</kbd> reach its ends, and
+  <kbd>enter</kbd> takes the day the cursor is on. The calendar follows
+  the typing as it happens — the month appears at the keystroke that names
+  it, and the day as the day goes in — and moving the calendar writes the
+  date back into the field. Days that have not happened are
+  greyed and the cursor will not go there, which is the same rule the
+  screen already applied to a typed date.
+
+### Changed
+
+- **Choosing a master password says what it costs to forget it.** The
+  screen that creates a diary now carries the warning in red rather than in
+  the grey the rest of the hints are written in: forget it and the diary is
+  gone, with no recovery and no back door. It was already said there, and
+  read like small print.
+
+- **Changing the master password is its own dialog.** Settings now offers a
+  button, and the three password fields have moved behind it, where the
+  same warning is the first thing on the screen rather than the last line
+  of a form you had scrolled to the bottom of. It is the only thing in
+  Zecret that cannot be undone, and it was previously something you could
+  tab into by accident on the way past two dropdowns. Nothing about the
+  change itself is different: your current password is still checked before
+  anything happens, and a change that fails to save still leaves the diary
+  openable by the password you already had. Settings is a shorter screen
+  for it, too.
+
+### Fixed
+
+- **A long day no longer flinches when you open it.** An entry appeared for
+  a moment with its paragraphs running off the right-hand edge and then
+  redrew itself wrapped, which read as the text being replaced by different
+  text. The wrapping now happens before the first frame is drawn rather
+  than a frame after it.
+
 ## [0.4.0] - 2026-08-27
 
 ### Added
@@ -226,7 +272,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kfurtak1024/zecret/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kfurtak1024/zecret/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kfurtak1024/zecret/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kfurtak1024/zecret/compare/v0.1.0...v0.2.0

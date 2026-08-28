@@ -6,6 +6,12 @@ calls DiaryFile.unlock(), reporting ZecretDecryptError and a malformed
 file identically -- an inline "incorrect password" -- so that nothing here
 tells an attacker whether a given path holds a real, intact diary.
 
+The create flow also says, in the colour the rest of the app keeps for
+what cannot be undone, that a forgotten password is a lost diary. This is
+the screen where that becomes true, and no later screen can offer a way
+back: an app with no recovery mechanism owes the reader that sentence
+before they choose, not after.
+
 Every failed attempt pauses for FAILED_ATTEMPT_DELAY before the fields
 come back, which takes the edge off interactive brute-forcing. Key
 derivation itself runs off the event loop: Argon2id is deliberately slow,
@@ -26,11 +32,11 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
+from textual.containers import VerticalScroll
 from textual.widgets import Input, Label
 
 from zecret.crypto import ZecretDecryptError
-from zecret.screens.base import FormScreen
+from zecret.screens.base import NO_RECOVERY, FormScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import DiaryFile
 
@@ -68,14 +74,21 @@ class UnlockScreen(FormScreen):
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
-        with Vertical(id="unlock-box"):
+        # Scrolls rather than running off the bottom: the caution below
+        # is three rows this card did not used to spend, and the field it
+        # would push out of sight on a short terminal is the one that
+        # confirms the password.
+        with VerticalScroll(id="unlock-box"):
             if self.creating:
                 yield Label("Create a new diary", id="unlock-title")
                 yield Label(
-                    f"No diary at {self.zecret.diary_path}. Choose a master "
-                    "password — it cannot be recovered.",
+                    f"No diary at {self.zecret.diary_path}. Choose a master password for it.",
                     id="unlock-hint",
                 )
+                # Above the fields rather than below them: it is the thing
+                # to know before choosing a password, not a footnote to
+                # having chosen one.
+                yield Label(NO_RECOVERY, classes="caution")
             else:
                 yield Label("Unlock your diary", id="unlock-title")
             yield Input(placeholder="Master password", password=True, id="password")

@@ -61,11 +61,14 @@ src/zecret/
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
 │                 # fields and an error line, the date/snippet formatting
-│                 # every screen shares, and the wording for a refused
-│                 # save), header.py (both bars -- the title above and the
-│                 # keys below, which every screen wears including the
-│                 # modals), confirm.py (yes/no modal) and date_prompt.py
-│                 # (which-day modal).
+│                 # every screen shares, the warning about a forgotten
+│                 # password, and the wording for a refused save),
+│                 # header.py (both bars -- the title above and the keys
+│                 # below, which every screen wears including the modals),
+│                 # confirm.py (yes/no modal), date_prompt.py (which-day
+│                 # modal), calendar.py (the month grid inside it, which is
+│                 # a widget rather than a screen) and password.py (the
+│                 # change-password dialog).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -96,7 +99,7 @@ Keep this layering strict:
 - `screens/*.py` never call `crypto.py` or the filesystem directly — they
   only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
   needs something crypto-shaped, storage grows the method: this is why
-  `DiaryFile.verify_password()` exists, for the settings screen's re-check
+  `DiaryFile.verify_password()` exists, for the password dialog's re-check
   of the current password.
 - Presentation belongs to the screens, and stays there. The entry list
   groups days under a month heading; `DiaryFile.entries` is an unordered
@@ -397,6 +400,52 @@ patch number, not a retry. This is why `check` and `verify` run first.
   unreadable would be a puzzle before it was a protection. It is a screen
   someone can read over your shoulder, not a cipher -- it hides what you
   wrote earlier, since the word being typed is revealed as it is typed.
+- **Changing the master password is a dialog, not a form field.** It is
+  the one thing in the app that cannot be undone, and as three fields at
+  the foot of the settings form it was something to scroll past or tab
+  into by accident, with `NO_RECOVERY` read as the small print underneath
+  it. A button opens `PasswordScreen`, where the warning is the first
+  thing on the screen and the fields are the only other thing on it. The
+  dialog is sized so that the warning never needs scrolling to: title,
+  warning and three fields come to exactly the eighteen rows a 24-row
+  terminal leaves inside the card, which is why it is 70 columns wide
+  rather than the 62 the other cards use — those eight columns are what
+  bring the warning down from three lines to two. Settings still scrolls;
+  it wants 25 rows and gets 18, which is a shorter card than the 39 it
+  wanted before, not a screenful.
+  `PasswordScreen` inherits `ModalScreen[None]` **and** `FormScreen`, in
+  that order, and both halves of that are load-bearing — see its module
+  docstring and the note in `base.py`.
+- **Zecret has one widget of its own: `MonthCalendar`.** Textual ships no
+  calendar, so `screens/calendar.py` is one — a month laid out, walked with
+  the arrow keys, marking every day the diary already holds an entry for.
+  That mark is why it exists: a date field answers "which day did I mean",
+  and only a month laid out answers "which days have I missed".
+  It owns nothing. The date belongs to the field above it; the grid posts
+  `DateChanged` and `DatePicked` for `DatePromptScreen` to act on, which is
+  what lets typing and pointing both work without either being the
+  authority.
+  The two follow each other, and the asymmetry between the directions is
+  what keeps them from fighting: the grid **announces** its moves and the
+  field writes them down, while the field moves the grid **quietly**
+  (`MonthCalendar.show`, which sets the reactive without its watcher). That
+  is not an optimisation. Following happens as the date is typed, from the
+  keystroke that names a month, so an announcement in that direction would
+  come back as "write this date into the field" and finish a date under the
+  cursor of the person still typing it.
+  Its cursor clamps to today rather than refusing to move, so no key is
+  dead where the next day is one the screen would turn down anyway. Which
+  days are written is handed in by the caller (`frozenset(diary.entries)`),
+  not looked up: a modal that reached for storage would be the one screen
+  in the app that does.
+- **The editor wraps before it paints.** Textual wraps a `TextArea` when
+  it handles the `Resize` message, which is queued — so the compositor has
+  already drawn the widget at the new size by the time it arrives, and
+  opening a long day showed one frame of unwrapped text before the wrapped
+  one. `DiaryTextArea.render_lines` wraps first if the width has changed
+  since it last did, which is inside the paint rather than after it. It
+  tracks the width alone; everything else that changes the wrapping goes
+  through TextArea's own rewrap at that same width.
 - **Text-editing keys belong to the widget, not to the screen.**
   `EditorScreen.BINDINGS` holds four keys and they are all about the
   *diary* — save it, lock it, cover it, go back. Everything about the
@@ -411,7 +460,9 @@ patch number, not a retry. This is why `check` and `verify` run first.
   arrow keys either, and a reader who has used an editor knows them.
   `tests/test_help_screen.py` fails if one of these keys reaches the page.
   Add the next such key to `DiaryTextArea`; add it to the screen only if
-  it does something to the diary.
+  it does something to the diary. The same split is why `MonthCalendar`
+  carries the arrow and page keys, and why the date field's `down` lives
+  on a `DateInput` subclass rather than on `DatePromptScreen`.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.
@@ -430,7 +481,16 @@ patch number, not a retry. This is why `check` and `verify` run first.
   conventions at the top: theme variables only (never hard-coded colors,
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
-  spacing. Text starts at the same column on every full-width screen — the
+  spacing. `$error` is reserved for errors and destructive actions, and
+  two things now share that red without being errors: `.caution`, the
+  warning shown wherever a master password is chosen, and the settings
+  button that opens the dialog where one is. Neither is an exception to
+  the rule so much as a reading of it — choosing a password is the step
+  that makes losing the diary possible, and the button is the only road on
+  that screen to something with no way back. Do not spend that red on
+  anything less final. (It is `.caution` and not `.warning`
+  because Textual's own `Label` reserves that class for a variant of its
+  own and paints `$warning-muted` behind it.) Text starts at the same column on every full-width screen — the
   gutter lines the *borders* up, and `Input` and `TextArea` pad their
   insides by different amounts, so lining up what is read takes a rule of
   its own; `tests/test_chrome.py` fails if the two drift apart again. The
@@ -496,7 +556,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   This is a checklist, not a sentiment. Every change that alters what
   someone sees or presses goes through it *in the same commit*:
   - `README.md` — the key table, the feature list, the prose.
-  - `docs/index.html` — the key table, the feature cards, "How it works".
+  - `docs/index.html` — the key table, the feature cards, "How it works",
+    and the hand-drawn terminals: the hero's key bar is checked against the
+    app's footer by `tests/test_docs_page.py`, because a drawing of the app
+    goes stale exactly the way a screenshot does and nothing else notices.
   - `CHANGELOG.md` — under `Unreleased`, in the voice of what changed for
     the writer, not what changed in the code.
   - `assets/*.png` — **the screenshots**, if the change touches anything

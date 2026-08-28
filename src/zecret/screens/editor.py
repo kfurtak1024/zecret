@@ -44,7 +44,9 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.geometry import Region
 from textual.reactive import reactive
+from textual.strip import Strip
 from textual.widgets import Label, TextArea
 
 from zecret.models import Entry
@@ -175,6 +177,43 @@ class DiaryTextArea(TextArea):
         # the line, and is the key most people reach for anyway.
         Binding("ctrl+a", "select_all", "Select all", show=False),
     ]
+
+    #: The width the text was last wrapped at, so a paint can tell whether
+    #: what it is about to draw was wrapped for the width it is drawing
+    #: into. None until the first one -- see render_lines.
+    _wrapped_at: int | None = None
+
+    # --- wrapping ----------------------------------------------------------
+
+    def render_lines(self, crop: Region) -> list[Strip]:
+        """Wrap the day to the width it is about to be drawn at, if needed.
+
+        TextArea wraps its text when it is told its size has changed, and
+        it is told that by a Resize message -- which is queued, and so
+        arrives after the compositor has already painted the widget at the
+        new size. A day opened from the list therefore drew one frame of
+        unwrapped text, each paragraph running off the right-hand edge as
+        a single line, and rewrapped a frame later: a visible flinch on
+        opening every long entry, which read as the text being replaced by
+        different text.
+
+        Wrapping here instead closes the gap, because this runs inside the
+        paint rather than in a message after it. The Resize still arrives
+        and still rewraps; this costs one extra pass over the day's lines
+        when the width changes, which is work the resize was going to do
+        anyway, and buys a first frame that is never wrong.
+
+        Only the width is tracked. Everything else that changes the
+        wrapping -- the indent width, the line numbers, a document swapped
+        in under the widget -- goes through TextArea's own rewrap at the
+        same width this recorded, so it stays true without being told.
+        """
+        width = self.wrap_width
+        if width != self._wrapped_at:
+            self._wrapped_at = width
+            self.wrapped_document.wrap(width, tab_width=self.indent_width)
+            self._line_cache.clear()
+        return super().render_lines(crop)
 
     # --- the mask ----------------------------------------------------------
 
