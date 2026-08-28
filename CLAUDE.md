@@ -66,8 +66,9 @@ src/zecret/
 │                 # header.py (both bars -- the title above and the keys
 │                 # below, which every screen wears including the modals),
 │                 # confirm.py (yes/no modal), date_prompt.py (which-day
-│                 # modal) and calendar.py (the month grid inside it,
-│                 # which is a widget rather than a screen).
+│                 # modal), calendar.py (the month grid inside it, which is
+│                 # a widget rather than a screen) and password.py (the
+│                 # change-password dialog).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
 
@@ -98,7 +99,7 @@ Keep this layering strict:
 - `screens/*.py` never call `crypto.py` or the filesystem directly — they
   only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
   needs something crypto-shaped, storage grows the method: this is why
-  `DiaryFile.verify_password()` exists, for the settings screen's re-check
+  `DiaryFile.verify_password()` exists, for the password dialog's re-check
   of the current password.
 - Presentation belongs to the screens, and stays there. The entry list
   groups days under a month heading; `DiaryFile.entries` is an unordered
@@ -399,6 +400,22 @@ patch number, not a retry. This is why `check` and `verify` run first.
   unreadable would be a puzzle before it was a protection. It is a screen
   someone can read over your shoulder, not a cipher -- it hides what you
   wrote earlier, since the word being typed is revealed as it is typed.
+- **Changing the master password is a dialog, not a form field.** It is
+  the one thing in the app that cannot be undone, and as three fields at
+  the foot of the settings form it was something to scroll past or tab
+  into by accident, with `NO_RECOVERY` read as the small print underneath
+  it. A button opens `PasswordScreen`, where the warning is the first
+  thing on the screen and the fields are the only other thing on it. The
+  dialog is sized so that the warning never needs scrolling to: title,
+  warning and three fields come to exactly the eighteen rows a 24-row
+  terminal leaves inside the card, which is why it is 70 columns wide
+  rather than the 62 the other cards use — those eight columns are what
+  bring the warning down from three lines to two. Settings still scrolls;
+  it wants 25 rows and gets 18, which is a shorter card than the 39 it
+  wanted before, not a screenful.
+  `PasswordScreen` inherits `ModalScreen[None]` **and** `FormScreen`, in
+  that order, and both halves of that are load-bearing — see its module
+  docstring and the note in `base.py`.
 - **Zecret has one widget of its own: `MonthCalendar`.** Textual ships no
   calendar, so `screens/calendar.py` is one — a month laid out, walked with
   the arrow keys, marking every day the diary already holds an entry for.
@@ -465,10 +482,13 @@ patch number, not a retry. This is why `check` and `verify` run first.
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
   spacing. `$error` is reserved for errors and destructive actions, and
-  `.caution` — the warning shown wherever a master password is chosen — is
-  the second of those rather than an exception to the first: choosing a
-  password is the step that makes losing the diary possible. Do not spend
-  that red on anything less final. (It is `.caution` and not `.warning`
+  two things now share that red without being errors: `.caution`, the
+  warning shown wherever a master password is chosen, and the settings
+  button that opens the dialog where one is. Neither is an exception to
+  the rule so much as a reading of it — choosing a password is the step
+  that makes losing the diary possible, and the button is the only road on
+  that screen to something with no way back. Do not spend that red on
+  anything less final. (It is `.caution` and not `.warning`
   because Textual's own `Label` reserves that class for a variant of its
   own and paints `$warning-muted` behind it.) Text starts at the same column on every full-width screen — the
   gutter lines the *borders* up, and `Input` and `TextArea` pad their

@@ -215,6 +215,14 @@ class FormScreen(ZecretScreen):
     cannot inherit Screen[None], and reaching it would need a mixin that
     fights both the type system and Textual's widget hierarchy for the sake
     of one two-line method.
+
+    A modal that dismisses *nothing* is a different case, and PasswordScreen
+    is one: `ModalScreen[None]` and `Screen[None]` agree, so it inherits
+    this class outright and shares one copy of clear_inputs -- which matters,
+    because emptying the fields after a rejected attempt is a security
+    behaviour rather than a convenience. It lists ModalScreen first so that
+    Textual's styling gives it the translucent background of a dialog
+    instead of the opaque one behind this class.
     """
 
     #: The id of the Label this screen writes its errors into.

@@ -81,8 +81,8 @@ password to unlock it.
 > There is no password recovery, by design. Nobody — including you — can
 > open the file without the password. Choose something you will not lose.
 
-Zecret says as much on the screen that asks you to choose one, and again on
-the one that changes it later — in red, where it cannot be mistaken for
+Zecret says as much on the screen that asks you to choose one, and again in
+the dialog that changes it later — in red, where it cannot be mistaken for
 small print.
 
 ## Using it
@@ -142,7 +142,22 @@ for the session, so filtering is instant and nothing touches the disk.
 
 Press <kbd>?</kbd> for every key in one popup, and <kbd>s</kbd> for settings
 — where you pick a theme, choose how long the diary waits before locking
-itself, and change your master password. Those preferences are kept in
+itself, and change your master password.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/password-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/password-light.png">
+  <img alt="The change-password dialog: a red warning that a forgotten password loses the diary, above the current, new and confirm fields" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/password-dark.png" width="760">
+</picture>
+</div>
+
+That last one is a dialog of its own, behind a button. It is the only thing
+in the app that cannot be undone, so it is not something to stumble into
+between two dropdowns — and the warning is the first thing on it rather
+than the last line of a form. Your current password is checked before
+anything happens, and a change that fails to save leaves the diary openable
+by the password you already had. Those preferences are kept in
 `~/.zecret/config.json`, the one file Zecret writes unencrypted; it holds
 your settings and nothing about what you wrote.
 

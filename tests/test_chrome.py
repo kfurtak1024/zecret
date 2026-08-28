@@ -35,7 +35,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Footer, Input, Label, ListView, TextArea
+from textual.widgets import Button, Footer, Input, Label, ListView, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
@@ -277,6 +277,24 @@ async def test_a_modal_advertises_its_own_key_and_not_the_list_behind_it(diary_p
             await pilot.press("escape")
             await pilot.pause()
             await pilot.pause()
+
+
+async def test_the_password_dialog_advertises_its_own_key(diary_path):
+    """The same rule as the two modals above, reached the other way: this
+    one opens from a button on the settings screen rather than from a key
+    on the list, so it is checked separately rather than assumed."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(NARROWEST, 24)) as pilot:
+        await unlock(pilot)
+        await pilot.press("s")
+        await pilot.pause()
+        app.screen.query_one("#change-password", Button).press()
+        await pilot.pause()
+        await pilot.pause()
+
+        bar = footer_text(app)
+        assert "esc Cancel" in bar, f"the dialog showed no key of its own: {bar!r}"
+        assert "esc Back" not in bar, f"the settings bar stayed on show: {bar!r}"
 
 
 # --- the confirmation modal ------------------------------------------------

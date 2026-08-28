@@ -37,7 +37,8 @@ DiaryHeader {
 /* --- Panels: the centred card used by unlock and settings --------------- */
 
 UnlockScreen,
-SettingsScreen {
+SettingsScreen,
+PasswordScreen {
     align: center middle;
 }
 
@@ -54,6 +55,7 @@ SettingsScreen {
 }
 
 #unlock-title,
+#password-title,
 .section-title {
     width: 100%;
     content-align: center middle;
@@ -63,6 +65,7 @@ SettingsScreen {
 }
 
 #unlock-hint,
+#password-hint,
 .section-hint {
     width: 100%;
     color: $text-muted;
@@ -70,6 +73,7 @@ SettingsScreen {
 }
 
 #unlock-box Input,
+#password-box Input,
 #settings-box Input,
 /* The gap under the theme picker is what separates the two sections of
    the settings screen; they need no rule of their own. */
@@ -77,12 +81,39 @@ SettingsScreen {
     margin-bottom: 1;
 }
 
+/* The password dialog, at the width the confirm modal uses rather than
+   the 62 of the other cards. Those eight columns are what bring the
+   warning down from three lines to two, and that row is the difference
+   between the dialog fitting a 24-row terminal and being scrolled -- see
+   PasswordScreen.compose. */
+#password-box {
+    width: 70;
+    max-width: 100%;
+    height: auto;
+    max-height: 100%;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+
+/* The one button outside a modal. Full width, so it sits in the column the
+   two dropdowns above it make rather than floating at one end of it, and
+   red (variant="error") because of where it leads: everything else on the
+   settings screen is a preference that can be chosen again, and this is
+   the only control on it that opens something there is no way back from.
+   Red for the road to an irreversible thing, not only for the step that
+   takes it -- the same reading that puts `.caution` in red on a screen
+   where nothing has gone wrong. */
+#change-password {
+    width: 100%;
+}
+
 /* --- Error lines -------------------------------------------------------- */
 
 /* Reserve the row whether or not there is a message, so showing one never
    shifts the fields under the user's cursor. */
 #unlock-error,
-#settings-error,
+#password-error,
 #editor-error,
 #date-error {
     width: 100%;
@@ -575,6 +606,7 @@ DiaryHeader:light {
    they are all the same idea -- see the panel rules above. */
 #unlock-box:light,
 #settings-box:light,
+#password-box:light,
 #help-box:light,
 #confirm-box:light,
 #date-box:light,
@@ -621,6 +653,7 @@ MonthCalendar:focus:light > .month-calendar--cursor {
    quietly on paper. Dark is untouched: there, $accent is the whole point. */
 #unlock-box:light,
 #settings-box:light,
+#password-box:light,
 #help-box:light,
 #date-box:light,
 #query:focus:light,

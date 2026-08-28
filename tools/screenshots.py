@@ -55,6 +55,10 @@ ROWS = {
     # half would be showing the one thing this screen is for going wrong.
     "date": 26,
     "search": 20,
+    # The password dialog is drawn to fit exactly this, which is the
+    # shortest terminal it does not scroll in -- so a shot any shorter
+    # would be a picture of the one thing that screen must never do.
+    "password": 24,
     # The whole popup: logo, every key -- navigation included, which is
     # most of them -- and the notes underneath. Two columns of keys brought
     # this down from 50; it is the height the popup stops scrolling at, so
@@ -190,6 +194,25 @@ async def date(pilot: Pilot[None]) -> None:
     await pilot.pause()
 
 
+async def password(pilot: Pilot[None]) -> None:
+    """The dialog that changes the master password, over the settings it
+    was opened from.
+
+    Pressed rather than reached by key: the button is the only way in, and
+    driving it the way a reader would is what makes the picture honest.
+    The fields are left empty on purpose -- a shot of a password box with
+    dots in it says nothing the placeholder does not, and the warning is
+    what this picture is of.
+    """
+    from textual.widgets import Button
+
+    await pilot.press("s")
+    await pilot.pause()
+    pilot.app.screen.query_one("#change-password", Button).press()
+    await pilot.pause()
+    await pilot.pause()
+
+
 async def search(pilot: Pilot[None]) -> None:
     """Live filtering."""
     await pilot.press("slash")
@@ -215,6 +238,7 @@ SHOTS: dict[str, Callable[[Pilot[None]], Awaitable[None]]] = {
     "masked": masked,
     "date": date,
     "search": search,
+    "password": password,
     "help": help_popup,
 }
 

@@ -33,6 +33,7 @@ from textual.widgets import Label, Static
 from zecret import __version__
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
+from zecret.screens.password import PasswordScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
 from zecret.screens.unlock import UnlockScreen
@@ -85,6 +86,7 @@ SECTIONS: list[tuple[str, list[list[BindingType]]]] = [
         "Anywhere else",
         [
             DatePromptScreen.BINDINGS,
+            PasswordScreen.BINDINGS,
             SearchScreen.BINDINGS,
             SettingsScreen.BINDINGS,
             UnlockScreen.BINDINGS,

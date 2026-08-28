@@ -29,13 +29,22 @@ file matters as much as that does.
 
 ### Changed
 
-- **Choosing a master password says what it costs to forget it.** Both the
-  screen that creates a diary and the one that changes its password now
-  carry the same sentence, in red rather than in the grey the rest of the
-  hints are written in: forget it and the diary is gone, with no recovery
-  and no back door. It was already said on both screens and read like
-  small print on both, which is the one thing here that cannot be undone
-  later.
+- **Choosing a master password says what it costs to forget it.** The
+  screen that creates a diary now carries the warning in red rather than in
+  the grey the rest of the hints are written in: forget it and the diary is
+  gone, with no recovery and no back door. It was already said there, and
+  read like small print.
+
+- **Changing the master password is its own dialog.** Settings now offers a
+  button, and the three password fields have moved behind it, where the
+  same warning is the first thing on the screen rather than the last line
+  of a form you had scrolled to the bottom of. It is the only thing in
+  Zecret that cannot be undone, and it was previously something you could
+  tab into by accident on the way past two dropdowns. Nothing about the
+  change itself is different: your current password is still checked before
+  anything happens, and a change that fails to save still leaves the diary
+  openable by the password you already had. Settings is a shorter screen
+  for it, too.
 
 ### Fixed
 
