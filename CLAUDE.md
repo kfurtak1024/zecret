@@ -397,6 +397,14 @@ patch number, not a retry. This is why `check` and `verify` run first.
   unreadable would be a puzzle before it was a protection. It is a screen
   someone can read over your shoulder, not a cipher -- it hides what you
   wrote earlier, since the word being typed is revealed as it is typed.
+- **The editor wraps before it paints.** Textual wraps a `TextArea` when
+  it handles the `Resize` message, which is queued — so the compositor has
+  already drawn the widget at the new size by the time it arrives, and
+  opening a long day showed one frame of unwrapped text before the wrapped
+  one. `DiaryTextArea.render_lines` wraps first if the width has changed
+  since it last did, which is inside the paint rather than after it. It
+  tracks the width alone; everything else that changes the wrapping goes
+  through TextArea's own rewrap at that same width.
 - **Text-editing keys belong to the widget, not to the screen.**
   `EditorScreen.BINDINGS` holds four keys and they are all about the
   *diary* — save it, lock it, cover it, go back. Everything about the

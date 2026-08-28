@@ -22,6 +22,9 @@ Required coverage:
       count as moving rather than as editing.
     - ctrl+a selects the whole entry, the way it does everywhere else --
       Textual binds it to "start of line", which home still does.
+    - A long day is wrapped in the frame it first appears in. Textual
+      wraps on the Resize message, which arrives after the paint, so
+      opening an entry used to show one frame of unwrapped text.
     - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
@@ -53,7 +56,13 @@ from zecret.app import SAVE_AND_QUIT, ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import DIARY_CHANGED, format_day_long
 from zecret.screens.confirm import ConfirmScreen
-from zecret.screens.editor import EMPTY_ENTRY, SAVE_AND_GO_BACK, SAVED, EditorScreen
+from zecret.screens.editor import (
+    EMPTY_ENTRY,
+    SAVE_AND_GO_BACK,
+    SAVED,
+    DiaryTextArea,
+    EditorScreen,
+)
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
@@ -63,6 +72,14 @@ PASSWORD = "correct horse battery staple"
 TODAY = dt.date.today()
 YESTERDAY = TODAY - dt.timedelta(days=1)
 LAST_WEEK = TODAY - dt.timedelta(days=7)
+
+#: One paragraph with no newline in it, far wider than any terminal -- so
+#: how many lines it occupies says whether it was wrapped or not.
+LONG_PARAGRAPH = (
+    "Walked the long way back along the canal, past the yard where they keep "
+    "the narrowboats, and stopped at the lock to watch someone work a boat "
+    "through it single-handed in the rain."
+)
 
 
 # Argon2 at test cost, and no pause after a failed unlock: this suite
@@ -461,6 +478,43 @@ async def test_home_still_goes_to_the_start_of_the_line(diary_path):
         await pilot.pause()
         assert text_area.cursor_location == (1, 0)
         assert text_area.selected_text == ""
+
+
+# --- how the day is drawn --------------------------------------------------
+
+
+async def test_a_long_day_is_wrapped_in_the_frame_it_first_appears_in(diary_path, monkeypatch):
+    """Opening an entry used to show it unwrapped for one frame.
+
+    TextArea wraps its text when it handles a Resize, and a message is
+    handled after the compositor has already drawn the widget -- so the
+    first frame of a day was every paragraph running off the right-hand
+    edge, replaced a frame later by the wrapped text. What is asserted is
+    the height of the wrapped document at the first line ever painted:
+    one line means the paint went out unwrapped.
+    """
+    seed(diary_path, Entry.new(LAST_WEEK, LONG_PARAGRAPH))
+
+    heights: list[int] = []
+    painting = DiaryTextArea.render_line
+
+    def record(self, y):
+        heights.append(self.wrapped_document.height)
+        return painting(self, y)
+
+    monkeypatch.setattr(DiaryTextArea, "render_line", record)
+
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        # Nothing before this point drew an editor; anything recorded from
+        # here on is the day being opened.
+        heights.clear()
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert heights, "the editor never painted"
+        assert heights[0] > 1, "the first frame of the day was drawn unwrapped"
 
 
 # --- editing ---------------------------------------------------------------

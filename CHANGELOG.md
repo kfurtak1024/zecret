@@ -10,6 +10,14 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A long day no longer flinches when you open it.** An entry appeared for
+  a moment with its paragraphs running off the right-hand edge and then
+  redrew itself wrapped, which read as the text being replaced by different
+  text. The wrapping now happens before the first frame is drawn rather
+  than a frame after it.
+
 ## [0.4.0] - 2026-08-27
 
 ### Added
