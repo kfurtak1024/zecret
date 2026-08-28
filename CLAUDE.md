@@ -438,7 +438,13 @@ patch number, not a retry. This is why `check` and `verify` run first.
   conventions at the top: theme variables only (never hard-coded colors,
   so every theme in the picker works), rules grouped by the role a widget
   plays rather than by screen, and 1 cell of vertical to 2 of horizontal
-  spacing. Text starts at the same column on every full-width screen — the
+  spacing. `$error` is reserved for errors and destructive actions, and
+  `.caution` — the warning shown wherever a master password is chosen — is
+  the second of those rather than an exception to the first: choosing a
+  password is the step that makes losing the diary possible. Do not spend
+  that red on anything less final. (It is `.caution` and not `.warning`
+  because Textual's own `Label` reserves that class for a variant of its
+  own and paints `$warning-muted` behind it.) Text starts at the same column on every full-width screen — the
   gutter lines the *borders* up, and `Input` and `TextArea` pad their
   insides by different amounts, so lining up what is read takes a rule of
   its own; `tests/test_chrome.py` fails if the two drift apart again. The

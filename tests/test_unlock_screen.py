@@ -13,6 +13,9 @@ Required coverage:
     - A wrong password shows an inline error, leaves app.diary as None, and
       does not leak whether the file was wrong-password vs. corrupted.
     - The typed password is cleared from the widget after any attempt.
+    - Choosing a password says, in as many words, that forgetting it loses
+      the diary. Only where one is being chosen: the unlock screen asks
+      for a password that already exists and has nothing to warn about.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from textual.widgets import Input, Label
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
+from zecret.screens.base import NO_RECOVERY
 from zecret.screens.unlock import UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
 
@@ -90,6 +94,36 @@ async def test_existing_diary_presents_the_unlock_flow(diary_path):
         await pilot.pause()
         assert app.screen.creating is False
         assert not app.screen.query("#confirm"), "unlock flow must not confirm"
+
+
+def caution_lines(app: ZecretApp) -> list[str]:
+    """What the screen is warning about, if anything."""
+    return [str(label.content) for label in app.screen.query(".caution").results(Label)]
+
+
+async def test_creating_a_diary_says_a_forgotten_password_loses_it(diary_path):
+    """The one thing about this app that cannot be undone later.
+
+    It was already said, in the same grey as the path above it. What is
+    checked here is that it is still said at all -- the wording lives in
+    base.py so that this screen and the settings screen cannot drift apart
+    on it.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert NO_RECOVERY in caution_lines(app)
+
+
+async def test_unlocking_an_existing_diary_does_not_warn(diary_path):
+    """Nothing is being chosen here, so there is nothing to caution about --
+    and a warning shown every time you open the diary is one nobody reads
+    the time it matters."""
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert caution_lines(app) == []
 
 
 async def test_password_input_is_masked(diary_path):

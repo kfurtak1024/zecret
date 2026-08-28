@@ -80,6 +80,10 @@ password to unlock it.
 > There is no password recovery, by design. Nobody — including you — can
 > open the file without the password. Choose something you will not lose.
 
+Zecret says as much on the screen that asks you to choose one, and again on
+the one that changes it later — in red, where it cannot be mistaken for
+small print.
+
 ## Using it
 
 <div align="center">

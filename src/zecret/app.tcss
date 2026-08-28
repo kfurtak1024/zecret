@@ -90,6 +90,31 @@ SettingsScreen {
     color: $text-error;
 }
 
+/* --- The warning about a forgotten password ----------------------------- */
+
+/* $error, which is otherwise reserved for errors and destructive actions.
+   This is the second of those rather than an exception to the rule:
+   choosing a password is the step that makes losing the diary possible,
+   and there is no recovery to soften it afterwards.
+
+   Bordered on one side rather than left as a bare row of red text. It sits
+   on the screen before anything has gone wrong, and red prose in the flow
+   of a form reads as a complaint about what you have just typed -- a rule
+   down the left says "read this" instead, and keeps the error line below
+   it as the only thing that speaks about the last keypress.
+
+   Named `.caution` and not `.warning` because Textual's own Label reserves
+   that class for a variant of its own and paints $warning-muted behind it,
+   which quietly turned this one amber. */
+.caution {
+    width: 100%;
+    color: $text-error;
+    background: $error-muted;
+    border-left: thick $error;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
 /* --- Lists: entry list and search results ------------------------------- */
 
 #entries,

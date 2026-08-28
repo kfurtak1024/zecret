@@ -12,6 +12,9 @@ The date helpers live here too: a diary is one entry per day, so how a day
 is worded is a decision every screen shares, and "which day is today" is a
 question only this layer asks (models.py takes the date it is given).
 
+And the warning about a forgotten password, which the two screens that
+set one both carry, and which must say the same thing on both.
+
 And the wording for a save that did not happen, which is the same wherever
 a save is attempted -- three screens attempt one, and none of them should
 be deciding for itself how to describe a diary that changed underneath it.
@@ -36,6 +39,19 @@ EMPTY_BODY = "(empty)"
 #: Shared wording for a refused save: the cause is the same wherever it
 #: happens, and each screen adds what it means for what you were doing.
 DIARY_CHANGED = "The diary changed on disk — another Zecret may have it open."
+
+#: Said wherever a password is being chosen: creating the diary, and
+#: changing it later. One sentence rather than two, because it is one fact
+#: and someone meeting it the second time should recognise it from the
+#: first -- which is also why it lives here rather than being worded twice.
+#:
+#: It was already on both screens, in the muted grey the hints are written
+#: in, where the one line with no way back read like the rest of the small
+#: print. What changed is the weight it is given, not what it says.
+NO_RECOVERY = (
+    "Forget your master password and the diary is gone — there is no "
+    "recovery and no back door, not even for you."
+)
 
 #: Said when leaving would lose what is on the screen. One sentence for
 #: both ways of leaving -- backing out of the day and quitting the app --

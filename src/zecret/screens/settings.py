@@ -9,6 +9,11 @@ headings, the highlighted row and the footer all stay legible. Saving is
 best effort; a preferences file that cannot be written costs you the
 setting next launch, never the session you are in.
 
+The password section carries the same warning the create screen does, in
+the same words and the same red: changing a password is choosing one, and
+the fact that a forgotten one cannot be recovered is as true here as it was
+the first time.
+
 Password flow: prompt for current password (re-verify against
 app.key/derive), new password, confirm new password. On confirm, call
 app.diary.change_password(new_password) to get a new key, update app.key,
@@ -37,7 +42,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Input, Label, Select
 
 from zecret.config import DEFAULT_LOCK_AFTER_MINUTES
-from zecret.screens.base import FormScreen, save_error
+from zecret.screens.base import NO_RECOVERY, FormScreen, save_error
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import ZecretConflictError
 
@@ -118,10 +123,13 @@ class SettingsScreen(FormScreen):
 
             yield Label("Change master password", classes="section-title")
             yield Label(
-                "Your entries are re-encrypted under the new password. "
-                "There is no recovery if you forget it.",
+                "Your entries are re-encrypted under the new password.",
                 classes="section-hint",
             )
+            # The same sentence, in the same red, as the screen that first
+            # asked for one: changing the password is choosing a password,
+            # and the diary is only ever one forgotten one from gone.
+            yield Label(NO_RECOVERY, classes="caution")
             yield Input(placeholder="Current password", password=True, id="current")
             yield Input(placeholder="New password", password=True, id="new")
             yield Input(placeholder="Confirm new password", password=True, id="confirm")

@@ -10,6 +10,16 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Changed
+
+- **Choosing a master password says what it costs to forget it.** Both the
+  screen that creates a diary and the one that changes its password now
+  carry the same sentence, in red rather than in the grey the rest of the
+  hints are written in: forget it and the diary is gone, with no recovery
+  and no back door. It was already said on both screens and read like
+  small print on both, which is the one thing here that cannot be undone
+  later.
+
 ### Fixed
 
 - **A long day no longer flinches when you open it.** An entry appeared for

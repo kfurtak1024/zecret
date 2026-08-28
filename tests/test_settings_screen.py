@@ -14,6 +14,8 @@ Required coverage:
     - A wrong current password is refused and changes nothing.
     - An empty or mismatched new password is refused.
     - A save that fails does not leave the diary half re-keyed.
+    - The password section warns that a forgotten password loses the
+      diary, in the same words the create screen uses.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from zecret.app import ZecretApp
 from zecret.config import DEFAULT_LOCK_AFTER_MINUTES, DEFAULT_THEME, Config
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
+from zecret.screens.base import NO_RECOVERY
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.settings import (
     EMPTY_NEW,
@@ -252,6 +255,22 @@ async def test_escape_returns_to_the_list(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, EntryListScreen)
+
+
+async def test_the_password_section_warns_that_there_is_no_recovery(diary_path):
+    """The same sentence as the create screen, and from the same constant.
+
+    Changing a password is choosing one, so the fact that a forgotten one
+    cannot be recovered is as true here as it was the first time -- and
+    the two screens must not word it differently.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+
+        cautions = [str(label.content) for label in app.screen.query(".caution").results(Label)]
+        assert NO_RECOVERY in cautions
 
 
 # --- a successful change ---------------------------------------------------
