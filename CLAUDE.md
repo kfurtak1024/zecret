@@ -536,7 +536,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   This is a checklist, not a sentiment. Every change that alters what
   someone sees or presses goes through it *in the same commit*:
   - `README.md` — the key table, the feature list, the prose.
-  - `docs/index.html` — the key table, the feature cards, "How it works".
+  - `docs/index.html` — the key table, the feature cards, "How it works",
+    and the hand-drawn terminals: the hero's key bar is checked against the
+    app's footer by `tests/test_docs_page.py`, because a drawing of the app
+    goes stale exactly the way a screenshot does and nothing else notices.
   - `CHANGELOG.md` — under `Unreleased`, in the voice of what changed for
     the writer, not what changed in the code.
   - `assets/*.png` — **the screenshots**, if the change touches anything
