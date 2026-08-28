@@ -193,6 +193,9 @@ a:hover { text-decoration-thickness: 2px; }
 .term .today { text-decoration: underline; text-underline-offset: 2px; }
 .term .cur { background: var(--term-accent); color: #14161b; font-weight: 700; }
 .term .bar { display: block; margin-top: 0.9rem; padding-top: 0.55rem; border-top: 1px solid #262a33; }
+/* The app's own title line, which it draws inside the terminal rather than
+   in the window chrome -- the mirror of the key bar at the other end. */
+.term .top { display: block; margin-bottom: 0.35rem; padding-bottom: 0.55rem; border-bottom: 1px solid #262a33; text-align: center; color: var(--term-muted); }
 
 /* --- sections ----------------------------------------------------------- */
 
@@ -282,6 +285,7 @@ footer p.right { margin-left: auto; }
     <nav>
       <a href="#features">Features</a>
       <a href="#security" class="hide-sm">Security</a>
+      <a href="#keys" class="hide-sm">Keys</a>
       <a href="#install">Install</a>
       <a href="https://github.com/kfurtak1024/zecret">GitHub</a>
     </nav>
@@ -317,21 +321,29 @@ footer p.right { margin-left: auto; }
 </div>
 
 <div class="wrap">
+  <!-- What the app draws, not an impression of it: these lines are the
+       entry list rendered at 74 columns against the sample diary in
+       tools/screenshots.py, with the classes added by hand. Redraw it the
+       same way rather than editing rows here. The key bar is checked
+       against the app's own bindings by tests/test_docs_page.py, because
+       that is the half that goes stale on its own. -->
   <div class="term">
-    <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret — 8 entries</span></div>
+    <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret</span></div>
 <pre>
-<span class="head">  August 2026 · 5 entries</span>
-<span class="row-on">  Thu 13   First frost on the windscreen. Scraped it off with a librar…</span>
-  Wed 12   Notes on rereading Bachelard: the drawer chapter still does…
-  Tue 11   Kitchen notes. The sourdough finally behaved — less water,…
-  Mon 10   A letter I did not send. Wrote it out anyway, which is most…
-  Sun 09   Tuesday. Nothing happened and I am writing that down on pur…
+<span class="top">Zecret — 8 entries</span>
 
-<span class="head">  July 2026 · 3 entries</span>
-  Fri 31   Walked the long way back along the canal. The herons have w…
-  Tue 28   Finished the tax forms, badly. Rewarded myself with an appl…
-  Sat 25   Rain all day. Read two chapters and slept like something hi…
-<span class="bar"><span class="key">n</span> Today  <span class="key">a</span> Another day  <span class="key">d</span> Delete  <span class="key">/</span> Search  <span class="key">s</span> Settings  <span class="key">^l</span> Lock  <span class="key">?</span> Help  <span class="key">q</span> Quit</span>
+<span class="head">    August 2026 · 5 entries</span>
+<span class="row-on">    Thu 13   Long walk once the rain stopped. The lane past the mill …</span>
+    Wed 12   Finished the book about lighthouse keepers. The last cha…
+    Sun 09   Coffee with Sam. We talked about moving north again, and…
+    Tue 04   Bread came out flat. Too impatient with the second prove…
+    Sat 01   Quiet start to the month. Spent the evening fixing the g…
+
+<span class="head">    July 2026 · 3 entries</span>
+    Wed 29   Swam before breakfast. Cold, then not. Rain came in by n…
+    Fri 24   Turned the desk to face the window. Better already.
+    Sat 18   Rain all day. Made soup, read, did not go out once.
+<span class="bar"><span class="key">n</span> Today <span class="key">a</span> Another day <span class="key">d</span> Delete <span class="key">/</span> Search <span class="key">s</span> Settings <span class="key">^l</span> Lock <span class="key">?</span> Help <span class="key">q</span> Quit</span>
 </pre>
   </div>
 </div>
@@ -352,7 +364,7 @@ footer p.right { margin-left: auto; }
       </div>
       <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="15" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none"/><circle cx="16" cy="15" r="1.4" fill="currentColor" stroke="none"/></svg>The month at a glance</h3>
-        <p>Choosing a day shows you the month it is in, with every day you have already written marked. Type the date if you know it; look at the calendar when the question is which evenings you have missed.</p>
+        <p>Choosing a day shows you the month it is in, with every day you have already written marked. Type the date if you know it, or walk the calendar to the one you mean.</p>
       </div>
       <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Encrypted at rest</h3>
@@ -386,19 +398,51 @@ footer p.right { margin-left: auto; }
   </div>
 </section>
 
-<section id="which-day">
+<section id="covered">
   <div class="wrap">
-    <h2>Filling in the days you missed</h2>
+    <h2>Writing with someone behind you</h2>
     <p class="sub">
-      <kbd>a</kbd> asks which day. The field takes a date straight from the
-      keyboard and the month below follows along as you type it, marking the
-      days already written — so the gaps are the ones without a mark. Days
-      that have not happened are not on offer: a diary records what did.
+      <kbd>ctrl</kbd> + <kbd>r</kbd> puts every word behind a bar except the
+      one the cursor is touching, so the page can be read over your shoulder
+      and say nothing. The bars are drawn on the way to the screen and never
+      written down: what you save is what you wrote, and the word you are
+      typing is revealed as you type it.
     </p>
 
     <div class="term">
-      <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret — 8 entries</span></div>
+      <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret</span></div>
 <pre>
+<span class="top">Zecret — Thursday, 13 August 2026</span>
+
+  <span class="dim">╭────────────────────────────────────────────────────────────────────╮</span>
+  <span class="dim">│ ▆▆▆▆ ▆▆▆▆ ▆▆▆▆ ▆▆▆ ▆▆▆▆ </span>stopped. <span class="dim">▆▆▆ ▆▆▆▆ ▆▆▆▆ ▆▆▆ ▆▆▆▆ ▆▆▆        │</span>
+  <span class="dim">│ ▆▆▆▆▆ ▆▆▆▆▆ ▆▆▆▆▆▆ ▆▆ ▆ ▆▆▆▆ ▆▆ ▆▆▆ ▆▆▆▆ ▆▆▆▆▆▆▆ ▆▆▆ ▆▆▆▆▆ ▆▆      │</span>
+  <span class="dim">│ ▆▆▆▆▆▆▆ ▆▆▆▆▆▆ ▆▆▆▆▆ ▆▆ ▆▆ ▆▆▆▆▆▆▆▆                                │</span>
+  <span class="dim">│                                                                    │</span>
+  <span class="dim">│ ▆▆▆▆ ▆▆▆▆ ▆▆▆ ▆▆▆▆ ▆▆▆▆ ▆▆▆▆▆ ▆▆▆                                  │</span>
+  <span class="dim">│                                                                    │</span>
+  <span class="dim">╰────────────────────────────────────────────────────────────────────╯</span>
+<span class="bar"><span class="key">^s</span> Save <span class="key">esc</span> Back <span class="key">^l</span> Lock <span class="key">^r</span> Mask</span>
+</pre>
+    </div>
+  </div>
+</section>
+
+<section id="which-day">
+  <div class="wrap">
+    <h2>Writing about another day</h2>
+    <p class="sub">
+      <kbd>a</kbd> asks which day. Type the date if you know it — the month
+      below follows as you type — or step into the calendar and walk to the
+      day you mean. The days you have already written are marked, so the
+      month reads at a glance. Days that have not happened are not on offer:
+      a diary records what did.
+    </p>
+
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret</span></div>
+<pre>
+<span class="top">Zecret — 8 entries</span>
   <span class="head">Which day?</span>
 
   <span class="dim">╭────────────────────────────────╮</span>
@@ -562,6 +606,8 @@ footer p.right { margin-left: auto; }
     <p>
       Made by <a href="https://krzysztoffurtak.dev">Krzysztof Furtak</a>.
       MIT licensed, built with <a href="https://textual.textualize.io">Textual</a>.
+      What changed and when is in the
+      <a href="https://github.com/kfurtak1024/zecret/blob/main/CHANGELOG.md">changelog</a>.
     </p>
     <p class="right">No analytics on this page, in keeping with the thing it is selling.</p>
   </div>

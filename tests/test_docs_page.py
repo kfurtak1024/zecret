@@ -134,19 +134,27 @@ def bar_key(binding: Binding) -> str:
     return f"^{key.removeprefix('ctrl+')}" if key.startswith("ctrl+") else key
 
 
-def drawn_bar(page: str) -> list[tuple[str, str]]:
-    """The key bar drawn in the hero, as (key, what it says it does)."""
+def drawn_bar(page: str, section: str | None = None) -> list[tuple[str, str]]:
+    """The key bar of one drawn terminal, as (key, what it says it does).
+
+    `section` names the <section> to look inside; the hero is not in one,
+    so it is found by being the first bar on the page.
+    """
+    if section is not None:
+        found = re.search(rf'<section id="{section}">.*?</section>', page, re.S)
+        assert found, f"the page should still have a {section} section"
+        page = found.group(0)
     bar = re.search(r'<span class="bar">(.*?)</span>\s*</pre>', page, re.S)
-    assert bar, "the hero terminal should still draw a key bar"
+    assert bar, "that terminal should draw a key bar"
     pairs = re.findall(r'<span class="key">(.*?)</span>([^<]*)', bar.group(1))
     return [(key, description.strip()) for key, description in pairs]
 
 
-def footer_bar() -> list[tuple[str, str]]:
-    """What the app's own key bar holds, in the order it holds it."""
+def footer_bar(screen: type) -> list[tuple[str, str]]:
+    """What a screen's own key bar holds, in the order it holds it."""
     return [
         (bar_key(binding), binding.description)
-        for binding in documented_bindings(EntryListScreen.BINDINGS)
+        for binding in documented_bindings(screen.BINDINGS)
         if binding.show
     ]
 
@@ -158,7 +166,14 @@ def test_the_hero_draws_the_key_bar_the_app_has(page):
     the app does not have -- or misses one it does -- is worse than no
     picture, because it is read as a screenshot.
     """
-    assert drawn_bar(page) == footer_bar()
+    assert drawn_bar(page) == footer_bar(EntryListScreen)
+
+
+def test_the_covered_page_draws_the_editors_key_bar(page):
+    """The same check for the other terminal the page draws with a bar of
+    its own: it is a picture of the editor, so it answers to the editor's
+    bindings."""
+    assert drawn_bar(page, "covered") == footer_bar(EditorScreen)
 
 
 # --- other claims a reader would act on ------------------------------------
