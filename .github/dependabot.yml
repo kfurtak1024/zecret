@@ -22,9 +22,17 @@ updates:
     groups:
       # One PR for routine dev-tool bumps; crypto dependencies stay
       # separate so they get looked at on their own.
+      #
+      # Every entry in [dependency-groups] belongs here, and the list is
+      # spelled out rather than inferred: a dev tool missing from it does
+      # not fail anything, it just arrives as its own pull request, which
+      # is how hypothesis came through alone twice before it was noticed.
+      # `pytest*` already covers pytest-asyncio and pytest-cov; the rest
+      # match nothing but themselves.
       dev-tools:
         patterns:
           - ruff
           - mypy
           - pytest*
+          - hypothesis
           - textual-dev

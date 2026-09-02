@@ -7,16 +7,13 @@
 One entry a day, in your terminal, kept in a single encrypted file that only
 you can open.
 
-[**zecret.krfu.dev**](https://zecret.krfu.dev) · [Install](#install) · [How it works](#how-it-works)
+[**zecret.krfu.dev**](https://zecret.krfu.dev) · [Install](#install) · [How it works](#how-it-works) · [Security](#security) · [Changelog](CHANGELOG.md)
 
 [![CI](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml/badge.svg)](https://github.com/kfurtak1024/zecret/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/zecret?logo=pypi&logoColor=white)](https://pypi.org/project/zecret/)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue?logo=python&logoColor=white)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Built with Textual](https://img.shields.io/badge/built%20with-Textual-5a4fcf)](https://textual.textualize.io)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Checked with mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/entries-dark.png">
@@ -58,7 +55,9 @@ That is the whole of it: [uv](https://github.com/astral-sh/uv) fetches a
 suitable Python along with the program, so nothing depends on what your
 system happens to ship. If you would rather use what you already have,
 `pipx install zecret` and `pip install zecret` both work on Python 3.13 or
-newer.
+newer. To try it without installing anything at all, `uvx zecret --path
+/tmp/try.enc` runs it straight from PyPI against a diary you can delete
+afterwards.
 
 Your diary lives at `~/.zecret/diary.enc` by default. Point somewhere else
 with `--path /some/where.enc` or the `ZECRET_DIARY_PATH` environment
@@ -243,6 +242,32 @@ they mean here what they mean in every other editor.
 Plaintext is never written to disk — not as temp files, not as logs, not
 for crash recovery.
 
+## Security
+
+The threat model, what counts as a vulnerability, and how to report one
+privately rather than in a public issue are all written down in
+[SECURITY.md](SECURITY.md). Report through the repository's
+[Report a vulnerability](https://github.com/kfurtak1024/zecret/security/advisories/new)
+form; only the latest release is supported.
+
+That file also writes down what an encrypted file on your own disk does
+*not* protect you from, because a diary that overstates itself is worse
+than one that does not try:
+
+- **The file reveals which days you wrote on.** Dates sit outside the
+  ciphertext so a day can be named without decrypting it. It leaks the
+  shape of the habit, never a word of the content.
+- **An unlocked Zecret is unlocked.** While the diary is open its entries
+  are decrypted in memory, and anyone at that terminal can read them.
+  Locking shortens that window; it does not close it.
+- **Secrets cannot be wiped from memory.** Python strings are immutable, so
+  the password and the derived key cannot be overwritten after use, and
+  either may reach swap or a core dump. Full-disk encryption is the answer
+  to that, not this program.
+- **Anyone who can already run code as you has won.** A keylogger, an
+  attached debugger, or a modified Zecret is outside what a local encrypted
+  file can defend against.
+
 ## Development
 
 ```bash
@@ -278,9 +303,16 @@ after any change that alters what a screen looks like:
 uv run python tools/screenshots.py    # needs librsvg or inkscape
 ```
 
-CI runs those same checks on every push and pull request. `uv.lock` is
+CI runs those same checks on every push and pull request, plus coverage and
+the slow scale tests that a local `uv run pytest` skips. `uv.lock` is
 committed and CI installs from it, so regenerate and commit it whenever
 `pyproject.toml` changes.
+
+The rules the code is held to — how the layers are allowed to depend on one
+another, the cryptographic requirements that are not up for negotiation,
+the on-disk format, and what a release involves — are written out in
+[CLAUDE.md](CLAUDE.md). [CHANGELOG.md](CHANGELOG.md) is what changed and
+when.
 
 ## License
 

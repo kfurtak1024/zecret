@@ -210,13 +210,26 @@ def test_the_default_diary_path_is_right(page):
 def test_the_page_loads_nothing_from_anywhere_else(page):
     """No fonts, scripts or stylesheets from other hosts: the page makes a
     point of not tracking anyone, and third-party requests are how that
-    stops being true by accident."""
+    stops being true by accident.
+
+    The page's own address is not somewhere else, which is what lets it
+    carry a canonical link: Pages answers on both the domain in docs/CNAME
+    and the github.io address, and naming the real one is how a search
+    engine is told they are one page rather than two. Read from CNAME
+    rather than written here, so moving the domain moves this with it.
+    Still strict about everything else, `http://` on that domain included.
+    """
+    own_site = (REPO / "docs" / "CNAME").read_text(encoding="utf-8").strip()
     resources = re.findall(r'<(?:script|link|img|iframe)[^>]*\s(?:src|href)="([^"]+)"', page)
     remote = [
         url
         for url in resources
         if url.startswith(("http://", "//"))
-        or (url.startswith("https://") and "raw.githubusercontent.com" not in url)
+        or (
+            url.startswith("https://")
+            and "raw.githubusercontent.com" not in url
+            and not url.startswith(f"https://{own_site}/")
+        )
     ]
     assert not remote, f"the page pulls in remote resources: {remote}"
 
@@ -224,3 +237,53 @@ def test_the_page_loads_nothing_from_anywhere_else(page):
 def test_the_page_has_no_analytics(page):
     for tracker in ("google-analytics", "googletagmanager", "plausible", "umami", "gtag("):
         assert tracker not in page.lower(), f"analytics found on the page: {tracker}"
+
+
+# --- the drawn month -------------------------------------------------------
+
+
+def hero_august(page: str) -> tuple[set[int], int]:
+    """The August days the hero's entry list shows, and the count it claims.
+
+    The hero draws the sample diary's entry list, so its August rows are
+    the page's own statement of which days that diary holds.
+    """
+    hero = page[: page.index('<section id="features">')]
+    block = re.search(
+        r'<span class="head">\s*August 2026 · (\d+) entries</span>\n(.*?)\n\s*\n', hero, re.S
+    )
+    assert block, "the hero should still list an August of entries"
+    days = {int(d) for d in re.findall(r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d\d)", block.group(2))}
+    return days, int(block.group(1))
+
+
+def calendar_marks(page: str) -> set[int]:
+    """The days the drawn month marks as written.
+
+    A cell is `f"{day:>3}{mark}"`, so a written day is a number with the
+    bullet against it. The legend below the grid carries a bullet too, with
+    no day in front of it.
+    """
+    section = re.search(r'<section id="which-day">.*?</section>', page, re.S)
+    assert section, "the page should still have a which-day section"
+    return {int(d) for d in re.findall(r"(\d{1,2})•", section.group(0))}
+
+
+def test_the_hero_agrees_with_itself_about_august(page):
+    """The month heading counts the rows underneath it."""
+    days, claimed = hero_august(page)
+    assert len(days) == claimed, f"the heading says {claimed} entries and {len(days)} are drawn"
+
+
+def test_the_drawn_month_marks_the_days_the_hero_lists(page):
+    """The two terminals draw the same diary, so they must agree on it.
+
+    Both are hand-drawn, and this is the half nothing else can see: the key
+    bars are checked against the app's bindings, but which days the sample
+    was written on lives only in these two pictures. They had drifted apart
+    -- the hero listed the 1st, 4th, 9th, 12th and 13th, and the calendar
+    put its marks on the 9th through the 13th, inventing two evenings and
+    losing two others.
+    """
+    listed, _ = hero_august(page)
+    assert calendar_marks(page) == listed
