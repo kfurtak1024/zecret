@@ -10,6 +10,42 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-02
+
+### Security
+
+- **The cryptography this diary rests on is up to date.** A maintenance
+  release and nothing else: no screen changed, no key moved, and a diary
+  written by 0.5.0 opens with the same password and no migration. What
+  changed is underneath — `cryptography`, which does the AES-256-GCM, and
+  the Argon2 bindings that derive your key from your password, are both on
+  their current releases, and the floor Zecret installs from now names the
+  patched `cryptography` rather than the series it belongs to. An audit of
+  every pinned dependency reports no known vulnerabilities.
+
+- **The development toolchain moved with it.** Ruff, Hypothesis and the
+  rest of the test tooling are on current releases, so the checks that
+  guard the four properties in [SECURITY.md](SECURITY.md) are running
+  against something maintained.
+
+### Changed
+
+- **The README points at the security policy.** The threat model, what
+  counts as a vulnerability and how to report one privately were written
+  down but reachable only from this file. The README now links them, and
+  says plainly what an encrypted diary does not protect you from.
+
+### Fixed
+
+- **The calendar on the product page marked the wrong days.** The page
+  draws the sample diary twice — once as the entry list, once as the month
+  you pick a day from — and the two had drifted apart: the list showed
+  entries on the 1st, 4th, 9th, 12th and 13th of August while the calendar
+  put its marks on the 9th through the 13th, inventing two evenings and
+  losing two others. Both drawings are hand-written HTML rather than
+  screenshots, so nothing looked broken. The two are now checked against
+  each other on every run.
+
 ## [0.5.0] - 2026-08-28
 
 ### Added
@@ -272,7 +308,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kfurtak1024/zecret/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kfurtak1024/zecret/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kfurtak1024/zecret/compare/v0.2.0...v0.3.0
