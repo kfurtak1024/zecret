@@ -1,6 +1,6 @@
 [project]
 name = "zecret"
-version = "0.5.0"
+version = "0.5.1"
 description = "A modern, encrypted terminal diary."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "textual>=8.2",
-    "cryptography>=50.0",
+    "cryptography>=50.0.1",
     "argon2-cffi>=25.1",
 ]
 
@@ -44,10 +44,10 @@ dev = [
     "pytest>=9.1",
     "pytest-asyncio>=1.4",
     "textual-dev>=1.8",
-    "ruff>=0.16",
+    "ruff>=0.16.5",
     "mypy>=2.3",
     "pytest-cov>=7.1",
-    "hypothesis>=6.165",
+    "hypothesis>=6.167",
 ]
 
 [build-system]
