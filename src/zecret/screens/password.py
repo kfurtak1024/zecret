@@ -40,11 +40,10 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label
 
-from zecret.screens.base import NO_RECOVERY, FormScreen, save_error
+from zecret.screens.base import NO_RECOVERY, FormScreen, card, save_error
 from zecret.screens.header import DiaryFooter
 from zecret.storage import ZecretConflictError
 
@@ -71,7 +70,7 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         # exists, and a warning you have to scroll to reach is the thing
         # it was moved out of the settings form to stop being. It still
         # scrolls, for the terminal that is shorter still.
-        with VerticalScroll(id="password-box"):
+        with card("password-box"):
             yield Label(TITLE, id="password-title")
             # Above the fields: it is the thing to know before choosing a
             # password, not a footnote to having chosen one.

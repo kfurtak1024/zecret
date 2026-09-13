@@ -28,11 +28,10 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import VerticalScroll
 from textual.widgets import Button, Label, Select
 
 from zecret.config import DEFAULT_LOCK_AFTER_MINUTES
-from zecret.screens.base import ZecretScreen
+from zecret.screens.base import ZecretScreen, card
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.screens.password import PasswordScreen
 
@@ -91,7 +90,7 @@ class SettingsScreen(ZecretScreen):
         # difference between needing a tall terminal and needing an
         # ordinary one -- but twenty-four rows leave eighteen inside the
         # frame, so it is still a scroll and not a screenful.
-        with VerticalScroll(id="settings-box"):
+        with card("settings-box"):
             yield Label("Appearance", classes="section-title")
             yield Label(
                 "Applied as you choose it, and kept for next time.",

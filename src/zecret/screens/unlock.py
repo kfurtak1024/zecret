@@ -32,11 +32,10 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import VerticalScroll
 from textual.widgets import Input, Label
 
 from zecret.crypto import ZecretDecryptError
-from zecret.screens.base import NO_RECOVERY, FormScreen
+from zecret.screens.base import NO_RECOVERY, FormScreen, card
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import DiaryFile
 
@@ -78,7 +77,7 @@ class UnlockScreen(FormScreen):
         # is three rows this card did not used to spend, and the field it
         # would push out of sight on a short terminal is the one that
         # confirms the password.
-        with VerticalScroll(id="unlock-box"):
+        with card("unlock-box"):
             if self.creating:
                 yield Label("Create a new diary", id="unlock-title")
                 yield Label(

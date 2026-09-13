@@ -60,8 +60,9 @@ src/zecret/
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
-│                 # fields and an error line, the date/snippet formatting
-│                 # every screen shares, the warning about a forgotten
+│                 # fields and an error line, card() for the scrolling
+│                 # panel they sit in, the date/snippet formatting every
+│                 # screen shares, the warning about a forgotten
 │                 # password, and the wording for a refused save),
 │                 # header.py (both bars -- the title above and the keys
 │                 # below, which every screen wears including the modals),
@@ -558,6 +559,29 @@ patch number, not a retry. This is why `check` and `verify` run first.
   end of the thing being spoken about, which is how "Saved." reaches the
   list the editor returns to. Anything that pushes a screen and then
   notifies must do it in that order — see `lock()`.
+- **A card is built with `card()`, which keeps it off the tab ring.**
+  Textual makes a scrollable container focusable so it can be scrolled
+  from the keyboard, and on a screen whose fields are all reachable by tab
+  that is one stop with nothing in it: tab past the last field and the
+  focus ring disappears, because it is sitting on the panel. It reads as
+  focus being dropped, and it was on four screens before anyone said so.
+  `screens/base.py`'s `card()` is a `VerticalScroll` with
+  `can_focus=False`, so the next card added inherits the fix instead of
+  repeating the bug. Nothing is lost with it: Textual keeps the focused
+  field in view as tab moves between them, which is the only reason these
+  panels scroll at all. `HelpScreen` builds its own and stays focusable —
+  it holds no fields, so the panel is the only thing to focus and
+  focusing it is what the arrow keys read the page with.
+  `tests/test_chrome.py` fails if a card puts an empty stop back on the
+  ring.
+  Taking the panel off the ring made the *field* the first focusable
+  thing, which is what uncovered the second half of this: Textual's
+  `AUTO_FOCUS` guess runs before a screen's own `on_mount`, and focusing a
+  widget asks for it to be scrolled into view — so settings opened one
+  section down, its heading scrolled off the top. `ZecretScreen.AUTO_FOCUS`
+  is `""` (not `None`, which Textual reads as "ask the app", whose default
+  is `"*"`). Every screen therefore says what it opens focused on, and
+  `tests/test_chrome.py` fails if one forgets.
 - **Every screen carries a `DiaryFooter`, modals included.** A
   `ModalScreen` renders over the screen it was opened from rather than
   replacing it, so one without a footer does not show *no* bar -- it shows

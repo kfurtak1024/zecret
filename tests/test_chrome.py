@@ -20,6 +20,15 @@ Required coverage:
       so a couple of cells too many are taken off the *last* button, which
       is where the focus frame's right hand side is drawn -- silently, and
       only on the answer that is focused by default.
+    - Every screen opens with something focused. Textual's own
+      first-focusable guess is off (see ZecretScreen.AUTO_FOCUS), so each
+      screen says what it opens on and a screen that forgot would open
+      with the keyboard pointed at nothing.
+    - Tab lands on something you can see. A scrollable panel is focusable
+      in Textual, which put an empty stop on the tab ring of every card:
+      past the last field the focus ring vanished, and only the next tab
+      brought it back to the first. HelpScreen is the exception -- its
+      panel holds no fields, so focusing it is what scrolls the page.
     - Taking focus does not resize one. The frame is painted over the
       button's edge rather than carved out of its inside, so the answer
       you are about to press is exactly the size of the two beside it.
@@ -35,6 +44,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
+from textual.containers import VerticalScroll
 from textual.widgets import Button, Footer, Input, Label, ListView, TextArea
 
 from zecret.app import ZecretApp
@@ -436,3 +446,93 @@ async def test_the_footer_is_compact_on_every_screen(diary_path):
             await pilot.pause()
             for footer in app.screen.query(Footer):
                 assert footer.compact, f"{type(app.screen).__name__} has a roomy footer"
+
+
+# --- the tab ring ----------------------------------------------------------
+
+
+async def test_no_screen_puts_an_empty_stop_on_the_tab_ring(diary_path):
+    """A card is a form, and every stop on its ring should be a field.
+
+    Textual makes a scrollable container focusable so it can be scrolled
+    from the keyboard. On a screen whose fields are all reachable by tab
+    that is an extra stop with nothing to see in it -- tab past the last
+    field and the focus ring disappears, because it is sitting on the
+    panel rather than on anything in it. It reads as focus being dropped.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        assert not focusable_panels(app), "the unlock screen"
+
+        await unlock(pilot)
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.pause()
+        assert not focusable_panels(app), "the which-day modal"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.pause()
+        assert not focusable_panels(app), "the settings screen"
+
+        await pilot.press("tab", "tab", "enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert not focusable_panels(app), "the password dialog"
+
+
+async def test_the_help_page_is_focusable_because_it_scrolls(diary_path):
+    """The exception, and the reason card() is a helper rather than a rule
+    applied everywhere: the help holds no fields, so the panel is the only
+    thing to focus and focusing it is what lets the arrow keys read a page
+    taller than the terminal."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.pause()
+        assert len(focusable_panels(app)) == 1
+
+
+def focusable_panels(app: ZecretApp) -> list[VerticalScroll]:
+    """Every scrolling panel the current screen puts on its tab ring."""
+    return [widget for widget in app.screen.focus_chain if isinstance(widget, VerticalScroll)]
+
+
+async def test_every_screen_opens_with_something_focused(diary_path):
+    """Nothing picks a first field but the screen itself.
+
+    Textual would otherwise focus the first focusable widget it finds,
+    which is a guess Zecret switched off: on a card that scrolls it was
+    the guess, arriving before the screen's own on_mount, that decided
+    where the view sat. What it was also doing was covering for any screen
+    that forgot to choose -- so this is the other half of switching it off.
+    """
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        assert app.focused is not None, "the unlock screen"
+
+        await unlock(pilot)
+        assert app.focused is not None, "the entry list"
+
+        for key, where in [
+            ("enter", "the editor"),
+            ("escape", "back on the entry list"),
+            ("slash", "search"),
+            ("escape", "back again"),
+            ("a", "the which-day modal"),
+            ("escape", "back once more"),
+            ("s", "settings"),
+        ]:
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+            assert app.focused is not None, where
+
+        await pilot.press("tab", "tab", "enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.focused is not None, "the password dialog"

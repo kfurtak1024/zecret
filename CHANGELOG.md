@@ -30,8 +30,15 @@ file matters as much as that does.
   rather than the row you were on, which said little in prose; the cursor
   has not stopped saying where you are.
 
-
 ### Fixed
+
+- **Tab no longer drops the focus ring on its way round a screen.** On
+  settings, the unlock screen, the which-day modal and the password
+  dialog, tabbing past the last field left nothing highlighted, and only
+  the next tab brought the highlight back to the first — the panel the
+  fields sit in was taking a turn of its own. It is out of the tab ring
+  now, and tab goes straight round the fields. The help page still takes
+  focus, because that is what scrolls it.
 
 - **A diary whose header was corrupted now says so instead of crashing.**
   The numbers that say how hard your password is to guess live in the

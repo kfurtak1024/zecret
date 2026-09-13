@@ -25,6 +25,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Input, Label
 
@@ -172,8 +173,53 @@ def save_error(error: OSError | ZecretConflictError) -> str:
     return f"Could not save: {error.strerror or error}."
 
 
+def card(id: str) -> VerticalScroll:
+    """The scrolling panel a screen's content sits in, out of the tab order.
+
+    Textual makes a scrollable container focusable, so that someone can
+    scroll it from the keyboard when nothing inside it takes focus. On a
+    screen that *is* a form, that leaves an extra stop on the tab ring with
+    nothing to see: tab past the last field and the focus ring vanishes,
+    because it has landed on the panel rather than on anything in it, and
+    only the next tab brings it back to the first field. It read exactly
+    like focus being dropped, which is what it was reported as.
+
+    Every card in the app is a form -- the fields are the point, and each
+    one is reachable by tab -- so `can_focus=False` is right for all of
+    them, and putting it here rather than at each `VerticalScroll(...)`
+    makes it the default for the next card somebody adds. Scrolling is not
+    lost: Textual keeps the focused field in view as tab moves between
+    them, which is the only reason these scroll at all.
+
+    HelpScreen is the exception and builds its own: it holds no fields, so
+    the panel is the only thing there is to focus, and focusing it is what
+    lets the arrow keys read a page taller than the terminal.
+    """
+    return VerticalScroll(id=id, can_focus=False)
+
+
 class ZecretScreen(Screen[None]):
     """A screen with typed access to the running Zecret app."""
+
+    #: Textual's own first-focusable guess, switched off. Every screen here
+    #: says what it opens focused on, in its on_mount -- and the guess
+    #: arrives *first*, so on a card that scrolls it was the guess that
+    #: decided where the view sat. Settings opened one section down:
+    #: focusing a widget asks Textual to bring it into view, and bringing
+    #: the first field into view means scrolling the heading above it off
+    #: the top. It went unnoticed while the panel itself was the first
+    #: focusable thing, because focusing a panel scrolls nothing; taking
+    #: the panel off the tab ring (see card()) put the field first and the
+    #: guess started moving the page.
+    #:
+    #: HelpScreen is a ModalScreen rather than one of these and keeps the
+    #: guess, which is what focuses its panel and lets the arrow keys read
+    #: a page taller than the terminal.
+    #:
+    #: Empty string rather than None: Textual reads None as "ask the app",
+    #: and the app's own default is "*" -- so None is how you inherit the
+    #: guess, not how you turn it off.
+    AUTO_FOCUS: ClassVar[str | None] = ""
 
     @property
     def zecret(self) -> ZecretApp:

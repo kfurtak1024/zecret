@@ -138,6 +138,11 @@ class HelpScreen(ModalScreen[None]):
         self.min_columns_width = 0
 
     def compose(self) -> ComposeResult:
+        # Its own rather than base.card(), and focusable on purpose: this
+        # is the one panel in the app with no fields in it, so focusing
+        # it is what lets the arrow keys read a page taller than the
+        # terminal. Everywhere else that stop is an empty one -- see
+        # the note on card().
         with VerticalScroll(id="help-box"):
             yield Static(LOGO, id="help-logo")
             yield Label(TAGLINE, id="help-tagline")
