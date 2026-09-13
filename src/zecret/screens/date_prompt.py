@@ -37,11 +37,10 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Label, MaskedInput
 
-from zecret.screens.base import today
+from zecret.screens.base import card, today
 from zecret.screens.calendar import LEGEND, MonthCalendar, day_in
 from zecret.screens.header import DiaryFooter
 
@@ -136,7 +135,7 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
     def compose(self) -> ComposeResult:
         # Scrolls, so that a short terminal loses the bottom of the
         # calendar rather than hiding the field the answer is typed into.
-        with VerticalScroll(id="date-box"):
+        with card("date-box"):
             yield Label(PROMPT, id="date-title")
             # The mask keeps the field to digits in the right places, so
             # the only thing left to check is whether the day is real.

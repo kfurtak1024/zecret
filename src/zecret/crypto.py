@@ -31,6 +31,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Self
 
+from argon2.exceptions import Argon2Error
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -118,16 +119,39 @@ def derive_key(password: str, params: KdfParams) -> bytes:
 
     Returns:
         A 32-byte key suitable for use with encrypt()/decrypt().
+
+    Raises:
+        ValueError: if Argon2 will not accept these parameters -- a cost
+            factor of zero, a negative one, one too large for the 32-bit
+            field it goes in, a salt too short to use.
+
+    The params come off the diary's own header, and KdfParams.from_dict()
+    checks that they are whole numbers without knowing what Argon2 will do
+    with them. A file corrupted into "memory_cost": 0 therefore parsed
+    cleanly and then came apart down here, as an argon2 HashingError or a
+    cffi OverflowError -- neither of which is what the screens catch, so a
+    diary with one mangled digit in its header met the user as a traceback
+    instead of as a file that could not be read.
+
+    Converted here rather than checked in from_dict() because Argon2 owns
+    those rules: restating them there would be a second copy to drift, and
+    this stays right if they ever change. ValueError specifically, because
+    that is what unlock() already documents for a file it cannot parse,
+    and it is not a ZecretDecryptError -- the password was never the
+    problem.
     """
-    return hash_secret_raw(
-        secret=password.encode("utf-8"),
-        salt=params.salt,
-        time_cost=params.time_cost,
-        memory_cost=params.memory_cost,
-        parallelism=params.parallelism,
-        hash_len=KEY_SIZE,
-        type=Type.ID,
-    )
+    try:
+        return hash_secret_raw(
+            secret=password.encode("utf-8"),
+            salt=params.salt,
+            time_cost=params.time_cost,
+            memory_cost=params.memory_cost,
+            parallelism=params.parallelism,
+            hash_len=KEY_SIZE,
+            type=Type.ID,
+        )
+    except (Argon2Error, OverflowError, TypeError) as exc:
+        raise ValueError(f"unusable KDF parameters: {exc}") from exc
 
 
 def encrypt(key: bytes, plaintext: bytes) -> tuple[bytes, bytes]:

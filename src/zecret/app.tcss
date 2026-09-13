@@ -242,6 +242,64 @@ PasswordScreen {
     }
 }
 
+/* A phrase written *between asterisks*, and the asterisks around it.
+
+   Colour first, and bold as well. Bold on its own is the one text
+   attribute a terminal cannot be relied on to have -- several render it as
+   a brighter shade of the same ink, which is a colour change by another
+   name and a worse one, and some fonts have no bold face at all -- so it
+   cannot be what carries the emphasis. What it can do is cover the cases
+   colour does not: the two are independent parameters of one escape
+   sequence (`1;38;2;r;g;b`), so a terminal that ignores bold still applies
+   the colour byte for byte, and at sixteen colours, where this green
+   degrades to plain white, or under NO_COLOR, where it is dropped
+   entirely, bold is the only thing left saying the phrase is a phrase.
+   Neither can undo the other; each covers where the other thins out.
+
+   Which colour was measured rather than chosen, because the test that
+   matters is not contrast against the page -- it is distance from the
+   words on either side, which is what makes a phrase read as emphasised.
+   Over the eight themes in the picker, $text-success sits furthest from
+   the prose (ΔE 21.3 at worst, in Nord, whose whole palette is
+   deliberately washed out) and never falls below 4.2:1 against the page.
+   $text-accent, the obvious pick, is behind on both. $text-primary is the
+   trap: it has the best page contrast of any of them and the worst
+   distance from the prose, because in the light themes it resolves to a
+   navy sitting in near-black text -- legible, and invisible as emphasis.
+
+   Not $accent itself under any circumstances: that is a surface colour,
+   reserved above for the frame around what you are working in, and the
+   editor is already wearing it as a border while you type.
+
+   The green is shared with the Save button on the confirm dialog, which
+   is the one place the two can be on screen together -- a filled button
+   on a modal against inked words on the page behind it. They do not read
+   as the same thing, and no other screen puts them near each other.
+
+   No `:light` twin, unusually for this file: the text-* variables are
+   resolved against each theme's own page, so this is already tuned for
+   paper as well as for a dark terminal.
+
+   The marks take the same colour and not the weight. They have to stay on
+   the screen -- one character fewer drawn than the document holds would
+   put the cursor a cell out for the rest of the paragraph -- so the
+   question is only how they are dressed, and sharing the phrase's colour
+   is what makes `*phrase*` read as one thing rather than as a word with
+   punctuation stuck to it. Dressing them *down* was tried and measured
+   first: the same green at 70% opacity comes out at 2.6:1 in the plain
+   Light theme, worse than the muted grey it would replace, and it only
+   gets worse from there. There is no dim setting of this colour worth
+   having, so the hierarchy is carried by weight instead -- bold on what
+   was written, plain on what marks it. */
+DiaryTextArea > .diary-text-area--strong {
+    color: $text-success;
+    text-style: bold;
+}
+
+DiaryTextArea > .diary-text-area--strong-marker {
+    color: $text-success;
+}
+
 /* The ink a masked word is drawn in (ctrl+r). Each covered character is
    swapped for a three-quarter block, so this is the colour of the bars
    themselves against the ordinary page behind them -- no background here,

@@ -10,6 +10,46 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-13
+
+### Added
+
+- **A phrase between asterisks is emphasised as you write it.** Put
+  `*asterisks*` around a few words and they take a colour of their own,
+  and the weight to go with it, the moment you close the phrase — for the
+  line you want to find again when you read the year back. That is the
+  whole of the markup: no headings, no lists, no italics, because a diary
+  is prose and not a document. The colour is drawn on its way to the
+  screen and never written down, so the file keeps exactly the characters
+  you typed, and a day that says `3*4 packs` is still arithmetic.
+
+### Changed
+
+- **The editor no longer shades the paragraph you are writing in.** That
+  band was painted over everything underneath it, including the colour on
+  an emphasised phrase, so the one line where emphasis could not be seen
+  was the line being typed. With soft wrap it covered the whole paragraph
+  rather than the row you were on, which said little in prose; the cursor
+  has not stopped saying where you are.
+
+### Fixed
+
+- **Tab no longer drops the focus ring on its way round a screen.** On
+  settings, the unlock screen, the which-day modal and the password
+  dialog, tabbing past the last field left nothing highlighted, and only
+  the next tab brought the highlight back to the first — the panel the
+  fields sit in was taking a turn of its own. It is out of the tab ring
+  now, and tab goes straight round the fields. The help page still takes
+  focus, because that is what scrolls it.
+
+- **A diary whose header was corrupted now says so instead of crashing.**
+  The numbers that say how hard your password is to guess live in the
+  file, and one of them mangled — by a half-finished copy, a bad sync, a
+  stray edit — got past the checks and came apart deep inside the key
+  derivation, showing you a page of Python rather than a message. It is
+  reported like any other file Zecret cannot read. Nothing about a
+  healthy diary changes, and no diary needs migrating.
+
 ## [0.5.1] - 2026-09-02
 
 ### Security
@@ -308,7 +348,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kfurtak1024/zecret/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kfurtak1024/zecret/compare/v0.3.0...v0.4.0

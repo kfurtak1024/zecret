@@ -60,8 +60,9 @@ src/zecret/
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
-│                 # fields and an error line, the date/snippet formatting
-│                 # every screen shares, the warning about a forgotten
+│                 # fields and an error line, card() for the scrolling
+│                 # panel they sit in, the date/snippet formatting every
+│                 # screen shares, the warning about a forgotten
 │                 # password, and the wording for a refused save),
 │                 # header.py (both bars -- the title above and the keys
 │                 # below, which every screen wears including the modals),
@@ -387,19 +388,59 @@ patch number, not a retry. This is why `check` and `verify` run first.
   why the mask's colour must still be opaque and identical for text and
   background.
   Three things paint after `get_line`: TextArea caches rendered lines
-  (cleared in `watch_masked`), the cursor line's highlight (switched off
-  while masked) and the selection (given a bar of its own in `app.tcss`,
-  keyed on the `-masked` class). Each of them used to hand back what the
-  mask had covered, back when every character was hidden by colour alone
-  — `ctrl+a` laid the whole entry bare. Swapping the glyphs closed that
-  for ordinary text, and the mitigations stay because the wide-character
-  path still depends on colour. Anything else that draws over the editor
-  has to be checked against the same three.
+  (cleared in `watch_masked`), the cursor line's highlight (off for good —
+  see the emphasis rule below) and the selection (given a bar of its own
+  in `app.tcss`, keyed on the `-masked` class). Each of them used to hand
+  back what the mask had covered, back when every character was hidden by
+  colour alone — `ctrl+a` laid the whole entry bare. Swapping the glyphs
+  closed that for ordinary text, and the mitigations stay because the
+  wide-character path still depends on colour. Anything else that draws
+  over the editor has to be checked against the same three.
   The state lives on `ZecretApp.masked` so it survives opening another
   day, and is deliberately **not** in `config.py`: a diary that opened
   unreadable would be a puzzle before it was a protection. It is a screen
   someone can read over your shoulder, not a cipher -- it hides what you
   wrote earlier, since the word being typed is revealed as it is typed.
+- **Emphasis is drawn, never written, and it is the only markup there
+  is.** A phrase between asterisks (`*like this*`) takes `$text-success`
+  in the editor **and** the bold; the marks around it take the same
+  colour without the weight. Both attributes and never one: bold alone is
+  the least dependable thing a terminal offers, colour alone gives out at
+  sixteen colours and under `NO_COLOR`, and since they are independent
+  parameters of one escape sequence neither can undo the other. The hue
+  was measured rather than chosen, against the words on either side
+  rather than against the page; `app.tcss` has the numbers and the
+  reasoning, including why `$accent` is wrong here, why `$text-primary`
+  is the trap, and why there is no dimmed setting of the marks worth
+  having.
+  It is laid on in `_emphasise`, off the same `get_line` the mask uses,
+  and it only ever colours: no character is swapped, hidden or added, so
+  unlike the mask it cannot put a measurement out of step even in
+  principle. **The asterisks stay on the screen.** Hiding them would draw
+  one character fewer than the document holds and take the cursor with it,
+  and it would be a lie about what is in the file.
+  `strong_spans()` is the whole rule: a run of asterisks opens a phrase if
+  a non-space follows it and closes one if a non-space precedes it, and a
+  run is taken whole so `**bold**` works. One departure from Markdown,
+  and it is deliberate: **a phrase may not open straight after a digit.**
+  Flanking alone leaves `2 * 3` alone but not `3*4 packs and 2*6
+  bottles`, which came out with `4 packs and 2` emphasised in the middle
+  of the sums. Digits only, never letters, so a script with no spaces
+  between its words can still emphasise mid-line. A span never crosses a line. There is no
+  escape for a literal asterisk and none is needed: a mispaired one costs
+  a phrase its colour and nothing else.
+  **The mask wins where they meet** — a masked line is never emphasised,
+  because a coloured phrase over a row of bars would say where the
+  emphasis in a covered day is.
+  This is also why `DiaryTextArea` passes `highlight_cursor_line=False`:
+  TextArea paints that band over the whole line *after* `get_line`, with a
+  foreground as well as a background, so it wiped every colour laid down
+  on the one line that matters most — the one being typed. Anything that
+  colours inside a `TextArea` runs into it.
+  Always on: no key, no setting. A toggle would cost a slot in the key bar
+  and a line in the help popup for something that changes nothing about
+  what is written. Do not grow this into Markdown — headings, lists and
+  italics are all the same slope, and the answer is no. A diary is prose.
 - **Changing the master password is a dialog, not a form field.** It is
   the one thing in the app that cannot be undone, and as three fields at
   the foot of the settings form it was something to scroll past or tab
@@ -518,6 +559,29 @@ patch number, not a retry. This is why `check` and `verify` run first.
   end of the thing being spoken about, which is how "Saved." reaches the
   list the editor returns to. Anything that pushes a screen and then
   notifies must do it in that order — see `lock()`.
+- **A card is built with `card()`, which keeps it off the tab ring.**
+  Textual makes a scrollable container focusable so it can be scrolled
+  from the keyboard, and on a screen whose fields are all reachable by tab
+  that is one stop with nothing in it: tab past the last field and the
+  focus ring disappears, because it is sitting on the panel. It reads as
+  focus being dropped, and it was on four screens before anyone said so.
+  `screens/base.py`'s `card()` is a `VerticalScroll` with
+  `can_focus=False`, so the next card added inherits the fix instead of
+  repeating the bug. Nothing is lost with it: Textual keeps the focused
+  field in view as tab moves between them, which is the only reason these
+  panels scroll at all. `HelpScreen` builds its own and stays focusable —
+  it holds no fields, so the panel is the only thing to focus and
+  focusing it is what the arrow keys read the page with.
+  `tests/test_chrome.py` fails if a card puts an empty stop back on the
+  ring.
+  Taking the panel off the ring made the *field* the first focusable
+  thing, which is what uncovered the second half of this: Textual's
+  `AUTO_FOCUS` guess runs before a screen's own `on_mount`, and focusing a
+  widget asks for it to be scrolled into view — so settings opened one
+  section down, its heading scrolled off the top. `ZecretScreen.AUTO_FOCUS`
+  is `""` (not `None`, which Textual reads as "ask the app", whose default
+  is `"*"`). Every screen therefore says what it opens focused on, and
+  `tests/test_chrome.py` fails if one forgets.
 - **Every screen carries a `DiaryFooter`, modals included.** A
   `ModalScreen` renders over the screen it was opened from rather than
   replacing it, so one without a footer does not show *no* bar -- it shows
@@ -602,6 +666,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
 
 - No cloud sync, no networking of any kind.
 - No tags, mood ratings, or attachments on entries.
+- No Markdown, and no rich text beyond the one emphasis mark described
+  above. No headings, lists, links, italics or code spans.
+- No rendering of an entry anywhere but the editor: the list and the
+  search results show a day's first line as typed, asterisks included.
 - No titles: the date names the entry. Adding one back would put two
   identities on a thing that only needs one.
 - No more than one entry per day, and no future-dated entries.

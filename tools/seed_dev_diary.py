@@ -23,8 +23,9 @@ and shape is what fragments can produce a lot of cheaply.
 
 A handful of days get deliberately awkward entries instead (see
 EDGE_CASES): the empty-ish one, the enormous one, the one that is a single
-unbroken line. Those are the ones that break a layout, and hunting for
-them is easier when the tool tells you which days they landed on.
+unbroken line, the one carrying every shape of asterisk. Those are the
+ones that break a layout, and hunting for them is easier when the tool
+tells you which days they landed on.
 
 Today is deliberately left unwritten, so "n" -- write about today -- has
 something to do the moment the diary opens.
@@ -89,6 +90,14 @@ DOINGS = [
     "Watched the second half of a film I had already forgotten the first half of.",
     "Cooked properly for once, and ate it at the table like a person.",
     "Went to the market early and came back with far too much fruit.",
+    # A few carry an *emphasised phrase*, so it turns up while scrolling
+    # rather than only on the one day put aside for it below. Roughly one
+    # doing in five, which is about how often anyone actually reaches for
+    # it -- a diary where every entry is half accent-coloured would tell
+    # you nothing about how the colour reads on a page of ordinary prose.
+    "Fixed the gate properly this time, with *actual hinges* instead of wire.",
+    "Tried the new bakery. The rye is *very* good and I will be back.",
+    "Lost an hour to the loft and came down with *one* useful thing.",
 ]
 
 REFLECTIONS = [
@@ -100,6 +109,7 @@ REFLECTIONS = [
     "Kept catching myself planning next week instead of being in this one.",
     "Tired in the good way for once.",
     "I keep meaning to start earlier and keep not doing it.",
+    "The part I keep putting off is *always* the part that takes ten minutes.",
 ]
 
 #: A long entry that has to be handled somewhere, so it may as well be
@@ -128,6 +138,40 @@ LONG_BODY = "\n\n".join(
     ]
 )
 
+#: One day holding every shape of asterisk at once, which is the day to
+#: open when the emphasis rule changes. Half of these lines are here to be
+#: left *un*-coloured: a rule that emphasises the multiplication sign or
+#: the footnote mark is worse than no rule, and that is not something the
+#: eye catches unless the counter-examples are sitting next to the real
+#: ones.
+EMPHASIS_BODY = "\n".join(
+    [
+        "Meant to note down the *odd shapes* an asterisk comes in.",
+        "",
+        "A plain one first: make *this bit strong* and leave the rest alone.",
+        "Two of them, typed out of habit: **this as well**, same as one.",
+        "Several on a line: *first*, then *second*, then *third*.",
+        "Punctuation rides along: (*in brackets*), and *at the end.*",
+        "",
+        "And the ones that are not emphasis at all, which matter more:",
+        "2 * 3 = 6, and a * b * c is still arithmetic.",
+        "So is 3*4 packs and 2*6 bottles, which spacing alone does not save.",
+        "A footnote mark trailing off the end of a sentence *",
+        "An opening mark with nothing to close it *like this one",
+        "A phrase cannot cross a line, so this *one",
+        "does not reach the mark down here*.",
+        "",
+        "A long one, to watch it hold its colour all the way across a soft "
+        "wrap rather than stopping at the edge of the window: *the whole of "
+        "this clause is meant to be one phrase, running on well past the "
+        "width of any terminal it is read in, and it should stay the same "
+        "colour from the first word to the last*.",
+        "",
+        "And a wide character inside one: *日本語 and then some* — which is "
+        "the case the mask has to work around and this one does not.",
+    ]
+)
+
 #: (days back from the newest entry, what makes it awkward, the body).
 #: These replace the generated entry for that day.
 EDGE_CASES: list[tuple[int, str, str]] = [
@@ -146,6 +190,7 @@ EDGE_CASES: list[tuple[int, str, str]] = [
     ),
     (4, "blank lines around the text", "\n\n   Short, and padded with whitespace.   \n\n"),
     (5, "trailing newlines only", "Fine.\n\n\n"),
+    (6, "every shape of asterisk", EMPHASIS_BODY),
 ]
 
 
