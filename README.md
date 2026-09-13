@@ -42,6 +42,7 @@ password only you know, in a terminal you already have open.
 - 🌗 **Light and dark** — eight themes, picked in settings and remembered
 - 🔒 **Locks itself** — walks away when you do, and asks for your password again
 - ⬛ **Covers the page** — one key bars every word but the one under your cursor, for writing in public
+- ✳️ **Emphasis as you type** — a phrase between \*asterisks\* is picked out in colour and bold, and stored exactly as typed
 - 🚫 **Offline by design** — no networking of any kind
 
 ## Install
@@ -90,7 +91,7 @@ small print.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-light.png">
-  <img alt="Writing a day's entry: the date in the header above a full-height text area" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-dark.png" width="760">
+  <img alt="Writing a day's entry: the date in the header above a full-height text area, with one phrase between asterisks picked out in colour and bold" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/editor-dark.png" width="760">
 </picture>
 </div>
 
@@ -102,6 +103,14 @@ one entry, so pressing <kbd>n</kbd> again later opens what you already wrote
 rather than starting a second page — the evening simply continues the
 morning. Every save re-writes the diary file atomically, so there is no
 draft state to lose track of.
+
+Put a phrase between asterisks — `the *only* part I meant to remember` —
+and it takes a colour of its own, and the weight to go with it, as you
+close it. Nothing else is interpreted: there are no headings, no lists and
+no italics, because a diary is prose and not a document. The colour is
+drawn on its way to the screen and never written down, so the file keeps
+the asterisks exactly where you typed them, and a line like `2 * 3` — or
+`3*4 packs` — stays arithmetic.
 
 <div align="center">
 <picture>

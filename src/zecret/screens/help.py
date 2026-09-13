@@ -98,6 +98,7 @@ SECTIONS: list[tuple[str, list[list[BindingType]]]] = [
 #: line here is a line of the diary it is covering.
 NOTES = [
     "One entry per day — reopening a day continues it.",
+    "A phrase between *asterisks* is emphasised as you write it.",
     "Days are local, and never later than today.",
     "No password recovery. Lose it and the diary is gone.",
 ]

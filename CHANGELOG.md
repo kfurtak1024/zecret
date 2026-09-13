@@ -10,6 +10,27 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **A phrase between asterisks is emphasised as you write it.** Put
+  `*asterisks*` around a few words and they take a colour of their own,
+  and the weight to go with it, the moment you close the phrase — for the
+  line you want to find again when you read the year back. That is the
+  whole of the markup: no headings, no lists, no italics, because a diary
+  is prose and not a document. The colour is drawn on its way to the
+  screen and never written down, so the file keeps exactly the characters
+  you typed, and a day that says `3*4 packs` is still arithmetic.
+
+### Changed
+
+- **The editor no longer shades the paragraph you are writing in.** That
+  band was painted over everything underneath it, including the colour on
+  an emphasised phrase, so the one line where emphasis could not be seen
+  was the line being typed. With soft wrap it covered the whole paragraph
+  rather than the row you were on, which said little in prose; the cursor
+  has not stopped saying where you are.
+
+
 ## [0.5.1] - 2026-09-02
 
 ### Security

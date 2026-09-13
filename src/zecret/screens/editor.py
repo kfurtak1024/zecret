@@ -30,13 +30,15 @@ open behind it while it waits for an answer -- see action_save_and_lock.
 
 Those four keys are the screen's whole keymap, and they are about the
 diary rather than about the text: save it, lock it, cover it, go back.
-Everything to do with the writing itself belongs to DiaryTextArea below.
+Everything to do with the writing itself belongs to DiaryTextArea below --
+including the two things drawn over the text on its way to the screen, the
+mask and the colour on an *emphasised phrase*.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-from typing import ClassVar
+from typing import ClassVar, NamedTuple
 
 from rich.cells import cell_len
 from rich.style import Style
@@ -77,6 +79,12 @@ SAVED_AND_LOCKED = "Saved, and locked."
 #: in at all -- see DiaryTextArea.get_line for what happens to the
 #: characters that are wider than that.
 BAR = "▆"
+
+#: What a phrase is wrapped in to emphasise it: *like this*. One character
+#: rather than a pair of them, because a diary is typed quickly and the
+#: mark has to be cheap to reach for -- and because it is the one people
+#: already make by hand in a notebook.
+STRONG = "*"
 
 
 def word_runs(line: str) -> list[tuple[int, int]]:
@@ -125,6 +133,87 @@ def run_at(runs: list[tuple[int, int]], column: int) -> tuple[int, int] | None:
     return None
 
 
+class StrongSpan(NamedTuple):
+    """Where one *emphasised phrase* sits in a line, in character offsets.
+
+    Four offsets rather than two because the marks are drawn differently
+    from what they mark: `start`..`text_start` is the opening run of
+    asterisks, `text_start`..`text_end` the phrase itself, and
+    `text_end`..`end` the closing run.
+    """
+
+    start: int
+    text_start: int
+    text_end: int
+    end: int
+
+
+def strong_spans(line: str) -> list[StrongSpan]:
+    """Every *emphasised phrase* in `line`, left to right and never nested.
+
+    The rule is Markdown's, cut down to the part that matters here: a run
+    of asterisks opens a phrase if a non-space follows it, and closes one
+    if a non-space precedes it. That is what keeps a sentence trailing off
+    in an asterisk out of it, while still catching the "**bold**" people
+    type from habit -- a run is taken whole, so two asterisks mark a
+    phrase exactly as one does.
+
+    One thing Markdown's rule gets wrong for a diary, and this does not:
+    **a phrase may not open straight after a digit.** "2 * 3" is safe
+    under the flanking rule alone, but "3*4 packs and 2*6 bottles" is not
+    -- there the first asterisk opens and the second closes, and a line of
+    arithmetic comes out with "4 packs and 2" emphasised in the middle of
+    it. CommonMark does exactly this and is right to, because it is
+    marking up documents; a diary is likelier to hold multiplication than
+    emphasis that begins inside a number. Only digits are excluded, not
+    letters, so a script written without spaces between its words can
+    still emphasise a phrase in the middle of a line.
+
+    A run that can only open while a phrase is already open is passed
+    over, and an unclosed phrase is not a phrase: the marks have to come
+    in pairs or nothing is emphasised. The phrase itself is never empty,
+    because runs are maximal and so two of them always have at least one
+    other character between them.
+
+    Spans never cross a line, since this is handed one line at a time --
+    which is a decision as much as a consequence. A soft wrap does not
+    break a phrase (the widget wraps what this has already marked up), but
+    a paragraph break does, and an asterisk left open at the end of a
+    paragraph would otherwise colour the rest of the day.
+
+    Nothing here touches the document. A mispaired asterisk costs a
+    phrase its colour and nothing else -- the text is filed exactly as it
+    was typed, which is why the rule can afford to be this simple and why
+    there is no way to escape a literal asterisk.
+    """
+    spans: list[StrongSpan] = []
+    opened: tuple[int, int] | None = None
+    length = len(line)
+    index = 0
+    while (start := line.find(STRONG, index)) != -1:
+        # find() rather than a character at a time, because this runs on
+        # every line on its way to the screen and almost every line of a
+        # diary holds no asterisk at all. Skipping to the next one is a
+        # C-level scan; walking there in Python costs about forty times as
+        # much on a long paragraph, for the same answer.
+        index = start + 1
+        while index < length and line[index] == STRONG:
+            index += 1
+        closes = start > 0 and not line[start - 1].isspace()
+        opens = (
+            index < length
+            and not line[index].isspace()
+            and (start == 0 or not line[start - 1].isdigit())
+        )
+        if opened is not None:
+            if closes:
+                spans.append(StrongSpan(opened[0], opened[1], start, index))
+                opened = None
+        elif opens:
+            opened = (start, index)
+    return spans
+
+
 class DiaryTextArea(TextArea):
     """Textual's text area with the editing keys it is missing, and a mask.
 
@@ -139,6 +228,9 @@ class DiaryTextArea(TextArea):
 
     Masking is the other thing here, and it is the screen's to switch on
     (ctrl+r) because it is Zecret's own idea rather than an editor's.
+    Emphasis is the third, and needs no key at all: a phrase between
+    asterisks is picked out in a colour of its own, and in bold, as it is
+    typed.
 
     **The mask is drawn, never written.** It is a style laid over the text
     on its way to the screen and nothing else: the document is untouched,
@@ -153,9 +245,21 @@ class DiaryTextArea(TextArea):
     width would stop matching what the widget wrapped and where it thinks
     the cursor is. Colouring the characters that are already there leaves
     every measurement alone.
+
+    **Emphasis is drawn, never written**, for the first of those reasons
+    and not the second: it only ever colours, so it is a style laid on the
+    line and cannot change a measurement even in principle. The asterisks
+    stay on the screen where they were typed. Hiding them would be the
+    substitution the mask cannot do -- one character fewer on the line
+    than in the document, and the cursor a cell out for the rest of the
+    paragraph -- and it would also be a lie about what is in the file.
     """
 
-    COMPONENT_CLASSES: ClassVar[set[str]] = {"diary-text-area--mask"}
+    COMPONENT_CLASSES: ClassVar[set[str]] = {
+        "diary-text-area--mask",
+        "diary-text-area--strong",
+        "diary-text-area--strong-marker",
+    }
 
     #: Whether the writing is covered. Off at the start of every session
     #: and never written down -- see ZecretApp.masked, which is where it
@@ -182,6 +286,35 @@ class DiaryTextArea(TextArea):
     #: what it is about to draw was wrapped for the width it is drawing
     #: into. None until the first one -- see render_lines.
     _wrapped_at: int | None = None
+
+    def __init__(self, text: str = "", *, soft_wrap: bool = True, id: str | None = None) -> None:
+        """A text area that never highlights the line the cursor is on.
+
+        TextArea paints that band *after* get_line, over the whole line,
+        and it carries a foreground as well as a background -- the same
+        foreground the page already uses, so it changes nothing to look at
+        and yet wipes every colour get_line laid down. Emphasis on the
+        line being typed is exactly the emphasis someone is looking at, so
+        the two cannot both be had. The mask already switched the band off
+        for its own duration and for the same reason; this switches it off
+        before there is anything to switch.
+
+        Little is lost with it. Soft wrap makes it a band over the whole
+        paragraph rather than the row the cursor is in, which says much
+        less in prose than it does in code, and the cursor itself has
+        never stopped saying where you are.
+
+        Set here rather than as a reactive default because TextArea takes
+        it as a constructor argument and writes it over one.
+
+        The signature is narrowed to what Zecret actually passes rather
+        than forwarded as `**kwargs`, which would have swallowed a
+        misspelled `soft_warp=True` that mypy is run in strict mode to
+        catch. TextArea takes a dozen more arguments and this widget has
+        one construction site; a keyword it does not name is a mistake
+        worth hearing about.
+        """
+        super().__init__(text, soft_wrap=soft_wrap, highlight_cursor_line=False, id=id)
 
     # --- wrapping ----------------------------------------------------------
 
@@ -215,10 +348,57 @@ class DiaryTextArea(TextArea):
             self._line_cache.clear()
         return super().render_lines(crop)
 
+    # --- emphasis ----------------------------------------------------------
+
+    def _emphasise(self, line: Text) -> Text:
+        """Colour every *emphasised phrase* in `line`, asterisks and all.
+
+        The phrase takes the emphasis colour and the bold; the marks
+        around it take the colour alone. Sharing the colour is what makes
+        `*phrase*` read as one thing rather than as a word with
+        punctuation stuck to it, and withholding the weight is what still
+        lets the writing outrank the marks holding it up. They cannot be
+        hidden altogether -- see the note on this class about what a
+        character fewer would cost.
+
+        Both attributes, never one. Bold alone is the least dependable
+        thing a terminal offers: some render it as a brighter shade of the
+        same ink, and some fonts have no bold face to switch to. Colour
+        alone thins out at the other end -- sixteen colours, or NO_COLOR,
+        where there is nothing for it to arrive as. They are independent
+        parameters of one escape sequence, so neither can undo the other
+        and each covers where the other gives out. *Which* colour is
+        app.tcss's business and is argued out there -- it was measured
+        against the prose on either side of a phrase rather than against
+        the page, which is the test the obvious candidates fail.
+
+        `line` is stylized in place: TextArea builds a fresh Text for each
+        line every time it is asked, so there is nothing shared to spoil.
+        """
+        spans = strong_spans(line.plain)
+        if not spans:
+            return line
+
+        ink = self.get_component_rich_style("diary-text-area--strong")
+        marks = self.get_component_rich_style("diary-text-area--strong-marker")
+        for span in spans:
+            line.stylize(marks, span.start, span.text_start)
+            line.stylize(ink, span.text_start, span.text_end)
+            line.stylize(marks, span.text_end, span.end)
+        return line
+
     # --- the mask ----------------------------------------------------------
 
     def get_line(self, line_index: int) -> Text:
-        """The line as it should be drawn -- covered, where it is masked.
+        """The line as it should be drawn -- emphasised, or covered.
+
+        Two things are laid on the text on its way to the screen, and they
+        never share a line: **the mask wins.** A phrase drawn in the
+        emphasis colour over a row of bars would say where the emphasis in
+        a covered day is, which is more than nothing about what it says -- and the
+        mask's whole promise is that nothing reads through it. So a masked
+        line is only ever masked, and the colour comes back with the words
+        when it is uncovered.
 
         Textual's own docstring for this method offers it as the place to
         style what a TextArea renders. What comes back is a line of the
@@ -244,7 +424,7 @@ class DiaryTextArea(TextArea):
         """
         line = super().get_line(line_index)
         if not self.masked:
-            return line
+            return self._emphasise(line)
 
         cursor_row, cursor_column = self.cursor_location
         runs = word_runs(line.plain)
@@ -286,8 +466,10 @@ class DiaryTextArea(TextArea):
 
         - The cursor line's highlight, which would put the mask's ink on a
           readable background and give away the whole line the cursor is
-          on. Masking turns it off, which is also how it should look -- a
-          row of bars needs no band behind it to say where the cursor is.
+          on. That one is no longer switched off here because it is no
+          longer switched on at all -- see highlight_cursor_line above,
+          which emphasis took off permanently for the same reason the mask
+          took it off for the duration.
         - The selection, which sets both colours over everything it covers
           and so read straight through the mask. ctrl+a is select-all, so
           one keystroke laid the entire entry bare while the screen was
@@ -295,7 +477,6 @@ class DiaryTextArea(TextArea):
           app.tcss give the selection a bar of its own instead.
         """
         self._line_cache.clear()
-        self.highlight_cursor_line = not masked
         self.set_class(masked, "-masked")
         self.refresh()
 

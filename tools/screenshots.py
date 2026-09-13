@@ -65,7 +65,7 @@ ROWS = {
     # it tracks the layout rather than being padded for safety. Guarded by
     # SHOT_ROWS in tests/test_help_screen.py, since a cropped screenshot is
     # not something any test can see.
-    "help": 35,
+    "help": 36,
 }
 
 #: Width of the rendered PNGs, matching what the README embeds.
@@ -91,7 +91,7 @@ SAMPLE = [
         "again, so I went up the hill instead and found an orchard nobody seems "
         "to be picking.\n"
         "\n"
-        "Came back the long way. Worth it.",
+        "Came back the long way. *Worth it.*",
     ),
     (
         dt.date(2026, 8, 12),

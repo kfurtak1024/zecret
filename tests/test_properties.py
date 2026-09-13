@@ -18,6 +18,11 @@ Required coverage:
     - encrypt()/decrypt() round-trips any plaintext, and any tampering with
       the ciphertext is caught.
     - body_snippet() honours its length bound for any body at all.
+    - strong_spans() returns a well-formed reading of any line at all:
+      in bounds, in order, never overlapping, and marking nothing but
+      asterisks. It is handed whatever someone types, and a span out of
+      step with the line would colour the wrong words or raise over an
+      ordinary day.
 
 "Total" is the property that matters for the parsers. The screens catch
 ValueError and report a file they cannot read; anything else -- a
@@ -39,6 +44,7 @@ from hypothesis import strategies as st
 from zecret.crypto import KEY_SIZE, NONCE_SIZE, KdfParams, ZecretDecryptError, decrypt, encrypt
 from zecret.models import Entry
 from zecret.screens.base import EMPTY_BODY, SNIPPET_CAP, body_snippet
+from zecret.screens.editor import STRONG, strong_spans
 from zecret.storage import _load_document, _parse_record
 
 # Zecret stores UTC timestamps and local dates, and a diary may hold any
@@ -260,3 +266,41 @@ def test_a_snippet_never_exceeds_its_length(body: str, length: int):
 def test_a_snippet_is_never_blank(body: str):
     """Every row has to say something, or the day looks like a gap."""
     assert body_snippet(body, SNIPPET_CAP).strip()
+
+
+@given(line=st.text(alphabet=st.characters(), max_size=120))
+def test_strong_spans_reads_any_line_the_same_way(line: str):
+    """Four offsets that always describe the line they came from.
+
+    The parser is handed whatever someone types, asterisks and all, and
+    what it returns is used to colour characters by index -- so a span
+    that ran backwards, overlapped its neighbour or pointed past the end
+    would paint the wrong words rather than fail somewhere it could be
+    seen.
+    """
+    previous_end = 0
+    for span in strong_spans(line):
+        assert previous_end <= span.start, "spans come in order and never overlap"
+        assert span.start < span.text_start < span.text_end < span.end <= len(line)
+        assert set(line[span.start : span.text_start]) == {STRONG}
+        assert set(line[span.text_end : span.end]) == {STRONG}
+        assert STRONG not in line[span.text_start : span.text_end][:1]
+        previous_end = span.end
+
+
+@given(line=st.text(alphabet=st.sampled_from("*ab \t"), max_size=24))
+def test_an_emphasised_phrase_never_begins_or_ends_in_a_space(line: str):
+    """Drawn from an alphabet that is mostly asterisks, which is where a
+    naive pairing falls over: "***", "* *" and everything like them.
+
+    This is the flanking rule stated as a property, and it is the whole of
+    what keeps "2 * 3" and a trailing footnote mark out of it: a phrase
+    has to start on the character after its opening mark and end on the
+    one before its closing mark, so an asterisk with a space beside it is
+    not marking anything.
+    """
+    for span in strong_spans(line):
+        phrase = line[span.text_start : span.text_end]
+        assert phrase, "a phrase is never empty"
+        assert not phrase[0].isspace()
+        assert not phrase[-1].isspace()

@@ -296,7 +296,12 @@ async def test_selecting_does_not_read_through_the_mask(diary_path):
 
 async def test_the_cursor_line_highlight_does_not_read_through_it_either(diary_path):
     """The other style TextArea lays on after the mask. It would have
-    given away the whole line the cursor was on, rather than one word."""
+    given away the whole line the cursor was on, rather than one word.
+
+    No longer switched off by the mask, because emphasis switched it off
+    for good -- a band painted over the whole line wipes any colour
+    get_line laid down, mask or phrase. This still checks it, since what
+    the mask needs is that it is off *here*, whoever turned it off."""
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
