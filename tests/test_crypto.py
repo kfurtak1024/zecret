@@ -12,6 +12,11 @@ Required coverage (fill in as crypto.py is implemented):
     - decrypt() raises ZecretDecryptError on tampered ciphertext
       (flip a byte, confirm it's detected -- this is the AEAD integrity
       guarantee, critical to verify).
+    - derive_key() raises ValueError, and nothing else, for any parameters
+      Argon2 refuses. The cost factors come off the diary's own header, so
+      a corrupted one reaches this function; anything but a ValueError
+      escapes what the screens catch and meets the user as a traceback
+      over their diary.
 """
 
 from __future__ import annotations
@@ -347,3 +352,38 @@ def test_decrypt_error_message_does_not_leak_secrets(key):
 
 def test_zecret_decrypt_error_is_catchable_as_exception():
     assert issubclass(ZecretDecryptError, Exception)
+
+
+# --- parameters Argon2 will not accept -------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("memory_cost", 0),
+        ("memory_cost", -1),
+        ("memory_cost", 2**40),  # too large for the 32-bit field it goes in
+        ("time_cost", 0),
+        ("time_cost", -1),
+        ("parallelism", 0),
+    ],
+)
+def test_derive_key_rejects_impossible_cost_factors(field: str, value: int):
+    """A header corrupted into one of these used to come apart inside
+    argon2, as a HashingError or a cffi OverflowError. Neither is what the
+    screens catch, so one mangled digit in a diary's header met its owner
+    as a traceback rather than as a file that could not be read."""
+    params = KdfParams(salt=os.urandom(SALT_SIZE), **{field: value})
+    with pytest.raises(ValueError):
+        derive_key("correct horse battery staple", params)
+
+
+def test_derive_key_rejects_a_salt_too_short_to_use():
+    with pytest.raises(ValueError):
+        derive_key("correct horse battery staple", KdfParams(salt=b""))
+
+
+def test_derive_key_still_works_with_the_real_parameters():
+    """The guard must not have narrowed what the diary actually uses."""
+    params = KdfParams(salt=os.urandom(SALT_SIZE))
+    assert len(derive_key("correct horse battery staple", params)) == KEY_SIZE

@@ -24,6 +24,10 @@ Required coverage:
       fails.
     - change_password() + save() + unlock() with the NEW password succeeds,
       and unlock() with the OLD password now fails.
+    - A KDF header that parses but names cost factors Argon2 refuses is
+      rejected as a ValueError, not as whatever argon2 raises. The screens
+      catch ValueError; anything else reaches the user as a traceback over
+      their diary.
 """
 
 from __future__ import annotations
@@ -932,6 +936,35 @@ def test_unlock_rejects_a_missing_section(diary_path, section):
     populated(diary_path)
     document = read_document(diary_path)
     del document[section]
+    diary_path.write_text(json.dumps(document))
+    with pytest.raises(ValueError):
+        DiaryFile.unlock(diary_path, PASSWORD)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("memory_cost", 0),
+        ("memory_cost", -1),
+        ("memory_cost", 2**40),
+        ("time_cost", 0),
+        ("parallelism", 0),
+        ("salt", ""),
+    ],
+)
+def test_unlock_rejects_a_kdf_header_argon2_will_not_take(diary_path, field, value):
+    """The cost factors parse as whole numbers and are still impossible.
+
+    A header is checked for shape before the key is derived, but nothing
+    there knows what Argon2 will do with the numbers -- so a file corrupted
+    into "memory_cost": 0 got all the way to the KDF and came apart as an
+    argon2 HashingError or a cffi OverflowError. Neither is what the unlock
+    screen catches, so one mangled digit met its owner as a traceback over
+    their diary instead of as a file that could not be read.
+    """
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["kdf"][field] = value
     diary_path.write_text(json.dumps(document))
     with pytest.raises(ValueError):
         DiaryFile.unlock(diary_path, PASSWORD)

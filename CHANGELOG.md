@@ -31,6 +31,16 @@ file matters as much as that does.
   has not stopped saying where you are.
 
 
+### Fixed
+
+- **A diary whose header was corrupted now says so instead of crashing.**
+  The numbers that say how hard your password is to guess live in the
+  file, and one of them mangled — by a half-finished copy, a bad sync, a
+  stray edit — got past the checks and came apart deep inside the key
+  derivation, showing you a page of Python rather than a message. It is
+  reported like any other file Zecret cannot read. Nothing about a
+  healthy diary changes, and no diary needs migrating.
+
 ## [0.5.1] - 2026-09-02
 
 ### Security
