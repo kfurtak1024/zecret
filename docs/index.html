@@ -387,7 +387,7 @@ footer p.right { margin-left: auto; }
       </div>
       <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0"/></svg>Locks itself</h3>
-        <p>Walk away and the diary closes behind you, asking for your password again. A half-written entry holds it open rather than being thrown away by a timer.</p>
+        <p>Walk away and the diary closes behind you, asking for your password again &mdash; closing the laptop counts as walking away. A half-written entry holds it open rather than being thrown away by a timer.</p>
       </div>
       <div class="card">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v16M4.5 7.5l15 9M19.5 7.5l-15 9"/></svg>Emphasis as you type</h3>
@@ -483,7 +483,7 @@ footer p.right { margin-left: auto; }
     <dl class="facts">
       <div>
         <dt>Key derivation</dt>
-        <dd>Argon2id — <span class="mono">time_cost 3</span>, <span class="mono">64 MiB</span>, <span class="mono">parallelism 4</span> — with a random 16-byte salt per diary. Your password is never stored; the derived key never touches disk.</dd>
+        <dd>Argon2id — <span class="mono">time_cost 3</span>, <span class="mono">64 MiB</span>, <span class="mono">parallelism 4</span> — with a random 16-byte salt per diary. Your password is never stored; the derived key never touches disk. A short password is the one weakness that buys back, so Zecret says so as you choose one — without refusing it.</dd>
       </div>
       <div>
         <dt>Encryption</dt>
@@ -617,7 +617,7 @@ footer p.right { margin-left: auto; }
 
     <p class="sub" style="margin-top:1.5rem">Choosing a day has two halves, and the keyboard reaches both: type the date into the field, or press <kbd>tab</kbd> (or <kbd>&darr;</kbd>) to step into the month below it, where the arrow keys walk a day at a time, the page keys move a month, <kbd>home</kbd> and <kbd>end</kbd> reach the ends of it, and <kbd>enter</kbd> takes the day the cursor is on. Whichever half you use, the other follows — and the calendar follows the typing as it happens, so the month you are aiming at is on screen before you have finished the date.</p>
 
-    <p class="sub" style="margin-top:1.5rem">Inside a day, the editor answers to the usual text-editing keys — <kbd>ctrl</kbd> + <kbd>home</kbd> and <kbd>ctrl</kbd> + <kbd>end</kbd> for the two ends of the entry, <kbd>ctrl</kbd> + <kbd>a</kbd> to select all of it, and the rest of what your fingers already know. Those are the one thing <kbd>?</kbd> does not list: it is a page about the diary, and these mean here exactly what they mean everywhere else.</p>
+    <p class="sub" style="margin-top:1.5rem">Inside a day, the editor answers to the usual text-editing keys — <kbd>ctrl</kbd> + <kbd>home</kbd> and <kbd>ctrl</kbd> + <kbd>end</kbd> for the two ends of the entry, <kbd>ctrl</kbd> + <kbd>&uarr;</kbd> and <kbd>ctrl</kbd> + <kbd>&darr;</kbd> for a paragraph at a time, <kbd>ctrl</kbd> + <kbd>&larr;</kbd> and <kbd>ctrl</kbd> + <kbd>&rarr;</kbd> for a word, <kbd>ctrl</kbd> + <kbd>a</kbd> to select all of it, and the rest of what your fingers already know. Hold <kbd>shift</kbd> as well and any of them selects on the way. Those are the one thing <kbd>?</kbd> does not list: it is a page about the diary, and these mean here exactly what they mean everywhere else.</p>
   </div>
 </section>
 

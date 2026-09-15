@@ -20,6 +20,9 @@ and goes back to UnlockScreen. Everything to do with that is here rather
 than in a screen, for the same reason routing is -- it is about the session
 as a whole, not about anything on show.
 
+How long the quiet has lasted is read off two clocks rather than one,
+because a closed laptop stops the monotonic one -- see Instant.
+
 Quitting is guarded from here for the same reason. It is the other way a
 screen full of unsaved writing can vanish, and it arrives by two keys, so
 the question about throwing that writing away is asked once in action_quit
@@ -33,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Literal, overload
+from typing import Literal, NamedTuple, Self, overload
 
 from textual import events
 from textual.app import App
@@ -46,6 +49,47 @@ from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
+
+
+class Instant(NamedTuple):
+    """A moment, read off both of the clocks that can measure it.
+
+    Two readings because neither clock alone can say how long someone has
+    been away, and they fail in opposite directions.
+
+    `time.monotonic()` is `CLOCK_MONOTONIC`, which does not advance while
+    the machine is suspended. A laptop closed with the diary open and
+    reopened the next morning therefore came back to a timer that thought
+    no time had passed at all -- and closing the lid is the most ordinary
+    way there is of walking away from a terminal, which is the whole case
+    this feature exists for.
+
+    The wall clock does count a suspend, and cannot be trusted on its own
+    for the opposite reason: it can be set backwards, by hand or by an
+    NTP correction, and a diary that stayed open an extra hour because of
+    one would be the same failure wearing different clothes.
+
+    So elapsed() takes whichever of them reports the longer wait. That is
+    fail-closed in both directions: a suspend shows up in the wall reading
+    while the monotonic one stands still, and a clock shoved backwards
+    leaves a negative wall reading that the monotonic one overrules. The
+    only way to stay unlocked is for both clocks to agree that little time
+    has passed.
+    """
+
+    monotonic: float
+    wall: float
+
+    @classmethod
+    def now(cls) -> Self:
+        """Both clocks, read as close together as Python allows."""
+        return cls(time.monotonic(), time.time())
+
+    def elapsed(self) -> float:
+        """Seconds since this instant, by whichever clock says more."""
+        now = Instant.now()
+        return max(now.monotonic - self.monotonic, now.wall - self.wall)
+
 
 #: Said when the diary locks itself, so a screen that suddenly wants a
 #: password is not a mystery.
@@ -102,9 +146,10 @@ class ZecretApp(App[None]):
         # for the session. Screens reach the diary exclusively through these.
         self.diary: DiaryFile | None = None
         self.key: bytes | None = None
-        # When something last happened. Monotonic, so the diary does not
-        # stay open an hour longer because a clock went backwards.
-        self.last_activity = time.monotonic()
+        # When something last happened, on both clocks -- see Instant for
+        # why one of them is not enough to tell being away from being
+        # suspended.
+        self.last_activity = Instant.now()
         # Whether the editor covers what is written on it -- see
         # EditorScreen.action_toggle_mask. Session state rather than a
         # preference: it lives here so that going back to the list and
@@ -133,7 +178,7 @@ class ZecretApp(App[None]):
         long entry would be the one thing that looks like being away.
         """
         if isinstance(event, events.Key | events.MouseDown):
-            self.last_activity = time.monotonic()
+            self.last_activity = Instant.now()
         await super().on_event(event)
 
     def apply_theme(self, theme: str) -> None:
@@ -291,9 +336,9 @@ class ZecretApp(App[None]):
             # Half-written entry on the screen. Treat waiting on the writer
             # as activity rather than merely postponing: locking the moment
             # they saved would be the same ambush a beat later.
-            self.last_activity = time.monotonic()
+            self.last_activity = Instant.now()
             return
-        if time.monotonic() - self.last_activity >= minutes * 60:
+        if self.last_activity.elapsed() >= minutes * 60:
             self.lock(LOCKED_BY_TIMEOUT)
 
     def locking_would_lose_work(self) -> bool:

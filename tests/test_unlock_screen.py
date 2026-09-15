@@ -16,6 +16,11 @@ Required coverage:
     - Choosing a password says, in as many words, that forgetting it loses
       the diary. Only where one is being chosen: the unlock screen asks
       for a password that already exists and has nothing to warn about.
+    - A short password being chosen is mentioned as it is typed, and is
+      then accepted anyway. The diary is the writer's and Zecret does not
+      refuse them entry to it -- the note says what the weakness is and
+      goes away when the password outgrows it. Nothing is said on an
+      existing diary, where the length is not up for discussion.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from textual.widgets import Input, Label
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.base import NO_RECOVERY
+from zecret.screens.base import LENGTH_ADVICE, NO_RECOVERY
 from zecret.screens.unlock import UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
 
@@ -358,3 +363,69 @@ async def test_the_password_is_cleared_after_a_file_level_failure(diary_path):
         diary_path.unlink()
         await submit(pilot, PASSWORD)
         assert app.screen.query_one("#password", Input).value == ""
+
+
+# --- the note about a short password ---------------------------------------
+
+
+async def advice_line(pilot) -> str:
+    return str(pilot.app.screen.query_one("#unlock-error", Label).content)
+
+
+async def test_a_short_password_is_mentioned_as_it_is_typed(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        field = app.screen.query_one("#password", Input)
+        field.value = "hunter2"
+        await pilot.pause()
+
+        assert await advice_line(pilot) == LENGTH_ADVICE
+
+
+async def test_the_note_goes_away_once_the_password_is_long_enough(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        field = app.screen.query_one("#password", Input)
+        field.value = "hunter2"
+        await pilot.pause()
+        field.value = "correct horse battery"
+        await pilot.pause()
+
+        assert await advice_line(pilot) == ""
+
+
+async def test_a_short_password_is_still_accepted(diary_path):
+    """Advice, not a rule: Zecret has no business refusing someone their
+    own diary over the password they chose for it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, "abc", "abc")
+
+        assert app.diary is not None
+        assert diary_path.exists()
+        assert DiaryFile.unlock(diary_path, "abc")[0] is not None
+
+
+async def test_nothing_is_said_about_the_password_of_an_existing_diary(diary_path):
+    """It is being recalled, not chosen. A remark about its length would
+    be advice nobody can act on, and a remark about the diary to whoever
+    is looking at the screen."""
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        app.screen.query_one("#password", Input).value = "abc"
+        await pilot.pause()
+
+        assert await advice_line(pilot) == ""
+
+
+async def test_a_real_error_takes_the_line_back_from_the_note(diary_path):
+    """Something that has gone wrong outranks something that merely might
+    -- and the refusal empties the fields, which arrives here as another
+    change a moment later and must not quietly wipe the error."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, "abc", "xyz")
+
+        assert await advice_line(pilot) == "Passwords do not match."
+        assert not app.screen.query_one("#unlock-error", Label).has_class("-advice")
