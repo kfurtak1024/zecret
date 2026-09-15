@@ -54,6 +54,36 @@ NO_RECOVERY = (
     "recovery and no back door, not even for you."
 )
 
+#: How long a master password has to be before Zecret stops mentioning it.
+#: Not a rule and not enforced -- see FormScreen.advise_on_password.
+#:
+#: Twelve because of what the diary is up against. The file is offline, so
+#: a guesser works at their own pace with no one to stop them; Argon2id at
+#: these parameters makes each guess cost about 65ms, which is what buys
+#: the length its value. Below a dozen characters that cost stops being
+#: the thing standing in the way, and the password is. Above it, an
+#: ordinary phrase of two or three words is already past anything a
+#: guesser gets through.
+COMFORTABLE_PASSWORD_LENGTH = 12
+
+#: Shown while a password being chosen is shorter than that. Advice and
+#: not a verdict: it appears as the password is typed, says what the
+#: weakness actually is, and never stops anyone pressing enter. Zecret has
+#: no business refusing someone their own diary.
+#:
+#: One line, and it has to stay one line. It is written on the error row,
+#: which is a single row fixed at `height: 1` -- so a sentence too long
+#: for it is not wrapped but *cut off* at the edge of the card, losing its
+#: end with nothing to say so. The create screen's card is the narrower of
+#: the two and leaves 54 columns; this is 49, and
+#: tests/test_password_screen.py measures both rather than trusting the
+#: number written here.
+#:
+#: Worded as advice rather than as a finding about what was just typed:
+#: it names the thing to do first, and gives the reason second rather than
+#: leading with a complaint.
+LENGTH_ADVICE = "Use a few words — short ones are guessed offline."
+
 #: Said when leaving would lose what is on the screen. One sentence for
 #: both ways of leaving -- backing out of the day and quitting the app --
 #: because it is one situation, and the buttons underneath are where the
@@ -275,8 +305,40 @@ class FormScreen(ZecretScreen):
     ERROR_ID: ClassVar[str]
 
     def set_error(self, message: str) -> None:
-        """Show `message` on the error line, or clear it when empty."""
-        self.query_one(f"#{self.ERROR_ID}", Label).update(message)
+        """Show `message` on the error line, or clear it when empty.
+
+        Takes the line back from any advice sitting on it: something that
+        has gone wrong outranks something that merely might.
+        """
+        line = self.query_one(f"#{self.ERROR_ID}", Label)
+        line.remove_class("-advice")
+        line.update(message)
+
+    def advise_on_password(self, password: str) -> None:
+        """Say that a password is on the short side, without refusing it.
+
+        Written on the error row rather than a row of its own, which is
+        what keeps this free: the password dialog is sized so that the
+        warning about a forgotten password never needs scrolling to, and
+        a row added anywhere inside it would be a row taken off that.
+        The row is also the right home for it -- it is the line that
+        speaks about the last keypress, and this is about the last
+        keypress.
+
+        The `-advice` class is both the styling and the bookkeeping. It
+        marks the line as carrying something that can be withdrawn
+        silently, so this can clear its own message without clearing an
+        error that was put there instead -- which matters because a
+        rejected attempt empties the fields, and emptying a field is a
+        change like any other, arriving here a moment after the error did.
+        """
+        line = self.query_one(f"#{self.ERROR_ID}", Label)
+        if password and len(password) < COMFORTABLE_PASSWORD_LENGTH:
+            line.add_class("-advice")
+            line.update(LENGTH_ADVICE)
+        elif line.has_class("-advice"):
+            line.remove_class("-advice")
+            line.update("")
 
     def clear_inputs(self) -> None:
         """Empty every text field.

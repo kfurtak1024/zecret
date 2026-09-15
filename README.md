@@ -85,6 +85,12 @@ Zecret says as much on the screen that asks you to choose one, and again in
 the dialog that changes it later — in red, where it cannot be mistaken for
 small print.
 
+It also mentions, as you type, when the password you are choosing is on the
+short side. Your diary file is guessed at offline if it is ever taken, with
+nothing to slow an attacker down but how long the password is, so a few
+words you will remember beat a short one you will not. It is a note and not
+a rule: Zecret will not refuse you your own diary over it.
+
 ## Using it
 
 <div align="center">

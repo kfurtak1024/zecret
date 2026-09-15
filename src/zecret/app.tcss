@@ -121,6 +121,19 @@ PasswordScreen {
     color: $text-error;
 }
 
+/* The same row carrying advice rather than a complaint: a password being
+   chosen is on the short side, which is worth saying and is not an error.
+   Amber rather than red for exactly that reason -- nothing has gone
+   wrong, nothing is being refused, and the form will submit on the next
+   keypress whatever this says. Spending $error on it would put it in the
+   company of the two things that genuinely cannot be undone, and would
+   also make it the loudest thing on a screen where the warning about a
+   forgotten password is supposed to be. */
+#unlock-error.-advice,
+#password-error.-advice {
+    color: $text-warning;
+}
+
 /* --- The warning about a forgotten password ----------------------------- */
 
 /* $error, which is otherwise reserved for errors and destructive actions.
