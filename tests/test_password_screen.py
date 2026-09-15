@@ -18,6 +18,11 @@ Required coverage:
     - Every refusal empties the fields, so an unattended terminal never
       holds a typed password in a widget.
     - A save that fails does not leave the diary half re-keyed.
+    - A short new password is mentioned as it is typed, and is then
+      accepted anyway. The note sits on the error row rather than a row of
+      its own, and has to keep fitting there: the dialog is sized so the
+      warning about a forgotten password never needs scrolling to on a
+      24-row terminal, and a wrapped line would take that row back.
 """
 
 from __future__ import annotations
@@ -27,12 +32,13 @@ import json
 from pathlib import Path
 
 import pytest
+from rich.cells import cell_len
 from textual.widgets import Button, Input, Label
 
 from zecret.app import ZecretApp
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
-from zecret.screens.base import NO_RECOVERY
+from zecret.screens.base import LENGTH_ADVICE, NO_RECOVERY
 from zecret.screens.password import (
     CHANGED,
     EMPTY_NEW,
@@ -59,6 +65,12 @@ pytestmark = pytest.mark.usefixtures("cheap_kdf")
 @pytest.fixture(autouse=True)
 def instant_failure_delay(monkeypatch):
     monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
+
+
+def tmp_missing_diary(existing: Path) -> Path:
+    """A path in the same directory with no diary at it, so the app opens
+    the create screen -- the other place this sentence is written."""
+    return existing.with_name("unwritten.enc")
 
 
 @pytest.fixture
@@ -316,3 +328,94 @@ async def test_a_failed_save_leaves_the_diary_openable(diary_path, monkeypatch):
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert len(reopened.entries) == 2
+
+
+# --- the note about a short password ---------------------------------------
+
+
+def advice_line(app: ZecretApp) -> Label:
+    return app.screen.query_one("#password-error", Label)
+
+
+async def test_a_short_new_password_is_mentioned_as_it_is_typed(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        app.screen.query_one("#new", Input).value = "hunter2"
+        await pilot.pause()
+
+        assert str(advice_line(app).content) == LENGTH_ADVICE
+
+
+async def test_nothing_is_said_about_the_current_password(diary_path):
+    """It is being recalled, not chosen, and the confirmation is a copy of
+    a field that has already been spoken about."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        app.screen.query_one("#current", Input).value = "abc"
+        await pilot.pause()
+
+        assert str(advice_line(app).content) == ""
+
+
+async def test_a_short_new_password_is_still_accepted(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        await submit_change(pilot, PASSWORD, "abc", "abc")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, PasswordScreen), "the change went through"
+        assert DiaryFile.unlock(diary_path, "abc")[0] is not None
+
+
+async def test_a_refusal_takes_the_line_back_from_the_note(diary_path):
+    """Emptying the fields after a refusal is a change like any other and
+    reaches the advice handler a moment after the error was written."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        await submit_change(pilot, PASSWORD, "abc", "xyz")
+        await pilot.pause()
+
+        assert str(advice_line(app).content) == MISMATCH
+        assert not advice_line(app).has_class("-advice")
+
+
+async def test_the_note_fits_the_row_it_is_written_on(diary_path):
+    """The error row is one fixed row, which is what protects the dialog's
+    height -- so an over-long note is not wrapped onto a second line but
+    quietly cut off at the edge of the card, and the reader loses the end
+    of the sentence with nothing to say it happened. Measured against the
+    row's real width rather than against a number written down here."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        app.screen.query_one("#new", Input).value = "hunter2"
+        await pilot.pause()
+
+        line = advice_line(app)
+        assert line.size.height == 1, "the error row is supposed to be a single row"
+        assert cell_len(LENGTH_ADVICE) <= line.content_region.width, (
+            "the note is wider than the row it is written on and will be cut off"
+        )
+
+
+async def test_the_note_fits_the_narrower_card_too(diary_path):
+    """The create screen writes the same sentence into a 62-column card
+    rather than the dialog's 70, so that is the width it has to fit."""
+    app = ZecretApp(diary_path=tmp_missing_diary(diary_path))
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.screen.query_one("#password", Input).value = "hunter2"
+        await pilot.pause()
+
+        line = app.screen.query_one("#unlock-error", Label)
+        assert cell_len(LENGTH_ADVICE) <= line.content_region.width, (
+            "the note is wider than the create screen's row and will be cut off"
+        )

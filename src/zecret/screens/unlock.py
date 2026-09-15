@@ -100,6 +100,17 @@ class UnlockScreen(FormScreen):
         self.sub_title = "New diary" if self.creating else "Locked"
         self.query_one("#password", Input).focus()
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Mention a short password while it is being chosen.
+
+        Only while creating, and only for the password field itself: on an
+        existing diary the password is whatever it already is, and saying
+        anything about its length would be advice nobody can act on and a
+        remark about the diary to whoever is watching the screen.
+        """
+        if self.creating and event.input.id == "password":
+            self.advise_on_password(event.value)
+
     async def on_input_submitted(self, _event: Input.Submitted) -> None:
         """Enter in either field submits the form."""
         await self.attempt()

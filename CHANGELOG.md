@@ -32,6 +32,12 @@ file matters as much as that does.
   with them, the way holding shift already did with every other way of
   moving. <kbd>ctrl</kbd> + <kbd>shift</kbd> + the up and down arrows
   select a paragraph at a time.
+- **Choosing a short master password says so, as you type it.** Your
+  diary is guessed at offline if the file is ever taken, with nothing to
+  slow that down but the length of the password, so the screens that
+  choose one now mention it while it is short and go quiet once it is
+  not. A note and not a rule — Zecret will not refuse you your own diary
+  over the password you picked for it.
 
 ### Fixed
 
