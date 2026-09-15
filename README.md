@@ -224,9 +224,12 @@ room for so much — <kbd>?</kbd> lists everything.
 
 Inside a day, the editor answers to the usual text-editing keys, including
 <kbd>ctrl</kbd>+<kbd>home</kbd>/<kbd>ctrl</kbd>+<kbd>end</kbd> for the two
-ends of the entry and <kbd>ctrl</kbd>+<kbd>a</kbd> to select all of it.
-Those are not listed under <kbd>?</kbd>: it is a page about the diary, and
-they mean here what they mean in every other editor.
+ends of the entry, <kbd>ctrl</kbd>+<kbd>&uarr;</kbd>/<kbd>ctrl</kbd>+<kbd>&darr;</kbd>
+to move a paragraph at a time, <kbd>ctrl</kbd>+<kbd>&larr;</kbd>/<kbd>ctrl</kbd>+<kbd>&rarr;</kbd>
+to move a word at a time, and <kbd>ctrl</kbd>+<kbd>a</kbd> to select all of
+it. Holding <kbd>shift</kbd> as well takes the writing with you. Those are
+not listed under <kbd>?</kbd>: it is a page about the diary, and they mean
+here what they mean in every other editor.
 
 ## How it works
 

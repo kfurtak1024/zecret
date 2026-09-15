@@ -492,9 +492,14 @@ patch number, not a retry. This is why `check` and `verify` run first.
   *diary* — save it, lock it, cover it, go back. Everything about the
   writing itself lives
   on `DiaryTextArea`, which is Textual's `TextArea` plus the keys it is
-  missing: `ctrl+home` / `ctrl+end` for the two ends of the entry, and
-  `ctrl+a` rebound from readline's "start of line" (which `home` still
-  does) to select-all, where every other editor puts it. That split is
+  missing: `ctrl+home` / `ctrl+end` for the two ends of the entry and
+  `ctrl+shift+home` / `ctrl+shift+end` to select to them, `ctrl+up` /
+  `ctrl+down` for a paragraph at a time with the shift spellings
+  selecting as they go, and `ctrl+a` rebound from readline's "start of
+  line" (which `home` still does) to select-all, where every other editor
+  puts it. A paragraph is a line of the *document*, not of the screen:
+  soft wrap is on, so the row the cursor is drawn on is a fragment of a
+  sentence and the plain arrows already move by one. That split is
   what keeps them off the help popup and the key bar, both of which are
   generated from screen `BINDINGS` — and it is the right answer rather
   than a trick, since the popup does not list `ctrl+z`, `ctrl+k` or the
@@ -504,6 +509,21 @@ patch number, not a retry. This is why `check` and `verify` run first.
   it does something to the diary. The same split is why `MonthCalendar`
   carries the arrow and page keys, and why the date field's `down` lives
   on a `DateInput` subclass rather than on `DatePromptScreen`.
+- **Moving by a word stops at word ends going right and word starts going
+  left.** That asymmetry looks like a bug and is the convention on this
+  platform — VS Code binds the pair as `cursorWordEndRight` and
+  `cursorWordStartLeft`, and GTK, readline's `alt+f` and Firefox on Linux
+  all stop at the end too. Don't "fix" it by making the two retrace each
+  other. What each key does have to be is consistent with itself, and
+  TextArea's own rule is not: it takes the next change of character class,
+  which after a run of punctuation falls at the *start* of the following
+  word rather than at the end of the mark, so `It rained. Then` stopped at
+  `It rained. |Then` and going left over `a *strong*` stopped a cell short
+  of the asterisk. `DiaryTextArea` overrides both
+  `get_cursor_word_right_location` and `get_cursor_word_left_location` to
+  take a run of same-class characters whole, with whitespace as a class of
+  its own — which is the whole of the fix, since it is the third class
+  that stops punctuation swallowing the space beside it.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.

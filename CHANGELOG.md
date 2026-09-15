@@ -10,6 +10,30 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **The editor moves a paragraph at a time.** <kbd>ctrl</kbd> + the up and
+  down arrows step between paragraphs, which is the unit a diary is
+  actually read in — the plain arrows move by a line of the *screen*, and
+  in a wrapped paragraph that is a fragment of a sentence. Going down past
+  the last paragraph reaches the end of the day rather than doing nothing.
+- **Selecting reaches the ends of the entry.** <kbd>ctrl</kbd> +
+  <kbd>shift</kbd> + <kbd>home</kbd> and <kbd>end</kbd> take the writing
+  with them, the way holding shift already did with every other way of
+  moving. <kbd>ctrl</kbd> + <kbd>shift</kbd> + the up and down arrows
+  select a paragraph at a time.
+
+### Fixed
+
+- **Moving a word at a time now stops in the same place every time.**
+  <kbd>ctrl</kbd> + the left and right arrows landed somewhere different
+  depending on whether the thing just crossed was a word or a piece of
+  punctuation: going right over a full stop overshot the space after it
+  and left the cursor in front of the next word, so leaving a word that
+  ended a sentence took two presses instead of one, and going left over an
+  asterisk stopped a cell short of it. Both now stop where the word or the
+  mark itself ends.
+
 ## [0.6.0] - 2026-09-13
 
 ### Added
