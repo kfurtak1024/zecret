@@ -10,6 +10,16 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Security
+
+- **A closed laptop now counts as walking away.** The idle lock measured
+  quiet with a clock that stops while the machine is suspended, so a diary
+  left open and the lid shut stayed open — the timer woke up believing the
+  last keystroke had just happened, and closing the lid is the most
+  ordinary way there is of leaving a terminal. Idleness is read off the
+  wall clock as well now, and whichever says more wins, so a clock shoved
+  backwards still cannot hold the lock off either.
+
 ### Added
 
 - **The editor moves a paragraph at a time.** <kbd>ctrl</kbd> + the up and

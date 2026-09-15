@@ -171,7 +171,8 @@ your settings and nothing about what you wrote.
 
 Zecret locks itself after fifteen minutes without a keystroke, and asks for
 your password again — press <kbd>ctrl</kbd>+<kbd>l</kbd> to do it yourself
-on the way out of the room. It works while you are writing, too, and saves
+on the way out of the room. Suspending the machine counts as being away, so
+a laptop closed with the diary open comes back to the lock screen. It works while you are writing, too, and saves
 the day before locking it away: the alternative would be a question sitting
 on the screen with the diary open behind it. A half-written entry holds the
 *timer* off rather than being thrown away by it. Change the wait, or turn

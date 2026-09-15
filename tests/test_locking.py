@@ -13,6 +13,12 @@ Required coverage:
       one that cannot save stays put with the reason.
     - Unlocking again works, and comes back to the entry list.
     - The idle timer locks once the wait has passed, and does not before.
+    - **A suspended machine counts as being away.** CLOCK_MONOTONIC does
+      not advance while a laptop is asleep, so a lid closed overnight used
+      to come back to a timer that thought no time had passed -- which is
+      the one case the feature is really for. Idleness is measured on both
+      clocks now, and a clock shoved backwards must still not hold the
+      lock off, which is why the monotonic one is still read at all.
     - Typing puts the wait back to the start.
     - A half-written entry holds the lock off -- and keeps holding it off
       after the writer comes back, rather than locking the instant they
@@ -43,7 +49,7 @@ import pytest
 from textual.widgets import Input, TextArea
 
 import zecret.app
-from zecret.app import ZecretApp
+from zecret.app import Instant, ZecretApp
 from zecret.models import Entry
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
@@ -82,8 +88,31 @@ async def unlock(pilot) -> None:
 
 
 def go_quiet(app: ZecretApp, minutes: float) -> None:
-    """Pretend nothing has happened for `minutes`."""
-    app.last_activity = time.monotonic() - minutes * 60
+    """Pretend nothing has happened for `minutes`, on both clocks."""
+    app.last_activity = Instant(time.monotonic() - minutes * 60, time.time() - minutes * 60)
+
+
+def go_to_sleep(app: ZecretApp, minutes: float) -> None:
+    """Pretend the machine was suspended for `minutes`.
+
+    What a suspend looks like from inside the process: the wall clock has
+    moved on while CLOCK_MONOTONIC, which does not run while the machine
+    is asleep, says the last keypress was a moment ago. The process was
+    frozen for the whole of it, so no event arrived to say otherwise.
+    """
+    app.last_activity = Instant(time.monotonic(), time.time() - minutes * 60)
+
+
+def move_the_clock_back(app: ZecretApp, minutes: float, *, hours_back: float) -> None:
+    """`minutes` of real quiet, with the wall clock shoved backwards.
+
+    An NTP correction or someone fixing the date by hand. The wall reading
+    comes out negative, so only the monotonic one can still measure this.
+    """
+    app.last_activity = Instant(
+        time.monotonic() - minutes * 60,
+        time.time() - minutes * 60 + hours_back * 3600,
+    )
 
 
 # --- what the toasts say ---------------------------------------------------
@@ -301,6 +330,56 @@ async def test_typing_puts_the_wait_back_to_the_start(diary_path):
         await pilot.pause()
 
         assert app.is_unlocked, "a keypress should have reset the clock"
+
+
+async def test_a_suspended_machine_counts_as_being_away(diary_path):
+    """A closed laptop stops CLOCK_MONOTONIC, so the timer used to come
+    back next morning believing the last keypress was a moment ago -- and
+    closing the lid is the most ordinary way there is of walking away from
+    a terminal, which is the case this whole feature exists for."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_to_sleep(app, minutes=60 * 8)
+        app.lock_if_idle()
+        await pilot.pause()
+
+        assert not app.is_unlocked, "a night of suspend should have locked the diary"
+
+
+async def test_a_short_suspend_does_not_lock(diary_path):
+    """The wall clock is read for the time it can see and not as an excuse
+    to lock early: a lid closed and opened again inside the wait is still
+    inside the wait."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_to_sleep(app, minutes=5)
+        app.lock_if_idle()
+        await pilot.pause()
+
+        assert app.is_unlocked
+
+
+async def test_a_clock_shoved_backwards_does_not_hold_the_lock_off(diary_path):
+    """The reason the monotonic clock was there in the first place, and it
+    still has to hold: the wall reading goes negative, and the diary must
+    lock on the strength of the other one rather than sit open until the
+    clock catches up."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        move_the_clock_back(app, minutes=20, hours_back=5)
+        app.lock_if_idle()
+        await pilot.pause()
+
+        assert not app.is_unlocked, "the monotonic clock should still have locked it"
 
 
 async def test_a_timeout_of_zero_never_locks(diary_path):
