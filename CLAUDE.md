@@ -348,6 +348,19 @@ patch number, not a retry. This is why `check` and `verify` run first.
   ask and nothing to promise, so it waits instead. Quitting takes the
   third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
   about who can read this.
+- **Idleness is measured on two clocks, and the longer wait wins.**
+  `Instant` in `app.py` holds a reading of each. `time.monotonic()` is
+  `CLOCK_MONOTONIC`, which does *not* advance while the machine is
+  suspended — so a laptop closed with the diary open came back to a timer
+  that believed the last keystroke had just happened, which is the one
+  case the idle lock is really for. The wall clock sees a suspend and
+  cannot be trusted alone for the opposite reason: it can be set
+  backwards, and a diary that stayed open an extra hour because of an NTP
+  correction is the same failure wearing different clothes. Taking the
+  larger of the two elapsed times is fail-closed in both directions —
+  staying unlocked needs *both* clocks to agree little time has passed.
+  Don't swap it for `CLOCK_BOOTTIME`: that fixes only the suspend half and
+  is not portable. `tests/test_locking.py` fakes each failure separately.
 - **The question about unsaved writing has three answers.** `ConfirmScreen`
   dismisses a `Choice` — `CONFIRM`, `SAVE` or `CANCEL` — and grows a third
   button whenever it is given a `save_label`. Both ways of leaving a
