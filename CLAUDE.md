@@ -36,6 +36,9 @@ update this file to match.
 - **Textual** for the TUI — use widgets/screens/CSS idiomatically; don't
   hand-roll ANSI escape codes or use `curses` directly
 - **argon2-cffi** for key derivation (Argon2id specifically, not Argon2i/d)
+- **zxcvbn** for rating a password being chosen — see `strength.py` and the
+  convention below. Pure Python, no native code; it is advisory only and
+  nothing in the crypto or storage path depends on it.
 - **cryptography** for AEAD encryption
 - **pytest** (+ `pytest-asyncio` for Textual screen tests) for testing
 - **ruff** for linting and formatting (`uv run ruff check .`,
@@ -56,6 +59,7 @@ src/zecret/
 ├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
 ├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
 ├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
+├── strength.py   # How strong a chosen password is (zxcvbn). The only place the password reaches third-party code.
 ├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock, guarded quit.
 ├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
@@ -348,6 +352,55 @@ patch number, not a retry. This is why `check` and `verify` run first.
   ask and nothing to promise, so it waits instead. Quitting takes the
   third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
   about who can read this.
+- **Idleness is measured on two clocks, and the longer wait wins.**
+  `Instant` in `app.py` holds a reading of each. `time.monotonic()` is
+  `CLOCK_MONOTONIC`, which does *not* advance while the machine is
+  suspended — so a laptop closed with the diary open came back to a timer
+  that believed the last keystroke had just happened, which is the one
+  case the idle lock is really for. The wall clock sees a suspend and
+  cannot be trusted alone for the opposite reason: it can be set
+  backwards, and a diary that stayed open an extra hour because of an NTP
+  correction is the same failure wearing different clothes. Taking the
+  larger of the two elapsed times is fail-closed in both directions —
+  staying unlocked needs *both* clocks to agree little time has passed.
+  Don't swap it for `CLOCK_BOOTTIME`: that fixes only the suspend half and
+  is not portable. `tests/test_locking.py` fakes each failure separately.
+- **A password being chosen is rated, never refused.** The two screens
+  that choose one (`UnlockScreen` when creating, `PasswordScreen`) call
+  `FormScreen.advise_on_password()` as it is typed. The diary is attacked
+  offline if the file is taken, so the password is the only thing between
+  Argon2id and a guesser — but it is the writer's diary, and Zecret does
+  not stand between them and it.
+  **Rating it honestly needs a dictionary, which is why `zxcvbn` is a
+  dependency.** Length and character classes are what a home-grown meter
+  can see and they are the wrong things to look at: `Password1234` has
+  twelve characters and three classes and is among the first few thousand
+  guesses made, while `correct horse battery staple` has one class and is
+  past anything a guesser reaches. A meter built on what is visible calls
+  the first one strong, which on a diary with no recovery is the worst
+  thing it could say. Don't replace it with a heuristic.
+  `strength.py` is the **only place the master password is handed to
+  third-party code** — one import, one call site — and that chokepoint is
+  the point of the module. Two traps live there: zxcvbn raises
+  `ValueError` past `MAX_SCORED` characters, so a plain call takes the
+  screen down on the next keystroke; and a longer password is rated on its
+  **first** `MAX_SCORED` characters rather than waved through, because a
+  password is never weaker than its own prefix but a hundred of the same
+  letter is not strong.
+  The reading goes on the **error row**, not a row of its own: that row
+  is fixed at `height: 1`, which is what protects the password dialog's
+  fit in a 24-row terminal, and so an over-long sentence is *cut off*
+  rather than wrapped. The create screen's card is the narrower of the two
+  and leaves 54 columns, so `rate()` is handed the row's measured width
+  and drops back to shorter advice rather than truncating;
+  `tests/test_password_screen.py` measures both rows rather than trusting
+  a number, and `tests/test_strength.py` holds the invariant by property.
+  The `-advice` class is styling and bookkeeping at once — it marks the
+  line as withdrawable, so clearing the reading cannot clear an error that
+  a rejected attempt put there a moment before emptying the fields.
+  `-advice-strong` rides with it for a password that needs nothing said.
+  Amber (`$text-warning`) and then green, never `$error`: nothing has gone
+  wrong and nothing is being refused.
 - **The question about unsaved writing has three answers.** `ConfirmScreen`
   dismisses a `Choice` — `CONFIRM`, `SAVE` or `CANCEL` — and grows a third
   button whenever it is given a `save_label`. Both ways of leaving a
@@ -492,9 +545,14 @@ patch number, not a retry. This is why `check` and `verify` run first.
   *diary* — save it, lock it, cover it, go back. Everything about the
   writing itself lives
   on `DiaryTextArea`, which is Textual's `TextArea` plus the keys it is
-  missing: `ctrl+home` / `ctrl+end` for the two ends of the entry, and
-  `ctrl+a` rebound from readline's "start of line" (which `home` still
-  does) to select-all, where every other editor puts it. That split is
+  missing: `ctrl+home` / `ctrl+end` for the two ends of the entry and
+  `ctrl+shift+home` / `ctrl+shift+end` to select to them, `ctrl+up` /
+  `ctrl+down` for a paragraph at a time with the shift spellings
+  selecting as they go, and `ctrl+a` rebound from readline's "start of
+  line" (which `home` still does) to select-all, where every other editor
+  puts it. A paragraph is a line of the *document*, not of the screen:
+  soft wrap is on, so the row the cursor is drawn on is a fragment of a
+  sentence and the plain arrows already move by one. That split is
   what keeps them off the help popup and the key bar, both of which are
   generated from screen `BINDINGS` — and it is the right answer rather
   than a trick, since the popup does not list `ctrl+z`, `ctrl+k` or the
@@ -504,6 +562,21 @@ patch number, not a retry. This is why `check` and `verify` run first.
   it does something to the diary. The same split is why `MonthCalendar`
   carries the arrow and page keys, and why the date field's `down` lives
   on a `DateInput` subclass rather than on `DatePromptScreen`.
+- **Moving by a word stops at word ends going right and word starts going
+  left.** That asymmetry looks like a bug and is the convention on this
+  platform — VS Code binds the pair as `cursorWordEndRight` and
+  `cursorWordStartLeft`, and GTK, readline's `alt+f` and Firefox on Linux
+  all stop at the end too. Don't "fix" it by making the two retrace each
+  other. What each key does have to be is consistent with itself, and
+  TextArea's own rule is not: it takes the next change of character class,
+  which after a run of punctuation falls at the *start* of the following
+  word rather than at the end of the mark, so `It rained. Then` stopped at
+  `It rained. |Then` and going left over `a *strong*` stopped a cell short
+  of the asterisk. `DiaryTextArea` overrides both
+  `get_cursor_word_right_location` and `get_cursor_word_left_location` to
+  take a run of same-class characters whole, with whitespace as a class of
+  its own — which is the whole of the fix, since it is the third class
+  that stops punctuation swallowing the space beside it.
 - `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
   which returns a new instance; `storage.py` detects changes by comparing
   entry references across a save, so in-place mutation would break it.

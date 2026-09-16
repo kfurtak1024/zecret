@@ -85,6 +85,24 @@ Zecret says as much on the screen that asks you to choose one, and again in
 the dialog that changes it later — in red, where it cannot be mistaken for
 small print.
 
+It also rates the password as you type it, on both screens where one is
+chosen:
+
+```
+▰▱▱▱  Weak — this is a very common password.
+▰▰▰▰  Strong
+```
+
+Your diary file is guessed at offline if it is ever taken, with nothing to
+slow an attacker down but the password itself, so the rating is the one
+piece of feedback worth having. It is a reading and not a rule: Zecret will
+not refuse you your own diary over it.
+
+The rating comes from [zxcvbn](https://github.com/dropbox/zxcvbn), which
+scores against lists of real passwords, words, names and keyboard runs
+rather than counting characters — because counting characters calls
+`Password1234` strong, and it is one of the first things anyone guesses.
+
 ## Using it
 
 <div align="center">
@@ -171,7 +189,8 @@ your settings and nothing about what you wrote.
 
 Zecret locks itself after fifteen minutes without a keystroke, and asks for
 your password again — press <kbd>ctrl</kbd>+<kbd>l</kbd> to do it yourself
-on the way out of the room. It works while you are writing, too, and saves
+on the way out of the room. Suspending the machine counts as being away, so
+a laptop closed with the diary open comes back to the lock screen. It works while you are writing, too, and saves
 the day before locking it away: the alternative would be a question sitting
 on the screen with the diary open behind it. A half-written entry holds the
 *timer* off rather than being thrown away by it. Change the wait, or turn
@@ -224,9 +243,12 @@ room for so much — <kbd>?</kbd> lists everything.
 
 Inside a day, the editor answers to the usual text-editing keys, including
 <kbd>ctrl</kbd>+<kbd>home</kbd>/<kbd>ctrl</kbd>+<kbd>end</kbd> for the two
-ends of the entry and <kbd>ctrl</kbd>+<kbd>a</kbd> to select all of it.
-Those are not listed under <kbd>?</kbd>: it is a page about the diary, and
-they mean here what they mean in every other editor.
+ends of the entry, <kbd>ctrl</kbd>+<kbd>&uarr;</kbd>/<kbd>ctrl</kbd>+<kbd>&darr;</kbd>
+to move a paragraph at a time, <kbd>ctrl</kbd>+<kbd>&larr;</kbd>/<kbd>ctrl</kbd>+<kbd>&rarr;</kbd>
+to move a word at a time, and <kbd>ctrl</kbd>+<kbd>a</kbd> to select all of
+it. Holding <kbd>shift</kbd> as well takes the writing with you. Those are
+not listed under <kbd>?</kbd>: it is a page about the diary, and they mean
+here what they mean in every other editor.
 
 ## How it works
 

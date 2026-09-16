@@ -16,6 +16,11 @@ Required coverage:
     - Choosing a password says, in as many words, that forgetting it loses
       the diary. Only where one is being chosen: the unlock screen asks
       for a password that already exists and has nothing to warn about.
+    - A password being chosen is rated as it is typed, and is then
+      accepted whatever the rating. The diary is the writer's and Zecret
+      does not refuse them entry to it. The reading goes away when the
+      field is emptied, and an error outranks it. Nothing is rated on an
+      existing diary, where the password is recalled rather than chosen.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
 from zecret.screens.unlock import UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
+from zecret.strength import FILLED, HOLLOW
 
 PASSWORD = "correct horse battery staple"
 
@@ -358,3 +364,84 @@ async def test_the_password_is_cleared_after_a_file_level_failure(diary_path):
         diary_path.unlink()
         await submit(pilot, PASSWORD)
         assert app.screen.query_one("#password", Input).value == ""
+
+
+# --- how strong the password is ------------------------------------------
+
+
+def advice_line(app: ZecretApp) -> Label:
+    return app.screen.query_one("#unlock-error", Label)
+
+
+async def test_a_weak_password_is_rated_as_it_is_typed(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        app.screen.query_one("#password", Input).value = "hunter2"
+        await pilot.pause()
+
+        shown = str(advice_line(app).content)
+        assert shown.startswith(f"{FILLED}{HOLLOW * 3}"), shown
+        assert "Weak" in shown
+
+
+async def test_a_passphrase_is_rated_strong(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        app.screen.query_one("#password", Input).value = "correct horse battery staple"
+        await pilot.pause()
+
+        line = advice_line(app)
+        assert str(line.content) == f"{FILLED * 4}  Strong"
+        assert line.has_class("-advice-strong"), "a strong password should not stay amber"
+
+
+async def test_the_rating_goes_away_when_the_field_is_emptied(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        field = app.screen.query_one("#password", Input)
+        field.value = "hunter2"
+        await pilot.pause()
+        field.value = ""
+        await pilot.pause()
+
+        assert str(advice_line(app).content) == ""
+        assert not advice_line(app).has_class("-advice")
+
+
+async def test_a_weak_password_is_still_accepted(diary_path):
+    """A reading, not a rule: Zecret has no business refusing someone
+    their own diary over the password they chose for it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, "abc", "abc")
+
+        assert app.diary is not None
+        assert diary_path.exists()
+        assert DiaryFile.unlock(diary_path, "abc")[0] is not None
+
+
+async def test_nothing_is_rated_on_an_existing_diary(diary_path):
+    """The password is being recalled, not chosen. A rating would be
+    advice nobody can act on, and a remark about the diary to whoever is
+    looking at the screen."""
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        app.screen.query_one("#password", Input).value = "abc"
+        await pilot.pause()
+
+        assert str(advice_line(app).content) == ""
+
+
+async def test_a_real_error_takes_the_line_back_from_the_rating(diary_path):
+    """Something that has gone wrong outranks a reading -- and the refusal
+    empties the fields, which arrives here as another change a moment
+    later and must not quietly wipe the error."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, "abc", "xyz")
+
+        line = advice_line(app)
+        assert str(line.content) == "Passwords do not match."
+        assert not line.has_class("-advice")
+        assert not line.has_class("-advice-strong")

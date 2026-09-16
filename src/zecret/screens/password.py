@@ -89,6 +89,16 @@ class PasswordScreen(ModalScreen[None], FormScreen):
     def value_of(self, field: str) -> str:
         return self.query_one(f"#{field}", Input).value
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Mention a short password while it is being chosen.
+
+        The new one only. The current password is being recalled rather
+        than chosen, and the confirmation is a copy of a field that has
+        already been spoken about.
+        """
+        if event.input.id == "new":
+            self.advise_on_password(event.value)
+
     async def on_input_submitted(self, _event: Input.Submitted) -> None:
         """Enter in any of the three fields submits the change.
 

@@ -11,6 +11,13 @@ Required coverage:
     - A diary of several years redraws the entry list in about a second,
       not in tens of seconds.
     - The same for the search results, which rebuild on every keystroke.
+    - Moving by a word crosses an unbroken run of characters in linear
+      time. The same shape of bug as the two above and it arrived the same
+      way: the obvious spelling of "the last run of same-class characters"
+      is a regex searched backwards over the line, which retries from every
+      start position inside the run and is quadratic in its length. Prose
+      never showed it, because the runs are short; a pasted URL or base64
+      blob on one line took eight seconds per keypress, on the event loop.
 
 This is a stopwatch, which is not the usual way to pin down complexity --
 the tidier test compares the time at two sizes and asserts the curve is not
@@ -45,10 +52,12 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
+from textual.document._document import Selection
 from textual.widgets import Input
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
+from zecret.screens.editor import DiaryTextArea
 from zecret.screens.search import SearchScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
@@ -142,3 +151,41 @@ async def test_a_long_diary_still_redraws_quickly(tmp_path: Path):
 
 def pretty(times: dict[str, float]) -> str:
     return ", ".join(f"{screen} {seconds:.2f}s" for screen, seconds in sorted(times.items()))
+
+
+# --- moving by a word over an unbroken run ---------------------------------
+
+#: One line with no space in it, of the kind a diary gets by pasting.
+#: tools/seed_dev_diary.py keeps a shape like this in EDGE_CASES on
+#: purpose, which is how it reaches the editor at all.
+RUN_LENGTH = 40_000
+
+#: Both directions over that run, together. A linear walk does this in
+#: under a millisecond; the quadratic search this guards against took about
+#: eight seconds for the leftward half alone, so anything in between is
+#: still a regression and the gap is wide enough that no machine closes it.
+WORD_CEILING = 1.0
+
+
+def test_moving_by_a_word_over_a_long_run_is_not_quadratic() -> None:
+    """Every keypress of ctrl+left or ctrl+right asks this question, and it
+    is asked on the event loop, so the whole TUI waits on the answer.
+
+    Checked on the two methods rather than through a Pilot: what regressed
+    is the cost of the lookup itself, and driving a keypress would add a
+    screen's worth of work to the clock for nothing.
+    """
+    line = "x" * RUN_LENGTH + "  end"
+    text_area = DiaryTextArea(line)
+
+    started = time.perf_counter()
+    text_area.selection = Selection((0, len(line)), (0, len(line)))
+    text_area.get_cursor_word_left_location()
+    text_area.selection = Selection((0, 0), (0, 0))
+    text_area.get_cursor_word_right_location()
+    taken = time.perf_counter() - started
+
+    assert taken < WORD_CEILING, (
+        f"crossing a {RUN_LENGTH:,}-character run took {taken:.2f}s, which is the "
+        "quadratic backtracking a regex searched from position 0 brings back"
+    )

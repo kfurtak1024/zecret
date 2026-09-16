@@ -50,6 +50,7 @@ from textual.geometry import Region
 from textual.reactive import reactive
 from textual.strip import Strip
 from textual.widgets import Label, TextArea
+from textual.widgets.text_area import Location
 
 from zecret.models import Entry
 from zecret.screens.base import UNSAVED_CHANGES, FormScreen, format_day_long, save_error
@@ -85,6 +86,17 @@ BAR = "▆"
 #: mark has to be cheap to reach for -- and because it is the one people
 #: already make by hand in a notebook.
 STRONG = "*"
+
+
+def _is_word(character: str) -> bool:
+    """Whether `character` is one that words are made of.
+
+    Exactly the set `\\w` matches -- Python defines that as str.isalnum()
+    plus the underscore -- written out because the two keys that move by a
+    word walk the line themselves rather than pattern-matching it. See
+    DiaryTextArea.get_cursor_word_left_location for why they have to.
+    """
+    return character.isalnum() or character == "_"
 
 
 def word_runs(line: str) -> list[tuple[int, int]]:
@@ -226,6 +238,12 @@ class DiaryTextArea(TextArea):
     keys themselves are ordinary; what is not ordinary is that Textual
     leaves them out, so they are put back rather than invented.
 
+    Three gaps get filled that way -- the two ends of the entry, the
+    selecting twins of the movement keys that had none, and a paragraph at
+    a time -- and one key gets corrected rather than added: ctrl+right
+    stopped in a different place after punctuation than it did after a
+    word. See get_cursor_word_right_location.
+
     Masking is the other thing here, and it is the screen's to switch on
     (ctrl+r) because it is Zecret's own idea rather than an editor's.
     Emphasis is the third, and needs no key at all: a phrase between
@@ -273,6 +291,25 @@ class DiaryTextArea(TextArea):
         # its bottom.
         Binding("ctrl+home", "document_start", "Start of the entry", show=False),
         Binding("ctrl+end", "document_end", "End of the entry", show=False),
+        # Every other way of moving in the editor has a shift twin that
+        # selects on the way -- home/shift+home, ctrl+left/ctrl+shift+left
+        # -- and the two keys above were the only pair without one, being
+        # the only pair this widget added. Selecting to the top of a long
+        # day was therefore the one selection that had to be made with the
+        # mouse.
+        Binding("ctrl+shift+home", "document_start(True)", "Select to the start", show=False),
+        Binding("ctrl+shift+end", "document_end(True)", "Select to the end", show=False),
+        # Paragraph movement. `down` moves by *wrapped* row here, because
+        # soft wrap is on and a paragraph of prose is one long line in the
+        # document -- so there was no key that moved a paragraph at a
+        # time, which in a diary is the unit anyone actually navigates by.
+        # ctrl+up/ctrl+down is where GTK and Word both put it.
+        Binding("ctrl+up", "cursor_paragraph_up", "Previous paragraph", show=False),
+        Binding("ctrl+down", "cursor_paragraph_down", "Next paragraph", show=False),
+        Binding("ctrl+shift+up", "cursor_paragraph_up(True)", "Select a paragraph up", show=False),
+        Binding(
+            "ctrl+shift+down", "cursor_paragraph_down(True)", "Select a paragraph down", show=False
+        ),
         # Overrides TextArea's own ctrl+a, which is readline's "start of
         # line" -- a pairing with ctrl+e that made sense when a text field
         # was one line long. Selecting the whole entry is what the chord
@@ -482,13 +519,150 @@ class DiaryTextArea(TextArea):
 
     # --- getting around ----------------------------------------------------
 
-    def action_document_start(self) -> None:
-        """ctrl+home: to the first character of the day's text."""
-        self.move_cursor((0, 0))
+    def action_document_start(self, select: bool = False) -> None:
+        """ctrl+home: to the first character of the day's text.
 
-    def action_document_end(self) -> None:
+        With `select`, on ctrl+shift+home, taking the writing in between
+        with it.
+        """
+        self.move_cursor((0, 0), select=select)
+
+    def action_document_end(self, select: bool = False) -> None:
         """ctrl+end: to the last character of the day's text."""
-        self.move_cursor(self.document.end)
+        self.move_cursor(self.document.end, select=select)
+
+    def _written(self, row: int) -> bool:
+        """Whether `row` has anything on it but whitespace."""
+        return bool(self.document[row].strip())
+
+    def action_cursor_paragraph_up(self, select: bool = False) -> None:
+        """ctrl+up: to the top of this paragraph, or of the one above it.
+
+        A paragraph is a line of the document, not a line of the screen.
+        Soft wrap is on, so someone writing prose presses enter between
+        paragraphs and nowhere else, and the row the cursor is drawn on is
+        a fragment of a sentence rather than a unit of anything. Blank
+        lines are stepped over rather than stopped on, so the key behaves
+        the same for a diary written with a blank line between paragraphs
+        and one written without.
+
+        Landing at the start of the current paragraph before leaving it is
+        what ctrl+left already does with a word, and is what makes the key
+        useful from the middle of a long one.
+        """
+        row, column = self.cursor_location
+        if column > 0:
+            self.move_cursor((row, 0), select=select)
+            return
+        previous = row - 1
+        while previous >= 0 and not self._written(previous):
+            previous -= 1
+        self.move_cursor((max(previous, 0), 0), select=select)
+
+    def action_cursor_paragraph_down(self, select: bool = False) -> None:
+        """ctrl+down: to the start of the next paragraph.
+
+        Past the end of the last one it goes to the end of the day rather
+        than refusing to move, so the key is never dead -- the same
+        bargain MonthCalendar's cursor makes when it clamps to today.
+        """
+        row, _ = self.cursor_location
+        following = row + 1
+        while following < self.document.line_count and not self._written(following):
+            following += 1
+        if following >= self.document.line_count:
+            self.move_cursor(self.document.end, select=select)
+            return
+        self.move_cursor((following, 0), select=select)
+
+    def get_cursor_word_right_location(self) -> Location:
+        """Where ctrl+right goes: the end of the next word.
+
+        End-of-word rather than start-of-next-word is deliberate and is
+        the convention this widget is surrounded by -- VS Code binds the
+        pair as `cursorWordEndRight` and `cursorWordStartLeft`, and GTK,
+        readline's `alt+f` and Firefox on Linux all stop at the end too.
+        The asymmetry with ctrl+left reads as a bug and is not one.
+
+        What *was* a bug is what TextArea does instead of it. Its rule is
+        "the next change of character class, having skipped leading
+        whitespace", which lands on a word's end only because a word is
+        usually followed by a space. After punctuation the first change of
+        class is the space-to-letter one at the *start* of the next word,
+        so the cursor overshot past the space:
+
+            It rained. Then  ->  `It rained. |Then`, not `It rained.|`
+
+        -- which put the landing point somewhere different after every
+        full stop, and charged two presses to leave a word that ended a
+        sentence. Taking the run of same-class characters whole fixes it,
+        with whitespace as a class of its own so that it can end a run of
+        punctuation as well as begin one.
+        """
+        row, column = self.cursor_location
+        line = self.document[row]
+        if row < self.document.line_count - 1 and column == len(line):
+            return row + 1, 0
+        index = column
+        while index < len(line) and line[index].isspace():
+            index += 1
+        if index == len(line):
+            return row, len(line)
+        word = _is_word(line[index])
+        while index < len(line) and not line[index].isspace() and _is_word(line[index]) == word:
+            index += 1
+        return row, index
+
+    def get_cursor_word_left_location(self) -> Location:
+        """Where ctrl+left goes: the start of the word before the cursor.
+
+        Start-of-word is the right half of the pair -- see
+        get_cursor_word_right_location for why the two are allowed to
+        disagree about which end of a word they stop at, and why that is
+        not the asymmetry worth fixing.
+
+        The one that was worth fixing is here too, mirrored. TextArea
+        strips *trailing* whitespace and then takes the last change of
+        character class, which for a run of punctuation with a space in
+        front of it falls at the start of the space rather than at the
+        start of the punctuation:
+
+            a *strong*  ->  `a| *strong*`, not `a |*strong*`
+
+        So going left over an emphasis mark stopped a cell short of it,
+        while going left over the same mark with no space in front landed
+        on it -- the same key, two different places, for a difference
+        nobody typing can see. Reading the run backwards with whitespace
+        as a class of its own gives the mark's own start both times.
+
+        Walked by hand rather than matched by a pattern, and that is a
+        correctness matter rather than a style one. The obvious spelling
+        of "the last run of same-class characters" is a regex anchored at
+        the end (`(\\w+|[^\\w\\s]+)\\s*\\Z`) searched over the line up to the
+        cursor -- but `search` tries every start position, and inside a
+        long run each one matches the whole run, fails the anchor and
+        gives the characters back one at a time. That is quadratic in the
+        length of the run: an unbroken 40,000-character line -- a pasted
+        URL, a base64 blob, the kind of thing tools/seed_dev_diary.py
+        keeps in EDGE_CASES on purpose -- took eight seconds per keypress,
+        on the event loop, with ctrl+backspace hanging the same way
+        because it asks this same question. Ordinary prose never showed
+        it, because the runs are short. Stepping backwards from the cursor
+        looks at each character once and stops at the boundary.
+        """
+        row, column = self.cursor_location
+        if row > 0 and column == 0:
+            return row - 1, len(self.document[row - 1])
+        line = self.document[row]
+        index = column
+        while index > 0 and line[index - 1].isspace():
+            index -= 1
+        if index == 0:
+            return row, 0
+        word = _is_word(line[index - 1])
+        while index > 0 and not line[index - 1].isspace() and _is_word(line[index - 1]) == word:
+            index -= 1
+        return row, index
 
 
 class EditorScreen(FormScreen):

@@ -22,6 +22,27 @@ Required coverage:
       count as moving rather than as editing.
     - ctrl+a selects the whole entry, the way it does everywhere else --
       Textual binds it to "start of line", which home still does.
+    - ctrl+shift+home and ctrl+shift+end select to the two ends of the
+      entry. They were the only movement keys in the editor with no
+      selecting twin, being the only ones this widget added.
+    - ctrl+up and ctrl+down move a paragraph at a time, with the shift
+      spellings selecting as they go. Soft wrap makes a paragraph one long
+      line of the document, so `down` moves by a fragment of a sentence
+      and nothing moved by the unit prose is read in. A blank line is the
+      gap between paragraphs rather than one of its own, and going down
+      past the last paragraph reaches the end of the day rather than doing
+      nothing. Like the two ends of the entry, none of it counts as an
+      edit.
+    - ctrl+right stops at the end of each word, and stops in the same
+      place after punctuation as it does after a word. Textual's rule is
+      "the next change of character class", which after a full stop is the
+      start of the *following* word -- so it overshot the space, and
+      leaving a word that ended a sentence cost two presses. Right lands
+      on token ends and left on token starts, which is the convention
+      here (VS Code's cursorWordEndRight / cursorWordStartLeft) and is not
+      the asymmetry worth fixing -- what each key has to be is consistent
+      with itself. ctrl+left has the same fault mirrored: it stops a cell
+      short of a punctuation mark that has a space in front of it.
     - A long day is wrapped in the frame it first appears in. Textual
       wraps on the Resize message, which arrives after the paint, so
       opening an entry used to show one frame of unwrapped text.
@@ -478,6 +499,316 @@ async def test_home_still_goes_to_the_start_of_the_line(diary_path):
         await pilot.pause()
         assert text_area.cursor_location == (1, 0)
         assert text_area.selected_text == ""
+
+
+async def test_ctrl_shift_home_and_end_select_to_the_ends_of_the_entry(diary_path):
+    """The two keys DiaryTextArea adds were the only movement keys in the
+    editor with no selecting twin, so selecting up to the top of a long
+    day needed the mouse."""
+    seed(diary_path, Entry.new(YESTERDAY, "A body\nover two lines"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+
+        text_area.move_cursor((1, 5))
+        await pilot.press("ctrl+shift+home")
+        await pilot.pause()
+        assert text_area.cursor_location == (0, 0)
+        assert text_area.selected_text == "A body\nover "
+
+        text_area.move_cursor((0, 2))
+        await pilot.press("ctrl+shift+end")
+        await pilot.pause()
+        assert text_area.cursor_location == (1, len("over two lines"))
+        assert text_area.selected_text == "body\nover two lines"
+
+        assert app.screen.body_text == "A body\nover two lines"
+        assert app.screen.modified is False
+
+
+# --- moving a paragraph at a time ------------------------------------------
+
+#: Three paragraphs, the first two separated by a blank line and the last
+#: two by nothing but a newline -- both of the ways a diary gets written,
+#: so one body covers both.
+PARAGRAPHS = "First paragraph.\n\nSecond paragraph.\nThird paragraph."
+
+
+async def test_ctrl_down_moves_to_the_start_of_the_next_paragraph(diary_path):
+    """Soft wrap means `down` moves a wrapped row, which in prose is a
+    fragment of a sentence. Nothing moved by the unit anyone reads by."""
+    seed(diary_path, Entry.new(YESTERDAY, PARAGRAPHS))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((0, 0))
+
+        await pilot.press("ctrl+down")
+        await pilot.pause()
+        assert text_area.cursor_location == (2, 0)
+
+        await pilot.press("ctrl+down")
+        await pilot.pause()
+        assert text_area.cursor_location == (3, 0)
+
+
+async def test_ctrl_down_past_the_last_paragraph_reaches_the_end_of_the_day(diary_path):
+    """Never a dead key -- the same bargain MonthCalendar's cursor makes
+    when it clamps to today rather than refusing to move."""
+    seed(diary_path, Entry.new(YESTERDAY, PARAGRAPHS))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((3, 0))
+
+        await pilot.press("ctrl+down")
+        await pilot.pause()
+        assert text_area.cursor_location == (3, len("Third paragraph."))
+
+        await pilot.press("ctrl+down")
+        await pilot.pause()
+        assert text_area.cursor_location == (3, len("Third paragraph."))
+
+
+async def test_ctrl_up_reaches_the_top_of_this_paragraph_before_leaving_it(diary_path):
+    """What ctrl+left already does with a word, and what makes the key
+    worth pressing from the middle of a long paragraph."""
+    seed(diary_path, Entry.new(YESTERDAY, PARAGRAPHS))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((3, 6))
+
+        await pilot.press("ctrl+up")
+        await pilot.pause()
+        assert text_area.cursor_location == (3, 0)
+
+        await pilot.press("ctrl+up")
+        await pilot.pause()
+        assert text_area.cursor_location == (2, 0)
+
+
+async def test_ctrl_up_steps_over_the_blank_line_between_paragraphs(diary_path):
+    """A blank line is the gap between two paragraphs, not a paragraph --
+    so the key behaves the same whichever way the diary is written."""
+    seed(diary_path, Entry.new(YESTERDAY, PARAGRAPHS))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((2, 0))
+
+        await pilot.press("ctrl+up")
+        await pilot.pause()
+        assert text_area.cursor_location == (0, 0)
+
+        await pilot.press("ctrl+up")
+        await pilot.pause()
+        assert text_area.cursor_location == (0, 0)
+
+
+async def test_ctrl_shift_up_and_down_take_the_paragraph_with_them(diary_path):
+    """Every other way of moving has a shift twin that selects on the way;
+    ctrl+shift+up and ctrl+shift+down did nothing at all."""
+    seed(diary_path, Entry.new(YESTERDAY, PARAGRAPHS))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+
+        text_area.move_cursor((0, 0))
+        await pilot.press("ctrl+shift+down")
+        await pilot.pause()
+        assert text_area.selected_text == "First paragraph.\n\n"
+
+        text_area.move_cursor((3, 5))
+        await pilot.press("ctrl+shift+up")
+        await pilot.pause()
+        assert text_area.selected_text == "Third"
+
+
+async def test_moving_by_paragraph_does_not_change_the_text(diary_path):
+    """Movement only, like the two ends of the entry: a key that quietly
+    counted as an edit would put the discard question in front of someone
+    who had merely looked."""
+    seed(diary_path, Entry.new(YESTERDAY, PARAGRAPHS))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        for key in ("ctrl+down", "ctrl+down", "ctrl+shift+up", "ctrl+up"):
+            await pilot.press(key)
+        await pilot.pause()
+        assert app.screen.body_text == PARAGRAPHS
+        assert app.screen.modified is False
+
+
+# --- moving a word at a time -----------------------------------------------
+
+
+async def test_ctrl_right_stops_at_the_end_of_each_word(diary_path):
+    """End-of-word rather than start-of-next-word is the convention this
+    editor is surrounded by: VS Code's ctrl+right is cursorWordEndRight,
+    and GTK, readline's alt+f and Firefox on Linux all stop there too."""
+    line = "hello world foo, bar baz"
+    seed(diary_path, Entry.new(YESTERDAY, line))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((0, 0))
+
+        stops = []
+        for _ in range(6):
+            await pilot.press("ctrl+right")
+            await pilot.pause()
+            stops.append(text_area.cursor_location[1])
+
+        assert [line[:stop] for stop in stops] == [
+            "hello",
+            "hello world",
+            "hello world foo",
+            "hello world foo,",
+            "hello world foo, bar",
+            "hello world foo, bar baz",
+        ]
+
+
+async def test_ctrl_right_does_not_overshoot_the_space_after_punctuation(diary_path):
+    """Textual stops at the next change of character class, which after a
+    full stop is the start of the *following* word -- so the cursor landed
+    somewhere different after every sentence, and leaving a word that
+    ended one cost two presses instead of one."""
+    line = "It rained. Then it stopped."
+    seed(diary_path, Entry.new(YESTERDAY, line))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((0, len("It rained")))
+
+        await pilot.press("ctrl+right")
+        await pilot.pause()
+        assert line[: text_area.cursor_location[1]] == "It rained."
+
+        await pilot.press("ctrl+right")
+        await pilot.pause()
+        assert line[: text_area.cursor_location[1]] == "It rained. Then"
+
+
+async def test_ctrl_right_lands_on_token_ends_and_ctrl_left_on_token_starts(diary_path):
+    """The two do not retrace each other, and are not meant to: right is
+    word-end and left is word-start, which is the asymmetry VS Code, GTK
+    and readline all have. What each of them must be is consistent with
+    itself -- the same kind of place every press, whether the token it
+    just crossed was a word or an emphasis mark."""
+    line = "a *strong* phrase here"
+    seed(diary_path, Entry.new(YESTERDAY, line))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+
+        text_area.move_cursor((0, 0))
+        forwards = []
+        for _ in range(6):
+            await pilot.press("ctrl+right")
+            await pilot.pause()
+            forwards.append(text_area.cursor_location[1])
+        assert [line[:stop] for stop in forwards] == [
+            "a",
+            "a *",
+            "a *strong",
+            "a *strong*",
+            "a *strong* phrase",
+            "a *strong* phrase here",
+        ]
+
+        text_area.move_cursor((0, len(line)))
+        backwards = []
+        for _ in range(6):
+            await pilot.press("ctrl+left")
+            await pilot.pause()
+            backwards.append(text_area.cursor_location[1])
+        assert [line[stop:] for stop in backwards] == [
+            "here",
+            "phrase here",
+            "* phrase here",
+            "strong* phrase here",
+            "*strong* phrase here",
+            "a *strong* phrase here",
+        ]
+
+
+async def test_ctrl_left_does_not_stop_short_of_punctuation_after_a_space(diary_path):
+    """The mirror of what ctrl+right was doing. TextArea takes the last
+    change of character class, which for a mark with a space in front of
+    it falls at the start of the space -- so going left over an emphasis
+    mark stopped a cell before it, while going left over the same mark
+    with nothing in front landed on it."""
+    line = "a *strong* phrase"
+    seed(diary_path, Entry.new(YESTERDAY, line))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+        text_area.move_cursor((0, len("a *")))
+
+        await pilot.press("ctrl+left")
+        await pilot.pause()
+        assert line[text_area.cursor_location[1] :] == "*strong* phrase"
+
+        await pilot.press("ctrl+left")
+        await pilot.pause()
+        assert text_area.cursor_location == (0, 0)
+
+
+async def test_ctrl_shift_right_and_left_select_by_word(diary_path):
+    """The selecting twins Textual does bind, kept honest against the new
+    landing points."""
+    seed(diary_path, Entry.new(YESTERDAY, "hello world foo"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        text_area = app.screen.query_one("#body", TextArea)
+
+        text_area.move_cursor((0, 0))
+        await pilot.press("ctrl+shift+right")
+        await pilot.press("ctrl+shift+right")
+        await pilot.pause()
+        assert text_area.selected_text == "hello world"
+
+        text_area.move_cursor((0, len("hello world foo")))
+        await pilot.press("ctrl+shift+left")
+        await pilot.pause()
+        assert text_area.selected_text == "foo"
 
 
 # --- how the day is drawn --------------------------------------------------

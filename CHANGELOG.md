@@ -10,6 +10,56 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-16
+
+### Security
+
+- **A closed laptop now counts as walking away.** The idle lock measured
+  quiet with a clock that stops while the machine is suspended, so a diary
+  left open and the lid shut stayed open — the timer woke up believing the
+  last keystroke had just happened, and closing the lid is the most
+  ordinary way there is of leaving a terminal. Idleness is read off the
+  wall clock as well now, and whichever says more wins, so a clock shoved
+  backwards still cannot hold the lock off either.
+
+### Added
+
+- **The editor moves a paragraph at a time.** <kbd>ctrl</kbd> + the up and
+  down arrows step between paragraphs, which is the unit a diary is
+  actually read in — the plain arrows move by a line of the *screen*, and
+  in a wrapped paragraph that is a fragment of a sentence. Going down past
+  the last paragraph reaches the end of the day rather than doing nothing.
+- **Selecting reaches the ends of the entry.** <kbd>ctrl</kbd> +
+  <kbd>shift</kbd> + <kbd>home</kbd> and <kbd>end</kbd> take the writing
+  with them, the way holding shift already did with every other way of
+  moving. <kbd>ctrl</kbd> + <kbd>shift</kbd> + the up and down arrows
+  select a paragraph at a time.
+- **The master password is rated as you choose it.** Both screens where
+  one is picked now show how strong it is, with a bar and a word and,
+  where there is something specific to say, the reason — `▰▱▱▱  Weak —
+  this is a very common password.` Your diary is guessed at offline if the
+  file is ever taken, with nothing to slow that down but the password
+  itself. A reading and not a rule: Zecret will not refuse you your own
+  diary over the password you picked for it, and nothing is said about the
+  password of a diary you are merely unlocking.
+
+  The rating comes from zxcvbn, a new dependency, because the alternative
+  misleads: counting characters and character classes calls `Password1234`
+  strong and `correct horse battery staple` mediocre, which is backwards,
+  and on a diary with no password recovery that is the worst thing to be
+  wrong about.
+
+### Fixed
+
+- **Moving a word at a time now stops in the same place every time.**
+  <kbd>ctrl</kbd> + the left and right arrows landed somewhere different
+  depending on whether the thing just crossed was a word or a piece of
+  punctuation: going right over a full stop overshot the space after it
+  and left the cursor in front of the next word, so leaving a word that
+  ended a sentence took two presses instead of one, and going left over an
+  asterisk stopped a cell short of it. Both now stop where the word or the
+  mark itself ends.
+
 ## [0.6.0] - 2026-09-13
 
 ### Added
@@ -348,7 +398,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kfurtak1024/zecret/compare/v0.4.0...v0.5.0
