@@ -38,7 +38,6 @@ mask and the colour on an *emphasised phrase*.
 from __future__ import annotations
 
 import datetime as dt
-import re
 from typing import ClassVar, NamedTuple
 
 from rich.cells import cell_len
@@ -88,19 +87,16 @@ BAR = "▆"
 #: already make by hand in a notebook.
 STRONG = "*"
 
-#: How far ctrl+right goes: over any leading whitespace, then over one
-#: whole run of same-class characters -- letters and digits, or
-#: punctuation. Three classes rather than two, with whitespace its own, is
-#: the point of it: it is what stops a run of punctuation from swallowing
-#: the space after it and carrying the cursor into the following word.
-#: See DiaryTextArea.get_cursor_word_right_location.
-_WORD_RIGHT = re.compile(r"\s*(\w+|[^\w\s]+)")
 
-#: How far ctrl+left goes, read backwards from the cursor: the last whole
-#: run of same-class characters, with any whitespace after it skipped.
-#: The mirror of _WORD_RIGHT and wrong in the mirrored way without the
-#: third class -- see DiaryTextArea.get_cursor_word_left_location.
-_WORD_LEFT = re.compile(r"(\w+|[^\w\s]+)\s*\Z")
+def _is_word(character: str) -> bool:
+    """Whether `character` is one that words are made of.
+
+    Exactly the set `\\w` matches -- Python defines that as str.isalnum()
+    plus the underscore -- written out because the two keys that move by a
+    word walk the line themselves rather than pattern-matching it. See
+    DiaryTextArea.get_cursor_word_left_location for why they have to.
+    """
+    return character.isalnum() or character == "_"
 
 
 def word_runs(line: str) -> list[tuple[int, int]]:
@@ -607,8 +603,15 @@ class DiaryTextArea(TextArea):
         line = self.document[row]
         if row < self.document.line_count - 1 and column == len(line):
             return row + 1, 0
-        run = _WORD_RIGHT.match(line, column)
-        return row, run.end() if run else len(line)
+        index = column
+        while index < len(line) and line[index].isspace():
+            index += 1
+        if index == len(line):
+            return row, len(line)
+        word = _is_word(line[index])
+        while index < len(line) and not line[index].isspace() and _is_word(line[index]) == word:
+            index += 1
+        return row, index
 
     def get_cursor_word_left_location(self) -> Location:
         """Where ctrl+left goes: the start of the word before the cursor.
@@ -631,12 +634,35 @@ class DiaryTextArea(TextArea):
         on it -- the same key, two different places, for a difference
         nobody typing can see. Reading the run backwards with whitespace
         as a class of its own gives the mark's own start both times.
+
+        Walked by hand rather than matched by a pattern, and that is a
+        correctness matter rather than a style one. The obvious spelling
+        of "the last run of same-class characters" is a regex anchored at
+        the end (`(\\w+|[^\\w\\s]+)\\s*\\Z`) searched over the line up to the
+        cursor -- but `search` tries every start position, and inside a
+        long run each one matches the whole run, fails the anchor and
+        gives the characters back one at a time. That is quadratic in the
+        length of the run: an unbroken 40,000-character line -- a pasted
+        URL, a base64 blob, the kind of thing tools/seed_dev_diary.py
+        keeps in EDGE_CASES on purpose -- took eight seconds per keypress,
+        on the event loop, with ctrl+backspace hanging the same way
+        because it asks this same question. Ordinary prose never showed
+        it, because the runs are short. Stepping backwards from the cursor
+        looks at each character once and stops at the boundary.
         """
         row, column = self.cursor_location
         if row > 0 and column == 0:
             return row - 1, len(self.document[row - 1])
-        run = _WORD_LEFT.search(self.document[row], 0, column)
-        return row, run.start(1) if run else 0
+        line = self.document[row]
+        index = column
+        while index > 0 and line[index - 1].isspace():
+            index -= 1
+        if index == 0:
+            return row, 0
+        word = _is_word(line[index - 1])
+        while index > 0 and not line[index - 1].isspace() and _is_word(line[index - 1]) == word:
+            index -= 1
+        return row, index
 
 
 class EditorScreen(FormScreen):
