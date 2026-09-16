@@ -31,6 +31,7 @@ from textual.widgets import Input, Label
 
 from zecret.models import Entry
 from zecret.storage import ZecretConflictError
+from zecret.strength import NEEDS_HELP, rate
 
 if TYPE_CHECKING:
     from zecret.app import ZecretApp
@@ -53,36 +54,6 @@ NO_RECOVERY = (
     "Forget your master password and the diary is gone — there is no "
     "recovery and no back door, not even for you."
 )
-
-#: How long a master password has to be before Zecret stops mentioning it.
-#: Not a rule and not enforced -- see FormScreen.advise_on_password.
-#:
-#: Twelve because of what the diary is up against. The file is offline, so
-#: a guesser works at their own pace with no one to stop them; Argon2id at
-#: these parameters makes each guess cost about 65ms, which is what buys
-#: the length its value. Below a dozen characters that cost stops being
-#: the thing standing in the way, and the password is. Above it, an
-#: ordinary phrase of two or three words is already past anything a
-#: guesser gets through.
-COMFORTABLE_PASSWORD_LENGTH = 12
-
-#: Shown while a password being chosen is shorter than that. Advice and
-#: not a verdict: it appears as the password is typed, says what the
-#: weakness actually is, and never stops anyone pressing enter. Zecret has
-#: no business refusing someone their own diary.
-#:
-#: One line, and it has to stay one line. It is written on the error row,
-#: which is a single row fixed at `height: 1` -- so a sentence too long
-#: for it is not wrapped but *cut off* at the edge of the card, losing its
-#: end with nothing to say so. The create screen's card is the narrower of
-#: the two and leaves 54 columns; this is 49, and
-#: tests/test_password_screen.py measures both rather than trusting the
-#: number written here.
-#:
-#: Worded as advice rather than as a finding about what was just typed:
-#: it names the thing to do first, and gives the reason second rather than
-#: leading with a complaint.
-LENGTH_ADVICE = "Use a few words — short ones are guessed offline."
 
 #: Said when leaving would lose what is on the screen. One sentence for
 #: both ways of leaving -- backing out of the day and quitting the app --
@@ -311,11 +282,11 @@ class FormScreen(ZecretScreen):
         has gone wrong outranks something that merely might.
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
-        line.remove_class("-advice")
+        line.remove_class("-advice", "-advice-strong")
         line.update(message)
 
     def advise_on_password(self, password: str) -> None:
-        """Say that a password is on the short side, without refusing it.
+        """Show how strong a password being chosen is, without refusing it.
 
         Written on the error row rather than a row of its own, which is
         what keeps this free: the password dialog is sized so that the
@@ -325,20 +296,31 @@ class FormScreen(ZecretScreen):
         speaks about the last keypress, and this is about the last
         keypress.
 
+        The row's own width is measured and handed to rate(), because the
+        two screens that call this have cards of different widths and the
+        row is fixed at one line: what does not fit is cut off rather than
+        wrapped. A width of zero -- a row not laid out yet -- costs the
+        advice and keeps the bar, which is the part worth having.
+
         The `-advice` class is both the styling and the bookkeeping. It
         marks the line as carrying something that can be withdrawn
         silently, so this can clear its own message without clearing an
         error that was put there instead -- which matters because a
         rejected attempt empties the fields, and emptying a field is a
         change like any other, arriving here a moment after the error did.
+        `-advice-strong` rides along with it to colour a password that
+        needs nothing said about it.
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
-        if password and len(password) < COMFORTABLE_PASSWORD_LENGTH:
-            line.add_class("-advice")
-            line.update(LENGTH_ADVICE)
-        elif line.has_class("-advice"):
-            line.remove_class("-advice")
-            line.update("")
+        strength = rate(password, max(line.content_region.width, 0))
+        if strength is None:
+            if line.has_class("-advice"):
+                line.remove_class("-advice", "-advice-strong")
+                line.update("")
+            return
+        line.add_class("-advice")
+        line.set_class(strength.score > NEEDS_HELP, "-advice-strong")
+        line.update(strength.line())
 
     def clear_inputs(self) -> None:
         """Empty every text field.

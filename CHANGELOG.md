@@ -32,12 +32,20 @@ file matters as much as that does.
   with them, the way holding shift already did with every other way of
   moving. <kbd>ctrl</kbd> + <kbd>shift</kbd> + the up and down arrows
   select a paragraph at a time.
-- **Choosing a short master password says so, as you type it.** Your
-  diary is guessed at offline if the file is ever taken, with nothing to
-  slow that down but the length of the password, so the screens that
-  choose one now mention it while it is short and go quiet once it is
-  not. A note and not a rule — Zecret will not refuse you your own diary
-  over the password you picked for it.
+- **The master password is rated as you choose it.** Both screens where
+  one is picked now show how strong it is, with a bar and a word and,
+  where there is something specific to say, the reason — `▰▱▱▱  Weak —
+  this is a very common password.` Your diary is guessed at offline if the
+  file is ever taken, with nothing to slow that down but the password
+  itself. A reading and not a rule: Zecret will not refuse you your own
+  diary over the password you picked for it, and nothing is said about the
+  password of a diary you are merely unlocking.
+
+  The rating comes from zxcvbn, a new dependency, because the alternative
+  misleads: counting characters and character classes calls `Password1234`
+  strong and `correct horse battery staple` mediocre, which is backwards,
+  and on a diary with no password recovery that is the worst thing to be
+  wrong about.
 
 ### Fixed
 

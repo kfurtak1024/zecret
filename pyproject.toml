@@ -27,6 +27,7 @@ dependencies = [
     "textual>=8.2",
     "cryptography>=50.0.1",
     "argon2-cffi>=25.1",
+    "zxcvbn>=4.5",
 ]
 
 [project.urls]
@@ -48,6 +49,7 @@ dev = [
     "mypy>=2.3",
     "pytest-cov>=7.1",
     "hypothesis>=6.167",
+    "types-zxcvbn>=4.4",
 ]
 
 [build-system]

@@ -483,7 +483,7 @@ footer p.right { margin-left: auto; }
     <dl class="facts">
       <div>
         <dt>Key derivation</dt>
-        <dd>Argon2id — <span class="mono">time_cost 3</span>, <span class="mono">64 MiB</span>, <span class="mono">parallelism 4</span> — with a random 16-byte salt per diary. Your password is never stored; the derived key never touches disk. A short password is the one weakness that buys back, so Zecret says so as you choose one — without refusing it.</dd>
+        <dd>Argon2id — <span class="mono">time_cost 3</span>, <span class="mono">64 MiB</span>, <span class="mono">parallelism 4</span> — with a random 16-byte salt per diary. Your password is never stored; the derived key never touches disk. The password itself is the one weakness that buys back, so Zecret rates it as you choose one &mdash; against lists of real passwords, words and names rather than by counting characters, which would call <span class="mono">Password1234</span> strong. A reading, not a rule: it never refuses what you typed.</dd>
       </div>
       <div>
         <dt>Encryption</dt>

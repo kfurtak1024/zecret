@@ -121,9 +121,8 @@ PasswordScreen {
     color: $text-error;
 }
 
-/* The same row carrying advice rather than a complaint: a password being
-   chosen is on the short side, which is worth saying and is not an error.
-   Amber rather than red for exactly that reason -- nothing has gone
+/* The same row carrying a reading rather than a complaint: how strong the
+   password being chosen is. Amber rather than red -- nothing has gone
    wrong, nothing is being refused, and the form will submit on the next
    keypress whatever this says. Spending $error on it would put it in the
    company of the two things that genuinely cannot be undone, and would
@@ -132,6 +131,17 @@ PasswordScreen {
 #unlock-error.-advice,
 #password-error.-advice {
     color: $text-warning;
+}
+
+/* And green once the password needs nothing said about it, so the bar
+   filling up is answered by the colour settling rather than by the same
+   amber all the way. The third use of this green in the app, after the
+   editor's emphasis and the Save button; none of the three can be on
+   screen with another, since this one belongs to a screen that has no
+   diary open behind it or to a modal that covers the one that has. */
+#unlock-error.-advice.-advice-strong,
+#password-error.-advice.-advice-strong {
+    color: $text-success;
 }
 
 /* --- The warning about a forgotten password ----------------------------- */
