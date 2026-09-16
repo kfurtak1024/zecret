@@ -22,6 +22,9 @@ Required coverage:
       rated lower than what its first characters would score alone.
     - An empty field is not rated at all -- there is nothing yet to have
       an opinion about.
+    - A rating that cannot be made says nothing rather than guessing. The
+      fallback exists because zxcvbn raises past its own length guard, and
+      it must never fail towards "strong".
     - The line always fits the width it was built for, for any password
       and any width a card might have. The row is fixed at one line and
       clips rather than wraps, so a line that overruns loses its end with
@@ -35,9 +38,11 @@ Required coverage:
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import zecret.strength
 from zecret.strength import (
     HOLLOW,
     LABELS,
@@ -136,6 +141,19 @@ def test_an_initialism_keeps_its_capitals() -> None:
     being first comes off."""
     assert _sentence("NIST says otherwise.") == "NIST says otherwise."
     assert _sentence("This is a very common password.") == "this is a very common password."
+
+
+def test_a_rating_that_cannot_be_made_says_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If zxcvbn's own length guard ever moves under MAX_SCORED, the call
+    starts raising. Saying nothing is the safe way to be wrong: a line that
+    vanishes is a smaller failure than one claiming a password is strong
+    because the rating never ran."""
+
+    def refuses(_password: str) -> dict[str, object]:
+        raise ValueError("Password exceeds max length")
+
+    monkeypatch.setattr(zecret.strength, "zxcvbn", refuses)
+    assert rate("correct horse battery staple", NARROWEST) is None
 
 
 def test_the_bar_is_always_the_full_width() -> None:
