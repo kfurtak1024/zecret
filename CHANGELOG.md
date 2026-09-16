@@ -10,6 +10,8 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-16
+
 ### Security
 
 - **A closed laptop now counts as walking away.** The idle lock measured
@@ -396,7 +398,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kfurtak1024/zecret/compare/v0.4.0...v0.5.0
