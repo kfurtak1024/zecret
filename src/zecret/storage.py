@@ -533,7 +533,16 @@ def _atomic_write(path: Path, data: bytes) -> None:
     rename is atomic), fsyncs it, then os.replace()s it over the target. On
     any failure the temp file is removed and the existing file is left
     exactly as it was.
+
+    A symlink is followed first, and the file it points to is what gets
+    replaced. Renaming over the link itself would swap it for a regular
+    file: a diary kept in a synced or backed-up folder and linked from
+    ~/.zecret was cut loose on its first save, and every save after went to
+    a local copy while the one being synced stopped changing -- with no
+    error anywhere. Resolving it also puts the temp file beside the real
+    file, which is what keeps the rename on one filesystem.
     """
+    path = path.resolve()
     directory = path.parent
     fd, tmp_name = tempfile.mkstemp(dir=directory, prefix=f".{path.name}.", suffix=".tmp")
     tmp_path = Path(tmp_name)

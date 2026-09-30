@@ -21,6 +21,12 @@ file matters as much as that does.
 
 ### Fixed
 
+- **A diary kept behind a symlink stays there.** If `diary.enc` was a link
+  to a file somewhere else — a synced or backed-up folder, say — the first
+  save replaced the link with a file of its own, and from then on your
+  writing went to that local copy while the real diary stopped changing,
+  with no error to say so. Saves now go to the file the link points to.
+
 - **Settings opens with any theme in use.** A theme named in `config.json`
   that is not one of the picker's eight — Textual's `monokai`, for one —
   crashed the app the moment Settings opened. It now appears in the
