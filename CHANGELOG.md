@@ -21,6 +21,11 @@ file matters as much as that does.
 
 ### Fixed
 
+- **Reading with the scroll wheel keeps the diary open.** Only keys and
+  clicks counted as someone being there, so a long day read with the
+  mouse wheel locked partway down the page. Scrolling now counts too;
+  merely moving the mouse still does not.
+
 - **The calendar no longer crashes at the beginning of time.** With year
   0001 typed into the date field, stepping a day or a week back from 1
   January took the app down. It stops on the 1st instead.

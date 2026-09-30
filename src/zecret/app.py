@@ -91,6 +91,17 @@ class Instant(NamedTuple):
         return max(now.monotonic - self.monotonic, now.wall - self.wall)
 
 
+#: What counts as someone being at the diary: a key, a click, or the
+#: wheel. See ZecretApp.on_event for what is left out, and why.
+ACTIVITY = (
+    events.Key,
+    events.MouseDown,
+    events.MouseScrollUp,
+    events.MouseScrollDown,
+    events.MouseScrollLeft,
+    events.MouseScrollRight,
+)
+
 #: Said when the diary locks itself, so a screen that suddenly wants a
 #: password is not a mystery.
 LOCKED_BY_TIMEOUT = "Locked after a spell of quiet."
@@ -176,8 +187,15 @@ class ZecretApp(App[None]):
         Key events reach here even when a widget goes on to consume them --
         typing into the editor's TextArea counts, and has to, or writing a
         long entry would be the one thing that looks like being away.
+
+        The scroll wheel counts for the same reason on the other side:
+        reading a long day with it is someone at the diary as surely as
+        typing is, and it used to be the one way of reading that locked
+        mid-page. Mouse movement does not count -- a mouse nudged on a desk
+        is not a reader, and a diary kept open by one would be kept open
+        by nobody.
         """
-        if isinstance(event, events.Key | events.MouseDown):
+        if isinstance(event, ACTIVITY):
             self.last_activity = Instant.now()
         await super().on_event(event)
 
