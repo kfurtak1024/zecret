@@ -21,6 +21,11 @@ file matters as much as that does.
 
 ### Fixed
 
+- **Narrowing a search keeps your place.** Typing more of a query left the
+  highlight on whichever result happened to land where the old one had
+  been, rather than on the day you had picked out. It stays on that day
+  while it still matches, and goes back to the top when it does not.
+
 - **A diary kept behind a symlink stays there.** If `diary.enc` was a link
   to a file somewhere else — a synced or backed-up folder, say — the first
   save replaced the link with a file of its own, and from then on your

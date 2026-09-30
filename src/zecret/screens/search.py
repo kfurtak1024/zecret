@@ -92,15 +92,21 @@ class SearchScreen(ZecretScreen):
             query = self.query_one("#query", Input).value.strip().casefold()
             # An empty query lists everything, so opening search shows the
             # whole diary rather than a blank screen.
-            self.results = sorted(
+            found_entries = sorted(
                 (entry for entry in diary.entries.values() if not query or matches(entry, query)),
                 key=lambda entry: entry.date,
                 reverse=True,
             )
 
             results = self.query_one("#results", ListView)
+            # Read while self.results still describes the rows on screen.
+            # Taken after the swap, it looked the old row number up in the
+            # new results, so narrowing a query left the cursor on whatever
+            # day now sat at that row -- neither the day you were on nor
+            # the top.
             was_on = self.highlighted_date
             await results.clear()
+            self.results = found_entries
             # One mount pass, not one per result: see EntryListScreen, where
             # appending row by row made a long diary take a minute to draw.
             await results.extend(ListItem(Label(entry_summary(entry))) for entry in self.results)
