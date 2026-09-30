@@ -21,6 +21,10 @@ file matters as much as that does.
 
 ### Fixed
 
+- **The calendar no longer crashes at the beginning of time.** With year
+  0001 typed into the date field, stepping a day or a week back from 1
+  January took the app down. It stops on the 1st instead.
+
 - **Narrowing a search keeps your place.** Typing more of a query left the
   highlight on whichever result happened to land where the old one had
   been, rather than on the day you had picked out. It stays on that day
