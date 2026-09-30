@@ -10,6 +10,15 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Coming back from a day you have just written leaves you on it.** A day
+  written for the first time — today with <kbd>n</kbd>, or another with
+  <kbd>a</kbd> — gets a new row in the list, but the highlight stayed on
+  the day it was on before, which was now the one just below. It lands on
+  the day you were writing. Backing out of a day you never wrote in still
+  puts you back where you were.
+
 ## [0.7.0] - 2026-09-16
 
 ### Security

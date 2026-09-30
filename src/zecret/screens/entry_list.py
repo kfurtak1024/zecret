@@ -17,7 +17,9 @@ Responsibilities:
       the current in-memory app.diary state (no re-read from disk needed,
       since app.diary is the source of truth during the session), leaving
       the cursor on the day it was on -- a refresh is a redraw, not a
-      reason to send a reader of a years-long diary back to the top.
+      reason to send a reader of a years-long diary back to the top. After
+      the editor, "the day it was on" is the day just written, even when
+      that day had no row until now.
 
 'n' and 'g' both land on a date rather than on a new entry: the editor
 opens whatever that day holds, so writing more about today just continues
@@ -155,6 +157,11 @@ class EntryListScreen(ZecretScreen):
         # the confirmation modal resumes this screen, which also refreshes.
         # Interleaved, they duplicate rows; serialized, the last one wins.
         self.refresh_lock = asyncio.Lock()
+        # A day for the next rebuild to put the cursor on, in place of the
+        # one it was on. Set only by land_on, and only when that rebuild is
+        # known to be on its way -- so it is always taken by the rebuild it
+        # was meant for, and never lingers for an unrelated one later.
+        self.pending_landing: dt.date | None = None
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
@@ -184,7 +191,9 @@ class EntryListScreen(ZecretScreen):
             list_view = self.query_one("#entries", ListView)
             # Read before clearing: rebuilding is what loses the reader's
             # place, so where they were has to be taken down first.
-            was_on = self.highlighted_date
+            # Unless land_on has asked for a day that has no row yet.
+            landing, self.pending_landing = self.pending_landing, None
+            was_on = landing if landing in diary.entries else self.highlighted_date
             await list_view.clear()
             self.rows = []
             items: list[ListItem] = []
@@ -414,9 +423,61 @@ class EntryListScreen(ZecretScreen):
 
     def open_day(self, date: dt.date) -> None:
         """Open a day for writing. The editor decides whether that means a
-        new entry or the existing one, and the list refreshes on resume, so
-        no callback is needed to pick up the change."""
-        self.app.push_screen(EditorScreen(date))
+        new entry or the existing one, and the list refreshes on resume to
+        pick up the change.
+
+        The callback is there for the cursor, not for the change: coming
+        back from a day lands on that day. See land_on. Locking pops the
+        editor without dismissing it, so the callback does not run then.
+        """
+
+        def returned(_: None) -> None:
+            self.run_worker(self.land_on(date))
+
+        self.app.push_screen(EditorScreen(date), returned)
+
+    async def land_on(self, date: dt.date) -> None:
+        """Put the cursor on `date`, the day the editor was just left on.
+
+        Without this the cursor stayed on the day it was on when the editor
+        opened. A day opened with 'n' or 'a' may have had no row then, so
+        the cursor was elsewhere, and after the rebuild it sat next to the
+        day just written -- usually just below it.
+
+        This runs from the editor's dismiss callback, and nothing orders
+        that against the rebuild the same dismiss sets off through
+        ScreenResume: which comes first depends on the road out of the
+        editor (a plain escape, or "Save and go back" from the question).
+        So it works either way round. After the rebuild, the day has a row
+        and the cursor simply goes to it. Before it, a day that already had
+        a row is gone to now and kept by the rebuild, which holds the
+        cursor on its day; a day that has none yet is handed to that
+        rebuild through pending_landing. Which of the two has happened is
+        read off the rows -- a day the diary holds with no row means the
+        rebuild is still to come -- and the lock makes sure it is not
+        half-done while it is read.
+
+        A day left without being written is not in the diary, and the
+        cursor stays where it was.
+        """
+        async with self.refresh_lock:
+            if not self.zecret.is_unlocked:
+                return
+            diary, _ = self.zecret.unlocked
+            if date not in diary.entries:
+                return
+            row = next(
+                (
+                    row
+                    for row, entry in enumerate(self.rows)
+                    if entry is not None and entry.date == date
+                ),
+                None,
+            )
+            if row is None:
+                self.pending_landing = date
+            else:
+                self.move_cursor_to(row)
 
     def open_chosen_day(self, date: dt.date | None) -> None:
         """Callback for DatePromptScreen; None means the user backed out."""

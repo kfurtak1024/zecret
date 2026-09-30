@@ -20,6 +20,15 @@ Required coverage:
     - That refresh keeps the reader where they were: on the day they had
       highlighted, or -- when that day was the one just deleted -- on the
       next older day, which has moved up into its place.
+    - Coming back from the editor lands on the day just written, even when
+      it had no row before ('n' and 'a'). The cursor used to stay on the
+      day it was on, which after the rebuild sat next to the new one --
+      usually just below it. That holds on every road out of the editor,
+      including "Save and go back", which runs the editor's callback after
+      the list's rebuild rather than before it; and the landing is used
+      once, never saved up for whatever the list is resumed from next.
+      Backing out of a day that was never written leaves the cursor where
+      it was.
     - A row carries the entry's whole first line rather than a fixed slice
       of it, and is clipped to the window at render time. This is what lets
       a wide terminal show more of a day without any of it being recomputed
@@ -613,6 +622,142 @@ async def test_the_cursor_stays_on_the_day_you_opened(diary_path):
 
         assert app.screen.query_one("#entries", ListView).index == row
         assert app.screen.selected_entry.date == day
+
+
+async def test_writing_a_new_day_leaves_the_cursor_on_it(diary_path):
+    """Today had no row when 'n' was pressed, so the cursor was on
+    yesterday -- which is where it stayed, one row below the day just
+    written."""
+    seed(diary_path, *(Entry.new(TODAY - dt.timedelta(days=n), f"Day {n}") for n in range(1, 6)))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("x", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, EntryListScreen)
+        assert app.screen.selected_entry.date == TODAY
+
+
+async def test_writing_another_day_leaves_the_cursor_on_it(diary_path):
+    """The same through 'a', whose prompt closes -- and resumes the list --
+    before the editor is even opened."""
+    month_entries(diary_path)
+    missed = dt.date(2026, 3, 10)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("a")
+        await pilot.pause()
+        app.screen.query_one("#date", MaskedInput).value = missed.isoformat()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        await pilot.press("x", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.selected_entry.date == missed
+
+
+async def test_saving_from_the_question_on_the_way_out_lands_on_the_day(diary_path):
+    """escape, then "Save and go back". Leaving through the question runs
+    the editor's callback after the list has been rebuilt rather than
+    before it, and landing used to depend on the order."""
+    seed(diary_path, *(Entry.new(TODAY - dt.timedelta(days=n), f"Day {n}") for n in range(1, 6)))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("x", "escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+        await pilot.press("enter")  # focus starts on saving
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, EntryListScreen)
+        assert app.screen.selected_entry.date == TODAY
+
+
+async def test_landing_on_a_day_does_not_linger_for_the_next_return(diary_path):
+    """Moving away from the day and then closing something else -- here
+    the help popup -- must leave the cursor where it was moved to. The
+    landing used to wait in a field for the next resume to find, and
+    went off on whichever one came."""
+    seed(diary_path, *(Entry.new(TODAY - dt.timedelta(days=n), f"Day {n}") for n in range(1, 6)))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("x", "escape")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen.selected_entry.date == TODAY
+
+        await pilot.press("down", "down")
+        await pilot.pause()
+        moved_to = app.screen.selected_entry.date
+        assert moved_to != TODAY
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.selected_entry.date == moved_to
+
+
+async def test_opening_a_written_day_with_n_lands_on_it_on_the_way_back(diary_path):
+    """'n' on a day that is already written opens it, and coming back puts
+    the cursor on it -- the day you were in -- whether or not a word of it
+    changed."""
+    month_entries(diary_path)
+    seed_today = Entry.new(TODAY, "Already written")
+    diary, key = DiaryFile.unlock(diary_path, PASSWORD)
+    diary.add_entry(seed_today)
+    diary.save(key)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("end")
+        await pilot.pause()
+        assert app.screen.selected_entry.date != TODAY
+
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.selected_entry.date == TODAY
+
+
+async def test_backing_out_of_an_unwritten_day_leaves_the_cursor_alone(diary_path):
+    """Nothing was written, so there is no new row to land on."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == MARCH[1]
+
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.screen.selected_entry.date == MARCH[1]
 
 
 async def test_deleting_a_day_leaves_the_cursor_on_the_next_older_one(diary_path):
