@@ -10,7 +10,21 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Security
+
+- **Opening Settings no longer loosens the idle lock.** A lock time set in
+  `config.json` to something the dropdown does not list — two minutes,
+  say — was shown as the default fifteen instead, and showing it counted
+  as choosing it: just looking at Settings saved fifteen over your two.
+  The dropdown now lists the time you set, and leaves it alone unless you
+  pick another.
+
 ### Fixed
+
+- **Settings opens with any theme in use.** A theme named in `config.json`
+  that is not one of the picker's eight — Textual's `monokai`, for one —
+  crashed the app the moment Settings opened. It now appears in the
+  picker under its own name.
 
 - **Coming back from a day you have just written leaves you on it.** A day
   written for the first time — today with <kbd>n</kbd>, or another with
