@@ -46,6 +46,10 @@ Required coverage:
     - A long day is wrapped in the frame it first appears in. Textual
       wraps on the Resize message, which arrives after the paint, so
       opening an entry used to show one frame of unwrapped text.
+    - A line added at the foot of the box scrolls into view with the
+      cursor on it. Textual scrolls to the cursor before it has grown the
+      text's height to fit the edit, so Enter on the bottom row left the
+      cursor one row below the box, and the scrollbar was the only sign.
     - Saving an edit updates the entry in place: same date and created_at,
       refreshed updated_at, and no other entry rewritten.
     - Backing out with unsaved changes asks before discarding; backing out
@@ -846,6 +850,33 @@ async def test_a_long_day_is_wrapped_in_the_frame_it_first_appears_in(diary_path
 
         assert heights, "the editor never painted"
         assert heights[0] > 1, "the first frame of the day was drawn unwrapped"
+
+
+async def test_a_new_line_at_the_foot_of_the_box_stays_in_view(diary_path):
+    """Enter on the bottom row used to put the cursor one row below the box.
+
+    TextArea scrolled to the cursor before it had grown its height to hold
+    the new line, so the scroll stopped a row short -- and every line typed
+    after it stayed out of sight too. Three presses, because the fault
+    carried on rather than catching up.
+    """
+    # More lines than the box has rows at 80x24, so it opens scrolled.
+    seed(diary_path, Entry.new(LAST_WEEK, "\n".join(f"Line {n}" for n in range(30))))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        area = app.screen.query_one("#body", DiaryTextArea)
+        await pilot.press("ctrl+end")
+        await pilot.pause()
+
+        for _ in range(3):
+            await pilot.press("enter")
+            await pilot.pause()
+            row = area.wrapped_document.location_to_offset(area.cursor_location).y
+            top = area.scroll_offset.y
+            assert top <= row < top + area.scrollable_content_region.height
 
 
 # --- editing ---------------------------------------------------------------

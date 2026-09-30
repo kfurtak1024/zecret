@@ -19,6 +19,12 @@ file matters as much as that does.
   the day you were writing. Backing out of a day you never wrote in still
   puts you back where you were.
 
+- **A new line at the bottom of the editor no longer drops out of sight.**
+  Pressing <kbd>enter</kbd> on the last visible line of a long day moved
+  the cursor onto a line below the box, and it stayed hidden as you kept
+  typing; only the scrollbar showed that anything had been added. The
+  editor now scrolls to the new line.
+
 ## [0.7.0] - 2026-09-16
 
 ### Security
