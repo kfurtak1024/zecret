@@ -10,17 +10,6 @@ file matters as much as that does.
 
 ## [Unreleased]
 
-### Changed
-
-- **The arrow keys in the calendar go where they point.** Each moves to the
-  day drawn in that direction, so down from the last week of January is
-  the month below it and right from a Sunday is the month beside it — not
-  the next week, or the next Monday a row down at the far left. Blank days
-  around a month are stepped over. At the edge of the year the cursor
-  stays put; <kbd>[</kbd> and <kbd>]</kbd> are what change the year. The
-  "which day?" question keeps moving a day and a week at a time, since a
-  single month has nothing beside it.
-
 ## [0.8.0] - 2026-10-01
 
 ### Added
@@ -28,11 +17,12 @@ file matters as much as that does.
 - **A calendar view: the whole year, with the days you wrote marked.**
   Press <kbd>c</kbd> on the list. The list shows what you wrote; this shows
   when — a missed week is a hole in a month, a missed month a hole in the
-  year. The arrow keys walk a day or a week, carrying on across the end of
-  a month or a year, the page keys move a month, and <kbd>[</kbd> and
-  <kbd>]</kbd> jump a year. <kbd>e</kbd> or <kbd>enter</kbd> opens the day
-  under the cursor, written or not, and <kbd>c</kbd> or <kbd>esc</kbd>
-  takes you back to the list, on the day you were looking at or the
+  year. The arrow keys go where they point: each moves to the day drawn in
+  that direction, into the month beside or below when it reaches the edge
+  of one, stepping over the blank days around a month. The page keys move
+  a month, and <kbd>[</kbd> and <kbd>]</kbd> jump a year. <kbd>e</kbd> or
+  <kbd>enter</kbd> opens the day under the cursor, written or not, and
+  <kbd>c</kbd> or <kbd>esc</kbd> takes you back to the list, on the day you were looking at or the
   nearest one you wrote before it. Three months sit across an 80-column
   terminal, and up to six on a wide one.
 
