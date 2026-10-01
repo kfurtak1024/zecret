@@ -278,16 +278,14 @@ class ZecretApp(App[None]):
         """Open the help popup, from whichever main view asked.
 
         Here rather than on a screen because two screens open it -- the
-        entry list and the calendar -- and the popup needs the list's keys
-        handed to it, which the calendar cannot import without closing a
-        cycle: the list imports the calendar to open it, and the popup
-        imports the calendar to list its keys. The app imports everything
-        already.
+        entry list and the calendar -- and one action is one place to
+        change. Neither screen could hold it without importing the popup,
+        which imports them both to list their keys.
 
         Bound on those two screens only, never app-wide: a '?' typed into
         the editor, the search box or a password field must stay a '?'.
         """
-        self.push_screen(HelpScreen(EntryListScreen.BINDINGS))
+        self.push_screen(HelpScreen())
 
     async def action_quit(self) -> None:
         """Quit -- but never silently over something half-written.

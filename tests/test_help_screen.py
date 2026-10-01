@@ -39,6 +39,7 @@ from zecret.models import Entry
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import (
+    DIARY,
     LOGO,
     MIN_LOGO_WIDTH,
     NOTES,
@@ -282,7 +283,7 @@ async def test_every_advertised_key_of_every_screen_is_listed(diary_path):
         # a list is not a Binding -- and this check silently covered only
         # the entry list.
         every_binding = [EntryListScreen.BINDINGS] + [
-            bindings for _title, groups in SECTIONS for bindings in groups
+            bindings for section in SECTIONS for bindings in section.groups
         ]
         assert sum(len(documented_bindings(b)) for b in every_binding) > len(
             documented_bindings(EntryListScreen.BINDINGS)
@@ -304,8 +305,8 @@ async def test_the_page_names_each_section(diary_path):
         await unlock(pilot)
         await open_help(pilot)
         lines = page_lines(app)
-        for title, _bindings in SECTIONS:
-            assert title in lines
+        for section in [DIARY, *SECTIONS]:
+            assert section.title in lines
 
 
 async def test_the_page_carries_the_notes_keys_cannot_express(diary_path):

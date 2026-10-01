@@ -4,7 +4,9 @@ Required coverage:
     - 'c' on the entry list opens it, on the day the list's cursor was on,
       or on today where the list has nothing to be on.
     - 'c' and escape both go back, and the list lands on the calendar's day
-      -- or, where that day has no entry, on the nearest older one.
+      -- or, where that day has no entry, on the nearest older one. The day
+      is kept on the screen itself, so it can still be read once the
+      widgets are gone.
     - 'e' and enter both open the day under the cursor in the editor,
       written or not, and a day written there is marked on the way back.
     - '[' and ']' move a year, and the header names the year on show and
@@ -151,6 +153,22 @@ async def test_an_unwritten_day_lands_the_list_on_the_nearest_older_one(diary_pa
         year(app).move_to(dt.date(2024, 6, 1))
         await press(pilot, "c")
         assert app.screen.selected_entry.date == WRITTEN[1]
+
+
+async def test_the_day_is_kept_for_the_list_even_once_the_widget_is_gone(diary_path):
+    """The list reads where the calendar was left as the calendar is being
+    torn down, and Textual takes a popped screen's widgets away in a task
+    of its own -- so what the list reads must not be a query into them."""
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        calendar = app.screen
+        year(app).move_to(WRITTEN[0])
+        await pilot.pause()
+        await year(app).remove()
+        assert calendar.date == WRITTEN[0]
 
 
 async def test_a_day_older_than_the_diary_lands_the_list_at_its_foot(diary_path):

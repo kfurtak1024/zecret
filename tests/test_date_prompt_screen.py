@@ -379,4 +379,4 @@ async def test_the_written_days_reach_the_calendar():
     app = PromptHarness(dt.date(2019, 4, 10), written)
     async with app.run_test():
         assert grid(app).written == written
-        assert grid(app).style_for(dt.date(2019, 4, 2)) == "month-calendar--written"
+        assert "  2•" in grid(app).render().plain

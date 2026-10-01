@@ -22,7 +22,7 @@ binding out of the bar costs nothing.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, NamedTuple
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
@@ -34,6 +34,7 @@ from zecret import __version__
 from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
+from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.password import PasswordScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
@@ -72,26 +73,44 @@ COLUMN_THRESHOLD = 8
 #: first.
 COLUMN_GAP = 4
 
-#: What the page covers, in the order you meet it. EntryListScreen is
-#: missing on purpose: importing it here would close a cycle (it imports
-#: the calendar, which opens this screen through the app), and the list's
-#: own keys are passed in instead.
+
+class Section(NamedTuple):
+    """One heading on the page and the keys listed under it."""
+
+    title: str
+    #: One binding list per screen the section covers. Rows repeated
+    #: between them are listed once.
+    groups: list[list[BindingType]]
+    #: Whether this section's keys mean what the list's do wherever the
+    #: two share one, so that a row already under "The diary" is not said
+    #: again here. A flag on the section rather than a list of titles, so
+    #: renaming a heading cannot quietly bring the repeats back.
+    shares_diary_keys: bool = False
+
+
+#: The list's own section, first on the page and the one the others are
+#: read against.
+DIARY = Section("The diary", [EntryListScreen.BINDINGS])
+
+#: What the page covers after the list, in the order you meet it. These sit
+#: side by side under the list's section, one column each.
 #:
-#: These sit side by side under the list's section, one column each. The
-#: calendar comes first because it is the other main view, and lists only
-#: what the list has not already said: its lock, help and quit are the
-#: list's own keys doing the list's own things, and saying them twice cost
-#: three rows of a page that has none spare -- see `shares_diary_keys`.
+#: The calendar comes first because it is the other main view, and lists
+#: only what the list has not already said: its lock, help and quit are
+#: the list's own keys doing the list's own things, and saying them twice
+#: cost three rows of a page that has none spare. Not every section does
+#: that: the editor's ctrl+l saves before it locks, which makes it worth
+#: its own line even though it reads the same.
 #:
 #: The last group merges four screens rather than giving each its own
 #: heading: they advertise little beyond "escape goes back", and four
 #: headings over one line each tells the reader less than one heading over
 #: four does. Duplicates collapse, so this stays a merge and not an edit --
 #: every binding any of those screens advertises still appears.
-SECTIONS: list[tuple[str, list[list[BindingType]]]] = [
-    ("The calendar", [CalendarScreen.BINDINGS]),
-    ("Writing a day", [EditorScreen.BINDINGS]),
-    (
+SECTIONS: list[Section] = [
+    Section("The calendar", [CalendarScreen.BINDINGS], shares_diary_keys=True),
+    Section("Writing a day", [EditorScreen.BINDINGS]),
+    Section(
         "Anywhere else",
         [
             DatePromptScreen.BINDINGS,
@@ -102,12 +121,6 @@ SECTIONS: list[tuple[str, list[list[BindingType]]]] = [
         ],
     ),
 ]
-
-#: The sections whose keys mean what the list's do wherever the two share
-#: one, so a row already under "The diary" is not repeated under them. Not
-#: every section: the editor's ctrl+l saves before it locks, which makes it
-#: worth its own line even though it reads the same.
-SHARES_DIARY_KEYS = {"The calendar"}
 
 #: The rules no key can express. Kept short: this is a popup, and every
 #: line here is a line of the diary it is covering.
@@ -138,13 +151,8 @@ class HelpScreen(ModalScreen[None]):
         Binding("question_mark", "back", "Close", key_display="?"),
     ]
 
-    def __init__(self, list_bindings: list[BindingType]) -> None:
-        """Args:
-        list_bindings: The entry list's BINDINGS. Passed in rather than
-            imported, since the entry list imports this screen.
-        """
+    def __init__(self) -> None:
         super().__init__()
-        self.list_bindings = list_bindings
         # The narrowest terminal two columns of keys can be drawn in, worked
         # out from the rows themselves while composing them. Nothing here
         # knows how wide a description is until the bindings are read, and
@@ -162,19 +170,19 @@ class HelpScreen(ModalScreen[None]):
             yield Static(LOGO, id="help-logo")
             yield Label(TAGLINE, id="help-tagline")
 
-            yield Label("The diary", classes="section-title")
-            yield from self.section_keys([self.list_bindings])
-            diary_rows = self.key_rows([self.list_bindings])
+            yield Label(DIARY.title, classes="section-title")
+            yield from self.section_keys(DIARY.groups)
+            diary_rows = self.key_rows(DIARY.groups)
 
             # The short sections sit side by side rather than stacking:
             # between them they are six rows of content under three
             # headings, and the popup has more width to spend than height.
             with Horizontal(classes="help-columns"):
-                for title, groups in SECTIONS:
+                for section in SECTIONS:
                     with Vertical(classes="help-column"):
-                        yield Label(title, classes="section-title")
-                        omit = diary_rows if title in SHARES_DIARY_KEYS else []
-                        yield from self.section_keys(groups, omit)
+                        yield Label(section.title, classes="section-title")
+                        omit = diary_rows if section.shares_diary_keys else []
+                        yield from self.section_keys(section.groups, omit)
 
             yield Label("Worth knowing", classes="section-title")
             for note in NOTES:

@@ -266,13 +266,16 @@ class EntryListScreen(ZecretScreen):
     def row_for(self, date: dt.date | None) -> int | None:
         """The row to put the cursor on to leave the reader where they were.
 
-        `date` is the day highlighted before the rebuild. Usually it still
-        has a row and the cursor simply lands back on it -- returning from
-        the editor should not cost someone their place halfway down a diary
-        of years. When the day is gone, it was just deleted, and the next
-        older day has moved up into the space it left, which is where the
-        eye already is. Rows run newest first, so that is the first row not
-        newer than `date`.
+        `date` is the day highlighted before the rebuild, or a day handed
+        over to land on. Usually it has a row and the cursor simply lands
+        on it -- returning from the editor should not cost someone their
+        place halfway down a diary of years. When it has none, the nearest
+        older day is the one to land on, and that holds for both ways a day
+        can be missing: one just deleted, whose next older day has moved up
+        into the space it left, which is where the eye already is; and a
+        day the calendar was left on that was never written, whose nearest
+        written neighbour is the row that stands in for it. Rows run newest
+        first, so that is the first row not newer than `date`.
         """
         if date is None:
             return self.first_entry_row

@@ -669,6 +669,11 @@ YearCalendar:focus > MonthGrid > .month-calendar--cursor {
     margin: 0 2;
     padding: 1 2;
     background: $surface;
+    /* The scrollbar's columns are kept whether or not the year needs
+       them, so how many months fit across depends on the width alone --
+       which is all CalendarScreen's breakpoints can see -- and the year
+       does not shift sideways when a resize brings the bar in. */
+    scrollbar-gutter: stable;
 }
 
 #year-title {

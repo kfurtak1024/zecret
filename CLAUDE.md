@@ -520,9 +520,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   missed". `YearCalendar` is twelve months of the same and the whole of
   the calendar view; it is built from twelve `MonthGrid`s that draw and
   own nothing, so one cursor walks the year and focus never has to change
-  hands at the end of a month. The two calendars draw a month and walk the
-  days through the same module functions (`draw_month`, `day_role`,
-  `stepped`, `reachable`), and wear the same `month-calendar--*`
+  hands at the end of a month. The two calendars share their keys and
+  their walking through a base class, `WalkableCalendar`, draw a month
+  through the same module functions (`draw_month`, `day_role`), and wear
+  the same `month-calendar--*`
   component classes, so one set of rules in `app.tcss` paints both. How
   many months sit across is the stylesheet's call, from breakpoint
   classes `CalendarScreen` wears (`HORIZONTAL_BREAKPOINTS`), not the
@@ -553,7 +554,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   everything else. The list reads the calendar's cursor in its own
   `on_screen_resume` on the way back — never in a dismiss callback, which
   nothing orders against the list's rebuild — and lands on that day, or the
-  nearest older one written.
+  nearest older one written. It reads `CalendarScreen.date`, a plain copy
+  the screen keeps, and never the widget: Textual tears a popped screen's
+  DOM down in a task of its own, so a query into it from the list's resume
+  can find nothing there.
 - **The editor wraps before it paints.** Textual wraps a `TextArea` when
   it handles the `Resize` message, which is queued — so the compositor has
   already drawn the widget at the new size by the time it arrives, and
@@ -750,10 +754,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   on the two main views only — the entry list and the calendar, which have
   no text field between them — so `?` stays typeable in every text field.
   Both bind `app.help` (`ZecretApp.action_help`) rather than an action of
-  their own: the popup needs the list's bindings handed to it, and the
-  calendar cannot import the list without closing an import cycle. The
-  calendar's column on the page leaves out rows the list's section has
-  already given (`SHARES_DIARY_KEYS`).
+  their own: one action for two screens, and neither of them can import
+  the popup, which imports them both to list their keys. The calendar's
+  column on the page leaves out rows the list's section has already given
+  (`Section.shares_diary_keys`).
 - **The help popup spends width to buy height.** A section longer than
   `COLUMN_THRESHOLD` is split down the middle into two columns, read down
   and then across, and `fit_columns()` stacks them again where the terminal

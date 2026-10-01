@@ -35,8 +35,8 @@ from textual.binding import Binding, BindingType
 from textual.containers import Center
 from textual.widgets import Label
 
-from zecret.screens.base import ZecretScreen, card, count_entries
-from zecret.screens.calendar import LEGEND, MONTH_WIDTH, YearCalendar
+from zecret.screens.base import ZecretScreen, card, count_entries, today
+from zecret.screens.calendar import LEGEND, MONTH_WIDTH, YearCalendar, reachable
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 
@@ -46,8 +46,12 @@ MONTH_GAP = 2
 
 #: Columns around the year that are not months: the card's margin and
 #: padding (2 a side each, the gutter every full-width screen shares) and
-#: its scrollbar, which is there whenever the year is taller than the
-#: window -- which below six across it always is.
+#: the two its scrollbar takes. Those are counted whether or not the year
+#: needs scrolling, because the card always reserves them -- see
+#: `scrollbar-gutter` on #year-box in app.tcss. A scrollbar that came and
+#: went would make the right count depend on the terminal's height, which
+#: a width breakpoint cannot see, and would nudge the centred year sideways
+#: as it appeared.
 CHROME = 2 * 2 + 2 * 2 + 2
 
 
@@ -95,8 +99,8 @@ class CalendarScreen(ZecretScreen):
         # On the screen rather than the widget, unlike the day and month
         # keys: an arrow key in a calendar needs no explaining, a bracket
         # does, and the help popup and the bar are built from screen
-        # bindings. In the bar as well, since it has the room -- this
-        # screen advertises five keys where the list has eight -- and a
+        # bindings. In the bar as well, since it has the room -- these make
+        # seven keys in 63 columns, where the list's eight take 69 -- and a
         # year key nobody finds leaves the arrows to walk there instead.
         Binding("left_square_bracket", "previous_year", "Previous year", key_display="["),
         Binding("right_square_bracket", "next_year", "Next year", key_display="]"),
@@ -109,6 +113,16 @@ class CalendarScreen(ZecretScreen):
         """
         super().__init__()
         self.start = date
+        #: The day the cursor is on, which the list lands near on the way
+        #: back. A plain copy rather than a look into the YearCalendar: the
+        #: list reads it as this screen is being torn down, and by then the
+        #: widget may already be gone from the DOM -- Textual removes a
+        #: popped screen in a task of its own, unordered against the list's
+        #: resume. Set properly on mount; this is only until then.
+        self.date = reachable(today() if date is None else date)
+        # The year the header was last worded for, so that a move within
+        # it does not recount the diary -- see show_year.
+        self.shown_year: int | None = None
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
@@ -116,7 +130,7 @@ class CalendarScreen(ZecretScreen):
             yield Label("", id="year-title")
             # Centred in a container of its own rather than by the card:
             # Textual does not align the children of a container that
-            # scrolls, and below six months across this one always does.
+            # scrolls, and in most terminals this one does.
             with Center():
                 yield YearCalendar(self.start, self.written, id="year")
             yield Label(LEGEND, id="year-legend")
@@ -128,28 +142,33 @@ class CalendarScreen(ZecretScreen):
         # the view opened with its heading scrolled off. Where the view
         # sits is reveal_cursor's to decide, once the grid has a layout.
         self.calendar.focus(scroll_visible=False)
+        self.date = self.calendar.date
         self.show_year()
         self.call_after_refresh(self.reveal_cursor)
 
     def on_screen_resume(self) -> None:
         """Back from the editor: mark whatever was written there.
 
+        Also fires as the screen is first shown, a moment after compose
+        drew the year from this same diary -- so the year is redrawn only
+        when the written days actually differ from what it holds, which
+        rules out the first showing and a day that was opened and left
+        alone. Comparing the sets is a pass over the diary; drawing twelve
+        months for nothing was the cost worth avoiding.
+
         Skipped while locking, which pops this screen with the diary
         already on its way out -- see EntryListScreen.
         """
         if not self.zecret.is_unlocked:
             return
-        self.calendar.set_written(self.written)
-        self.show_year()
+        written = self.written
+        if written != self.calendar.written:
+            self.calendar.set_written(written)
+            self.show_year(recount=True)
 
     @property
     def calendar(self) -> YearCalendar:
         return self.query_one("#year", YearCalendar)
-
-    @property
-    def date(self) -> dt.date:
-        """The day the cursor is on, which the list lands near on the way back."""
-        return self.calendar.date
 
     @property
     def written(self) -> frozenset[dt.date]:
@@ -157,14 +176,24 @@ class CalendarScreen(ZecretScreen):
         diary, _ = self.zecret.unlocked
         return frozenset(diary.entries)
 
-    def show_year(self) -> None:
-        """Name the year on show, and how much of it is written."""
+    def show_year(self, recount: bool = False) -> None:
+        """Name the year on show, and how much of it is written.
+
+        Counting is a pass over every day the diary holds, and the count
+        only changes with the year or with the diary -- so a move within
+        the year, which is nearly every keypress, leaves the header alone
+        unless `recount` says the diary changed.
+        """
         year = self.date.year
+        if year == self.shown_year and not recount:
+            return
+        self.shown_year = year
         count = sum(1 for date in self.calendar.written if date.year == year)
         self.query_one("#year-title", Label).update(str(year))
         self.sub_title = f"Calendar · {year} · {count_entries(count)}"
 
-    def on_year_calendar_date_changed(self, _event: YearCalendar.DateChanged) -> None:
+    def on_year_calendar_date_changed(self, event: YearCalendar.DateChanged) -> None:
+        self.date = event.date
         self.show_year()
         self.reveal_cursor()
 

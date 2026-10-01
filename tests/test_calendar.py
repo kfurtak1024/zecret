@@ -36,6 +36,9 @@ Required coverage:
     - It never starts, or lands, on a day that has not happened.
     - A new set of written days is drawn as soon as it is handed over.
     - A click on a day in any month moves the cursor there.
+    - A move within the year redraws only the months it touched; a move
+      into another year redraws all twelve.
+    - Both calendars walk by one key map, WalkableCalendar's.
 """
 
 from __future__ import annotations
@@ -54,8 +57,11 @@ from zecret.screens.calendar import (
     WEEKS,
     MonthCalendar,
     MonthGrid,
+    WalkableCalendar,
     YearCalendar,
     day_in,
+    day_role,
+    month_weeks,
     shift_month,
 )
 
@@ -104,20 +110,20 @@ class CalendarHarness(App[None]):
 def test_a_month_is_always_six_rows_of_seven():
     """Whatever the month, so that paging does not resize the modal."""
     for month in range(1, 13):
-        grid = MonthCalendar(dt.date(2026, month, 1)).weeks
+        grid = month_weeks(2026, month)
         assert len(grid) == WEEKS
         assert {len(row) for row in grid} == {DAYS}
 
 
 def test_every_day_of_the_month_appears_once():
-    grid = MonthCalendar(AUGUST).weeks
+    grid = month_weeks(AUGUST.year, AUGUST.month)
     days = [day for row in grid for day in row if day]
     assert days == list(range(1, 32))
 
 
 def test_weeks_start_on_monday():
     """August 2020 opens on a Saturday, so its first row is five blanks."""
-    first = MonthCalendar(AUGUST).weeks[0]
+    first = month_weeks(AUGUST.year, AUGUST.month)[0]
     assert first == [0, 0, 0, 0, 0, 1, 2]
 
 
@@ -126,28 +132,32 @@ def test_weeks_start_on_monday():
 
 def test_a_written_day_is_drawn_differently_from_an_empty_one():
     written = frozenset({dt.date(2020, 8, 12)})
-    grid = MonthCalendar(AUGUST, written)
-    assert grid.style_for(dt.date(2020, 8, 12)) == "month-calendar--written"
-    assert grid.style_for(dt.date(2020, 8, 11)) == "month-calendar--day"
+    assert day_role(dt.date(2020, 8, 12), AUGUST, written, TODAY) == "month-calendar--written"
+    assert day_role(dt.date(2020, 8, 11), AUGUST, written, TODAY) == "month-calendar--day"
 
 
 def test_the_cursor_outranks_everything_it_sits_on():
     """Losing the cursor in a month of marked days would leave the arrow
     keys with nothing to show for themselves."""
     written = frozenset({AUGUST})
-    assert MonthCalendar(AUGUST, written).style_for(AUGUST) == "month-calendar--cursor"
+    assert day_role(AUGUST, AUGUST, written, TODAY) == "month-calendar--cursor"
 
 
 def test_a_day_that_has_not_happened_is_drawn_as_unavailable():
-    grid = MonthCalendar(YESTERDAY, frozenset({TOMORROW}))
-    assert grid.style_for(TOMORROW) == "month-calendar--unavailable"
+    role = day_role(TOMORROW, YESTERDAY, frozenset({TOMORROW}), TODAY)
+    assert role == "month-calendar--unavailable"
 
 
 def test_today_is_not_a_style_of_its_own():
     """It is laid over whatever the day already is -- see render. A day
     that is both today and written is still drawn as written."""
-    grid = MonthCalendar(YESTERDAY, frozenset({TODAY}))
-    assert grid.style_for(TODAY) == "month-calendar--written"
+    assert day_role(TODAY, YESTERDAY, frozenset({TODAY}), TODAY) == "month-calendar--written"
+
+
+def test_what_has_not_happened_is_judged_against_the_day_given():
+    """One reading of the clock per month drawn, handed in -- so a draw
+    that runs across midnight cannot judge two days by two clocks."""
+    assert day_role(TODAY, YESTERDAY, frozenset(), YESTERDAY) == "month-calendar--unavailable"
 
 
 # --- paging a month --------------------------------------------------------
@@ -579,3 +589,33 @@ async def test_clicking_a_month_name_moves_nothing():
 def test_a_month_of_the_year_owns_no_focus():
     """One cursor for the year: focus never has to pass between months."""
     assert not MonthGrid(MIDYEAR, MIDYEAR, frozenset()).can_focus
+
+
+async def test_a_move_within_the_year_redraws_only_the_months_it_touched():
+    """Twelve months redrawn per arrow press, held down, was ten times the
+    work the move needed."""
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)) as pilot:
+        drawn_for: list[int] = []
+        for grid in app.year.months:
+            original = grid.show
+
+            def recording(*args, grid=grid, original=original):
+                drawn_for.append(grid.first.month)
+                original(*args)
+
+            grid.show = recording
+        await pilot.press("right")
+        assert drawn_for == [6, 6], "a day within June touches only June"
+        drawn_for.clear()
+        app.year.move_to(dt.date(2020, 7, 1))
+        assert sorted(drawn_for) == [6, 7], "the month left and the month arrived in"
+        drawn_for.clear()
+        app.year.previous_year()
+        assert sorted(drawn_for) == list(range(1, 13)), "a new year is every month"
+
+
+def test_both_calendars_walk_by_the_same_keys():
+    """One key map, written once: a fix to one calendar is a fix to both."""
+    for widget in (MonthCalendar, YearCalendar):
+        assert issubclass(widget, WalkableCalendar)
