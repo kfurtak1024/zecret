@@ -19,6 +19,9 @@ Required coverage:
       across, the month under January is July.
     - The months sit three across at 80 columns, four at 100, six where
       there is room for six -- never five -- and none is cut off.
+      Either side of every step, too, and the sizes months_across() counts
+      in are held to the sizes the stylesheet draws: the two are written
+      in different files and nothing else ties them together.
     - In a terminal too short for the year, the cursor's month is scrolled
       into view, and the top row of months brings the year's title along.
     - The first frame drawn is already the finished one: the right number
@@ -63,11 +66,6 @@ TODAY = dt.date.today()
 WRITTEN = [dt.date(2024, 3, 4), dt.date(2024, 3, 17), dt.date(2024, 9, 2)]
 
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture

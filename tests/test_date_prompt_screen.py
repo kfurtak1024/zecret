@@ -18,6 +18,8 @@ Required coverage:
     - Down from the field reaches the calendar, and enter there answers
       the question the same way enter in the field does.
     - The days the caller says are written are the days the grid marks.
+    - A click on a drawn day picks that day. The month is drawn centred in
+      a wider widget, and clicks used to be counted from its left edge.
 """
 
 from __future__ import annotations

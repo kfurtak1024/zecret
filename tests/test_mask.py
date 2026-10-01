@@ -45,7 +45,6 @@ from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.editor import BAR, DiaryTextArea, EditorScreen, run_at, word_runs
 from zecret.screens.entry_list import EntryListScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -56,14 +55,9 @@ YESTERDAY = TODAY - dt.timedelta(days=1)
 BODY = "Long walk once the rain stopped.\nCame back the long way."
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture

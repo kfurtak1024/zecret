@@ -42,6 +42,9 @@ Required coverage:
       sparse diary without ever showing them.
     - The cursor stops at the ends of the list: down on the oldest day and
       up on the newest stay put rather than wrapping around.
+    - Landing on the newest day -- g, home, up, page up -- shows the month
+      heading above it too: the list used to scroll only far enough for the
+      row, and the top of the diary was never on screen.
     - A row shows the first line exactly as written: text that looks like
       Textual markup is neither interpreted nor fatal. So does anything else
       that quotes text Zecret did not write -- a reload reporting a damaged
@@ -74,7 +77,6 @@ from zecret.screens.entry_list import (
     ConfirmScreen,
     EntryListScreen,
 )
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -90,14 +92,9 @@ MARCH = [dt.date(2026, 3, 4), dt.date(2026, 3, 17), dt.date(2026, 3, 28)]
 FEBRUARY = [dt.date(2026, 2, 9), dt.date(2026, 2, 22)]
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture

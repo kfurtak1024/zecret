@@ -64,7 +64,6 @@ from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.editor import DiaryTextArea
 from zecret.screens.search import SearchScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -87,11 +86,6 @@ pytestmark = [
     # and is the one test here that is not near-instant.
     pytest.mark.slow,
 ]
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 def seed(path: Path, count: int) -> Path:
