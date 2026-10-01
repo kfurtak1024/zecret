@@ -138,7 +138,10 @@ Keep this layering strict:
   string: Textual reads a string as markup, so a first line holding
   `[bold]` changed style and one holding a stray `[/bold]` raised
   `MarkupError` and took the app down whenever the list was drawn. A
-  rebuild is synchronous and needs no lock, since nothing in it awaits.
+  rebuild is synchronous and needs no lock, since nothing in it awaits —
+  and it happens on resume only when the diary has changed since the rows
+  were drawn (`unchanged()` in `screens/base.py`, which compares entries by
+  identity: `Entry` is frozen, so an edit is always a new object).
   And the page keys stay with the screen (`priority=True`):
   `OptionList`'s own page up finds nothing enabled above the month heading
   at the top and drops the highlight. `tests/test_scale.py` holds the

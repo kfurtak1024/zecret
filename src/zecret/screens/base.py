@@ -25,6 +25,7 @@ be deciding for itself how to describe a diary that changed underneath it.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from textual.containers import VerticalScroll
@@ -158,6 +159,22 @@ def day_summary(entry: Entry) -> str:
     """One-line label for an entry under a month heading, which already
     says which month and year this is."""
     return f"{format_day_short(entry.date)}   {body_snippet(entry.body)}"
+
+
+def unchanged(drawn: Mapping[dt.date, Entry] | None, entries: Mapping[dt.date, Entry]) -> bool:
+    """Whether `entries` is still exactly the diary a list was drawn from.
+
+    By identity, not by value: Entry is frozen and every edit makes a new
+    one (see Entry.edited), so the same objects under the same dates is the
+    same diary, and the check never reads an entry's text. A reload builds
+    new objects for every day, so it always counts as a change -- which is
+    right, since another Zecret may have written anything.
+
+    `drawn` is None until a list has been drawn at all.
+    """
+    if drawn is None or drawn.keys() != entries.keys():
+        return False
+    return all(drawn[date] is entry for date, entry in entries.items())
 
 
 def save_error(error: OSError | ZecretConflictError) -> str:

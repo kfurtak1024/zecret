@@ -24,7 +24,7 @@ from textual.widgets import Input, Label
 from textual.widgets.option_list import Option
 
 from zecret.models import Entry
-from zecret.screens.base import DayList, ZecretScreen, entry_summary
+from zecret.screens.base import DayList, ZecretScreen, entry_summary, unchanged
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 
@@ -50,6 +50,9 @@ class SearchScreen(ZecretScreen):
     def __init__(self) -> None:
         super().__init__()
         self.results: list[Entry] = []
+        # The diary the results were last filtered from -- see
+        # on_screen_resume.
+        self.drawn: dict[dt.date, Entry] | None = None
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
@@ -68,12 +71,18 @@ class SearchScreen(ZecretScreen):
     def on_screen_resume(self) -> None:
         """Re-filter on return from the editor: the entry may have changed.
 
+        Only if it did. The query cannot have changed while the editor was
+        open, so an unchanged diary is unchanged results -- and a day read
+        and left alone is the usual way back from a search.
+
         Skipped when the app is locking, which pops this screen too -- see
         EntryListScreen.
         """
         if not self.zecret.is_unlocked:
             return
-        self.refresh_results()
+        diary, _ = self.zecret.unlocked
+        if not unchanged(self.drawn, diary.entries):
+            self.refresh_results()
 
     def on_input_changed(self, _event: Input.Changed) -> None:
         """Live filtering -- no submit step."""
@@ -114,6 +123,7 @@ class SearchScreen(ZecretScreen):
         # results, so narrowing a query left the cursor on whatever day now
         # sat at that row -- neither the day you were on nor the top.
         was_on = self.highlighted_date
+        self.drawn = dict(diary.entries)
         self.results = found_entries
         # Content, not a string Textual would read as markup -- see
         # entry_option in entry_list.py for what that cost.

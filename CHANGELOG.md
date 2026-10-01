@@ -30,7 +30,9 @@ file matters as much as that does.
   long, because every row on the list was a separate piece of the screen
   to build — whether or not it was anywhere near the window. The list and
   the search results now draw only the rows in view, and the same ten
-  years come back in under half a second, most of it well under.
+  years come back in under half a second. Most of the time they do not
+  need to come back at all: closing the help, leaving settings or reading
+  a day without changing it leaves the list exactly as it was.
 
 - **<kbd>a</kbd> is no longer in the key bar.** The calendar took its
   place there: it answers the same question — which day? — with the whole

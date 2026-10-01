@@ -19,7 +19,11 @@ Required coverage:
       between going ahead and leaving the day alone.
     - Confirmed delete removes the entry from memory AND from disk, and
       leaves the other entries intact.
-    - The list refreshes from app.diary whenever the screen is resumed.
+    - The list refreshes from app.diary whenever the screen is resumed and
+      the diary has changed -- and only then: closing the help or reading a
+      day without writing does not rebuild a list that can be years long.
+      unchanged() judges that by identity, so an edit, an addition, a
+      deletion and a reload all count, and an untouched diary does not.
     - That refresh keeps the reader where they were: on the day they had
       highlighted, or -- when that day was the one just deleted -- on the
       next older day, which has moved up into its place.
@@ -52,7 +56,7 @@ from textual.widgets import Button, Input, Label, MaskedInput, OptionList
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.base import EMPTY_BODY, format_day, format_day_short, format_month
+from zecret.screens.base import EMPTY_BODY, format_day, format_day_short, format_month, unchanged
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import (
@@ -1149,3 +1153,80 @@ async def test_up_on_the_newest_day_stays_there(diary_path):
         await pilot.press("up", "k")
         await pilot.pause()
         assert app.screen.selected_entry.date == MARCH[-1]
+
+
+# --- rebuilding only what changed ------------------------------------------
+
+
+def rebuilds(app: ZecretApp, monkeypatch) -> list[None]:
+    """Count the list's rebuilds from here on."""
+    screen = app.screen
+    counted: list[None] = []
+    original = screen.refresh_entries
+
+    def counting() -> None:
+        counted.append(None)
+        original()
+
+    monkeypatch.setattr(screen, "refresh_entries", counting)
+    return counted
+
+
+async def test_closing_the_help_does_not_rebuild_the_list(diary_path, monkeypatch):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        counted = rebuilds(app, monkeypatch)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert counted == []
+
+
+async def test_reading_a_day_without_writing_does_not_rebuild(diary_path, monkeypatch):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        counted = rebuilds(app, monkeypatch)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert counted == []
+        assert app.screen.selected_entry.date == MARCH[-1]
+
+
+async def test_writing_a_day_does_rebuild(diary_path, monkeypatch):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        counted = rebuilds(app, monkeypatch)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("x", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert counted == [None]
+        # The row now holds the entry as written, not the one drawn before.
+        assert "x" in app.screen.selected_entry.body
+
+
+def test_unchanged_is_judged_by_identity():
+    first = Entry.new(MARCH[0], "One")
+    second = Entry.new(MARCH[1], "Two")
+    drawn = {first.date: first, second.date: second}
+    assert unchanged(drawn, dict(drawn)), "the same objects under the same days"
+    assert not unchanged(None, drawn), "nothing drawn yet"
+    assert not unchanged(drawn, {first.date: first}), "a day deleted"
+    added = Entry.new(MARCH[2], "Three")
+    assert not unchanged(drawn, {**drawn, added.date: added}), "a day added"
+    assert not unchanged(drawn, {**drawn, first.date: first.edited("One")}), (
+        "an edit is a new object even when the text reads the same"
+    )

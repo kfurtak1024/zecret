@@ -10,6 +10,8 @@ Required coverage:
       day still matches, and starts at the top when it does not -- never on
       whichever day happens to sit at the old row number.
     - Escape returns to the list.
+    - Coming back from a day that was only read does not filter the diary
+      again; coming back from one that was written does.
     - Searching never writes anything to disk.
     - A result shows the first line exactly as written, even where it looks
       like Textual markup, and the cursor stops at the ends of the results.
@@ -431,3 +433,34 @@ async def test_the_results_stop_at_their_ends(stocked):
             await pilot.press("up")
         await pilot.pause()
         assert results_list(app).highlighted == 0
+
+
+async def test_reading_a_result_without_writing_does_not_refilter(stocked, monkeypatch):
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        screen = app.screen
+        counted: list[None] = []
+        original = screen.refresh_results
+
+        def counting() -> None:
+            counted.append(None)
+            original()
+
+        monkeypatch.setattr(screen, "refresh_results", counting)
+        await pilot.press("tab", "enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen is screen
+        assert counted == []
+
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("x", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert counted == [None]

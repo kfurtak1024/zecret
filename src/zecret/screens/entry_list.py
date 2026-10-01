@@ -74,6 +74,7 @@ from zecret.screens.base import (
     format_month,
     save_error,
     today,
+    unchanged,
 )
 from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.confirm import Choice, ConfirmScreen
@@ -197,6 +198,9 @@ class EntryListScreen(ZecretScreen):
         # that row shows, or None where the row is a month heading. This is
         # the only thing that maps a highlighted row back to a day.
         self.rows: list[Entry | None] = []
+        # The diary the rows were last built from, so that coming back to
+        # an unchanged one does not rebuild it -- see on_screen_resume.
+        self.drawn: dict[dt.date, Entry] | None = None
         # A day for the next rebuild to put the cursor on, in place of the
         # one it was on. Set only by land_on, and only when that rebuild is
         # known to be on its way -- so it is always taken by the rebuild it
@@ -216,6 +220,13 @@ class EntryListScreen(ZecretScreen):
         """Fires when this screen is shown, including after returning from
         the editor or search -- so the list always reflects app.diary.
 
+        Rebuilt only when the diary has changed since the rows were drawn.
+        Most returns change nothing -- closing the help, cancelling a
+        question, leaving settings, a calendar visit or a day read and not
+        written -- and a rebuild replaces every row of a list that can be
+        years long. Where nothing changed but there is a day to land on
+        (the calendar's), the cursor goes there over the rows as they are.
+
         Also fires on the way out, as locking pops the screens above this
         one. There is no diary to draw from by then, and nothing to draw
         it onto.
@@ -224,7 +235,13 @@ class EntryListScreen(ZecretScreen):
             return
         if self.calendar is not None:
             self.pending_landing, self.calendar = self.calendar.date, None
-        self.refresh_entries()
+        diary, _ = self.zecret.unlocked
+        if not unchanged(self.drawn, diary.entries):
+            self.refresh_entries()
+            return
+        landing, self.pending_landing = self.pending_landing, None
+        if landing is not None:
+            self.move_cursor_to(self.row_for(landing))
 
     def refresh_entries(self) -> None:
         """Rebuild the list from the in-memory diary, most recent day first,
@@ -247,6 +264,7 @@ class EntryListScreen(ZecretScreen):
         # row_for then finds the nearest that does.
         landing, self.pending_landing = self.pending_landing, None
         was_on = landing if landing is not None else self.highlighted_date
+        self.drawn = dict(diary.entries)
         self.rows = []
         options: list[Option] = []
         # Sorted by date, so each month's entries are already adjacent.
