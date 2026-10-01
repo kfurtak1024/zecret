@@ -267,17 +267,34 @@ class MonthCalendar(Widget, can_focus=True):
         """
         self.date = min(date, today())
 
+    def step(self, days: int) -> None:
+        """Move `days` days, stopping at the first day a date can be.
+
+        The far end is today and move_to already holds it. This end is
+        1 January of year 1, where a day or a week back is out of range:
+        `date - timedelta` raises OverflowError, and on a key handler that
+        took the app down. Reaching it means typing year 0001 into the
+        field, but a key that crashes is worse than a key that stops.
+        Clamped rather than left alone, the same as the far end, so a week
+        back from the 3rd still gets as far as the 1st.
+        """
+        try:
+            target = self.date + dt.timedelta(days=days)
+        except OverflowError:
+            target = dt.date.min
+        self.move_to(target)
+
     def action_previous_day(self) -> None:
-        self.move_to(self.date - dt.timedelta(days=1))
+        self.step(-1)
 
     def action_next_day(self) -> None:
-        self.move_to(self.date + dt.timedelta(days=1))
+        self.step(1)
 
     def action_previous_week(self) -> None:
-        self.move_to(self.date - dt.timedelta(weeks=1))
+        self.step(-7)
 
     def action_next_week(self) -> None:
-        self.move_to(self.date + dt.timedelta(weeks=1))
+        self.step(7)
 
     def action_previous_month(self) -> None:
         self.move_to(shift_month(self.date, -1))

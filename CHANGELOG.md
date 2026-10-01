@@ -10,6 +10,57 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-30
+
+### Security
+
+- **Opening Settings no longer loosens the idle lock.** A lock time set in
+  `config.json` to something the dropdown does not list — two minutes,
+  say — was shown as the default fifteen instead, and showing it counted
+  as choosing it: just looking at Settings saved fifteen over your two.
+  The dropdown now lists the time you set, and leaves it alone unless you
+  pick another.
+
+### Fixed
+
+- **Coming back from a day you have just written leaves you on it.** A day
+  written for the first time — today with <kbd>n</kbd>, or another with
+  <kbd>a</kbd> — gets a new row in the list, but the highlight stayed on
+  the day it was on before, which was now the one just below. It lands on
+  the day you were writing. Backing out of a day you never wrote in still
+  puts you back where you were.
+
+- **A new line at the bottom of the editor no longer drops out of sight.**
+  Pressing <kbd>enter</kbd> on the last visible line of a long day moved
+  the cursor onto a line below the box, and it stayed hidden as you kept
+  typing; only the scrollbar showed that anything had been added. The
+  editor now scrolls to the new line.
+
+- **A diary kept behind a symlink stays there.** If `diary.enc` was a link
+  to a file somewhere else — a synced or backed-up folder, say — the first
+  save replaced the link with a file of its own, and from then on your
+  writing went to that local copy while the real diary stopped changing,
+  with no error to say so. Saves now go to the file the link points to.
+
+- **Settings opens with any theme in use.** A theme named in `config.json`
+  that is not one of the picker's eight — Textual's `monokai`, for one —
+  crashed the app the moment Settings opened. It now appears in the
+  picker under its own name.
+
+- **Reading with the scroll wheel keeps the diary open.** Only keys and
+  clicks counted as someone being there, so a long day read with the
+  mouse wheel locked partway down the page. Scrolling now counts too;
+  merely moving the mouse still does not.
+
+- **Narrowing a search keeps your place.** Typing more of a query left the
+  highlight on whichever result happened to land where the old one had
+  been, rather than on the day you had picked out. It stays on that day
+  while it still matches, and goes back to the top when it does not.
+
+- **The calendar no longer crashes at the beginning of time.** With year
+  0001 typed into the date field, stepping a day or a week back from 1
+  January took the app down. It stops on the 1st instead.
+
 ## [0.7.0] - 2026-09-16
 
 ### Security
@@ -398,7 +449,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kfurtak1024/zecret/compare/v0.5.0...v0.5.1

@@ -5,9 +5,16 @@ Required coverage:
     - The theme picker starts on the theme in use, applies a choice
       immediately, and saves it so the next launch starts there.
     - A theme that cannot be saved still applies to this session.
-    - The lock picker starts on the saved wait, falls back to the default
-      for a wait it cannot show, applies and saves a choice, and offers
-      "Never"; a wait that cannot be saved still applies.
+    - A theme in use that the picker does not curate -- hand-edited into
+      the file, or curated by an earlier build -- is offered under its own
+      name rather than crashing the screen, which Select used to do.
+    - The lock picker starts on the saved wait, applies and saves a
+      choice, and offers "Never"; a wait that cannot be saved still
+      applies.
+    - A saved wait the picker does not offer is shown as itself, and
+      opening the screen leaves it alone. It used to be shown as the
+      default, which Select reported as a change -- so looking at
+      Settings rewrote a two-minute lock to fifteen, on disk.
     - The master password section is a button onto a dialog, and this
       screen holds no password fields and no warning of its own. What the
       dialog does is covered by tests/test_password_screen.py.
@@ -24,7 +31,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Button, Input, Label, Select
 
 from zecret.app import ZecretApp
-from zecret.config import DEFAULT_LOCK_AFTER_MINUTES, DEFAULT_THEME, Config
+from zecret.config import DEFAULT_THEME, Config
 from zecret.models import Entry
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.settings import (
@@ -33,6 +40,7 @@ from zecret.screens.settings import (
     THEME_NOT_SAVED,
     THEMES,
     SettingsScreen,
+    lock_after_options,
 )
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
@@ -110,6 +118,22 @@ async def test_the_picker_starts_on_the_theme_in_use(diary_path, isolated_config
         await open_settings(pilot)
         assert theme_select(app).value == "nord"
         assert app.theme == "nord"
+
+
+async def test_a_theme_the_picker_does_not_curate_is_offered_as_itself(diary_path, isolated_config):
+    """A real Textual theme, just not one of the curated few. Select raises
+    on a value that is none of its options, and this used to take the app
+    down as Settings opened."""
+    Config(path=isolated_config, theme="monokai").save()
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        assert isinstance(app.screen, SettingsScreen)
+        assert theme_select(app).value == "monokai"
+        assert app.theme == "monokai"
+
+    assert json.loads(isolated_config.read_text())["theme"] == "monokai"
 
 
 async def test_every_offered_theme_is_one_textual_knows(diary_path):
@@ -272,16 +296,43 @@ async def test_the_lock_picker_starts_on_the_saved_wait(diary_path, isolated_con
         assert app.screen.query_one("#lock-after", Select).value == 30
 
 
-async def test_a_wait_the_picker_cannot_show_falls_back_to_the_default(diary_path, isolated_config):
+async def test_a_wait_the_picker_does_not_offer_is_shown_as_itself(diary_path, isolated_config):
     """The file may have been hand-edited to a number this build does not
-    offer. Select refuses a value that is not one of its options, so the
-    screen must not hand it one."""
+    offer. It is offered too, in its place in the list."""
     isolated_config.write_text(json.dumps({"lock_after_minutes": 7}))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await open_settings(pilot)
-        assert app.screen.query_one("#lock-after", Select).value == DEFAULT_LOCK_AFTER_MINUTES
+        picker = app.screen.query_one("#lock-after", Select)
+        assert picker.value == 7
+        assert picker.selection == 7
+
+
+def test_an_unoffered_wait_takes_its_place_in_the_list():
+    """Soonest first and "Never" last, with the saved wait slotted in."""
+    options = lock_after_options(7)
+    assert [minutes for _, minutes in options] == [1, 5, 7, 15, 30, 60, 0]
+    assert ("After 7 minutes", 7) in options
+    assert lock_after_options(15) == LOCK_TIMEOUTS
+
+
+async def test_opening_settings_does_not_change_a_wait_it_does_not_offer(
+    diary_path, isolated_config
+):
+    """Two minutes is stricter than anything offered. Showing the default
+    in its place used to write the default back -- a slower lock, chosen
+    by nobody, for having looked at the screen."""
+    isolated_config.write_text(json.dumps({"lock_after_minutes": 2}))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_settings(pilot)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.config.lock_after_minutes == 2
+
+    assert json.loads(isolated_config.read_text())["lock_after_minutes"] == 2
 
 
 async def test_choosing_a_wait_applies_and_is_remembered(diary_path, isolated_config):

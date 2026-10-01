@@ -50,7 +50,7 @@ from textual.geometry import Region
 from textual.reactive import reactive
 from textual.strip import Strip
 from textual.widgets import Label, TextArea
-from textual.widgets.text_area import Location
+from textual.widgets.text_area import Edit, EditResult, Location
 
 from zecret.models import Entry
 from zecret.screens.base import UNSAVED_CHANGES, FormScreen, format_day_long, save_error
@@ -384,6 +384,40 @@ class DiaryTextArea(TextArea):
             self.wrapped_document.wrap(width, tab_width=self.indent_width)
             self._line_cache.clear()
         return super().render_lines(crop)
+
+    def edit(self, edit: Edit) -> EditResult:
+        """Make an edit, and then bring the cursor into view once more.
+
+        TextArea.edit moves the cursor (Edit.after, which scrolls to it)
+        before it grows the scrollable height to fit the edit
+        (_refresh_size) -- the wrong way round, and against Edit.after's
+        own promise to run once the display is up to date. Undo and redo
+        do the two in the right order; this is the path that does not. So
+        a scroll to a row the edit has just added is clamped to the old
+        height and falls one row short: Enter on the bottom line of a day
+        that fills the box put the cursor on a row below the box, and every
+        further line typed stayed out of sight with it, while the scrollbar
+        already said the row was there.
+
+        Scrolling again here, with the height brought up to date, reaches
+        it. The first scroll still happens and is harmless; this one is
+        the one that lands, and is only made when the edit changed the
+        height -- nothing else can have left the first one short, and
+        most keystrokes land mid-line and change nothing.
+
+        Only the keyboard edits the text in this app -- typing, deleting,
+        pasting -- so every edit is at the cursor, and following it is
+        never a jump away from where the writer is looking. Copying edit()
+        whole to reorder the two calls would fix the same thing at the
+        price of owning Textual's internals; if Textual reorders them
+        itself, the height is already right when the cursor moves, and this
+        second scroll finds nothing to do and can go.
+        """
+        height = self.virtual_size.height
+        result = super().edit(edit)
+        if self.virtual_size.height != height:
+            self.scroll_cursor_visible()
+        return result
 
     # --- emphasis ----------------------------------------------------------
 

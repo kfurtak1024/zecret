@@ -30,7 +30,6 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.widgets import Button, Label, Select
 
-from zecret.config import DEFAULT_LOCK_AFTER_MINUTES
 from zecret.screens.base import ZecretScreen, card
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.screens.password import PasswordScreen
@@ -66,6 +65,44 @@ THEMES: list[tuple[str, str]] = [
 ]
 
 
+def theme_options(current: str) -> list[tuple[str, str]]:
+    """The curated themes, plus the one in use if it is not among them.
+
+    The theme in use can be any Textual ships -- config.json is a file
+    anyone can edit, and a later build may curate a shorter list than the
+    one that saved it -- and Select raises on a value that is none of its
+    options, which took the app down the moment Settings opened. Offering
+    it under its own name shows the truth instead: that is the theme you
+    are looking at, and choosing another is one move away. It has not
+    been checked against this app's styling, which is why it is not simply
+    added to THEMES.
+    """
+    if any(theme == current for _, theme in THEMES):
+        return THEMES
+    return [*THEMES, (current, current)]
+
+
+def lock_after_options(current: int) -> list[tuple[str, int]]:
+    """The offered waits, plus the saved one if it is not among them.
+
+    For the same reason as theme_options, and with more at stake. This
+    used to start the dropdown on the default instead, and Select reports
+    its opening value as a change -- so merely opening Settings replaced a
+    hand-set wait with fifteen minutes, on disk. A diary set to lock after
+    two minutes would quietly start taking fifteen, which is the one
+    direction this setting must never drift in unasked.
+
+    Slotted in by length, ahead of "Never", so the list still reads from
+    soonest to not at all.
+    """
+    if any(minutes == current for _, minutes in LOCK_TIMEOUTS):
+        return LOCK_TIMEOUTS
+    label = "After 1 minute" if current == 1 else f"After {current} minutes"
+    timed = [option for option in LOCK_TIMEOUTS if option[1] > 0]
+    never = [option for option in LOCK_TIMEOUTS if option[1] == 0]
+    return sorted([*timed, (label, current)], key=lambda option: option[1]) + never
+
+
 class SettingsScreen(ZecretScreen):
     """Pick a theme, choose when the diary locks, and reach the password
     dialog.
@@ -97,8 +134,8 @@ class SettingsScreen(ZecretScreen):
                 classes="section-hint",
             )
             yield Select(
-                THEMES,
-                value=self.zecret.config.theme,
+                theme_options(self.zecret.theme),
+                value=self.zecret.theme,
                 allow_blank=False,
                 id="theme",
             )
@@ -110,8 +147,8 @@ class SettingsScreen(ZecretScreen):
                 classes="section-hint",
             )
             yield Select(
-                LOCK_TIMEOUTS,
-                value=self.lock_after_choice(),
+                lock_after_options(self.zecret.config.lock_after_minutes),
+                value=self.zecret.config.lock_after_minutes,
                 allow_blank=False,
                 id="lock-after",
             )
@@ -136,18 +173,6 @@ class SettingsScreen(ZecretScreen):
         # change. Arrow keys on a closed dropdown open it rather than
         # moving the selection, so landing here changes nothing by itself.
         self.query_one("#theme", Select).focus()
-
-    def lock_after_choice(self) -> int:
-        """The saved timeout, or the nearest one this screen can show.
-
-        The file may hold any whole number of minutes -- it was hand-edited,
-        or written by a version offering a different set. Falling back to
-        the default beats starting the dropdown on a value it cannot
-        display, which Select refuses outright.
-        """
-        saved = self.zecret.config.lock_after_minutes
-        offered = {minutes for _, minutes in LOCK_TIMEOUTS}
-        return saved if saved in offered else DEFAULT_LOCK_AFTER_MINUTES
 
     # --- appearance --------------------------------------------------------
 

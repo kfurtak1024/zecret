@@ -15,6 +15,9 @@ Required coverage:
       no other entries are affected.
     - save() is atomic: simulate/verify no partial file is left if
       interrupted (e.g. check a temp file is used and renamed).
+    - save() through a symlink replaces the file it points to, not the
+      link: a diary kept elsewhere and linked into ~/.zecret used to be cut
+      loose on its first save.
     - create_new() refuses a path that gained a diary while it was busy
       deriving the key, rather than writing over it, and leaves nothing
       behind if the write fails.
@@ -708,8 +711,30 @@ def test_save_uses_a_temp_file_and_renames_it(diary_path, monkeypatch):
 
     assert len(calls) == 1, "expected exactly one atomic rename"
     src, dst = calls[0]
-    assert dst == str(diary_path)
-    assert src != str(diary_path)
+    # Resolved, as the write resolves it: where the temp directory is
+    # itself a link (macOS's /tmp), the rename names the real path.
+    assert dst == str(diary_path.resolve())
+    assert src != dst
+
+
+def test_save_writes_through_a_symlinked_diary(tmp_path):
+    """A diary linked from where Zecret looks, and kept somewhere else.
+    The rename used to replace the link with a regular file, so from the
+    first save on the real diary stopped changing."""
+    real = tmp_path / "elsewhere" / "diary.enc"
+    real.parent.mkdir()
+    DiaryFile.create_new(real, PASSWORD)
+    link = tmp_path / "diary.enc"
+    link.symlink_to(real)
+
+    diary, key = DiaryFile.unlock(link, PASSWORD)
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Written through the link"))
+    diary.save(key)
+
+    assert link.is_symlink(), "the save replaced the link with a file of its own"
+    reopened, _ = DiaryFile.unlock(real, PASSWORD)
+    assert UNWRITTEN_DAY in reopened.entries
+    assert sorted(p.name for p in real.parent.iterdir()) == ["diary.enc"]
 
 
 def test_save_fsyncs_before_renaming(diary_path, monkeypatch):

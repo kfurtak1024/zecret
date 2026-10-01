@@ -19,7 +19,10 @@ Required coverage:
       the one case the feature is really for. Idleness is measured on both
       clocks now, and a clock shoved backwards must still not hold the
       lock off, which is why the monotonic one is still read at all.
-    - Typing puts the wait back to the start.
+    - Typing puts the wait back to the start, and so does the scroll
+      wheel: reading a long day with it is being there, and it used to be
+      the one way of reading that got locked mid-page. Moving the mouse
+      does not, since a mouse nudged on a desk is not a reader.
     - A half-written entry holds the lock off -- and keeps holding it off
       after the writer comes back, rather than locking the instant they
       save.
@@ -46,6 +49,7 @@ import time
 from pathlib import Path
 
 import pytest
+from textual import events
 from textual.widgets import Input, TextArea
 
 import zecret.app
@@ -323,13 +327,49 @@ async def test_typing_puts_the_wait_back_to_the_start(diary_path):
         await unlock(pilot)
         app.config.lock_after_minutes = 15
 
-        go_quiet(app, 14)
+        # Past the deadline, so only the keypress can be what keeps it
+        # open. At fourteen minutes this passed with or without one.
+        go_quiet(app, 16)
         await pilot.press("down")
         await pilot.pause()
         app.lock_if_idle()
         await pilot.pause()
 
         assert app.is_unlocked, "a keypress should have reset the clock"
+
+
+async def test_scrolling_puts_the_wait_back_to_the_start(diary_path):
+    """Reading a long day with the wheel is someone at the diary. Only keys
+    and clicks used to count, so it locked in the middle of the page."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_quiet(app, 16)
+        app.post_message(events.MouseScrollDown(None, 10, 10, 0, 1, 0, False, False, False))
+        await pilot.pause()
+        app.lock_if_idle()
+        await pilot.pause()
+
+        assert app.is_unlocked, "a turn of the wheel should have reset the clock"
+
+
+async def test_moving_the_mouse_does_not_hold_the_lock_off(diary_path):
+    """A mouse nudged on a desk is not someone reading."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_quiet(app, 16)
+        await pilot.hover(offset=(5, 5))
+        await pilot.hover(offset=(20, 10))
+        await pilot.pause()
+        app.lock_if_idle()
+        await pilot.pause()
+
+        assert not app.is_unlocked
 
 
 async def test_a_suspended_machine_counts_as_being_away(diary_path):

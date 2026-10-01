@@ -6,6 +6,9 @@ Required coverage:
     - No matches shows an empty state rather than a blank list.
     - Selecting a result opens that day in the editor; results refresh on
       return, with the cursor still on the day that was opened.
+    - Changing the query keeps the cursor on the day it was on when that
+      day still matches, and starts at the top when it does not -- never on
+      whichever day happens to sit at the old row number.
     - Escape returns to the list.
     - Searching never writes anything to disk.
     - A result carries the entry's whole first line and is clipped to the
@@ -303,6 +306,25 @@ async def test_the_cursor_stays_on_the_result_you_opened(stocked):
         await pilot.pause()
 
         assert app.screen.query_one("#results", ListView).index == 2
+
+
+async def test_narrowing_the_query_keeps_the_highlighted_day(stocked):
+    """The day under the cursor still matches, so the cursor stays on it,
+    wherever it has moved to. The old row number used to be looked up in
+    the new results, which put the cursor on whatever sat there instead."""
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("down", "down")
+        await pilot.pause()
+        assert app.screen.highlighted_date == LAST_WEEK
+
+        await type_query(pilot, ":")  # yesterday's and last week's, not today's
+        assert app.screen.query_one("#results", ListView).index == 1
+        assert app.screen.highlighted_date == LAST_WEEK
 
 
 async def test_a_query_that_drops_the_highlighted_day_starts_at_the_top(stocked):

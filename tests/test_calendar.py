@@ -12,7 +12,9 @@ Required coverage:
     - The cursor moves by day, by week and by month, and reaches the two
       ends of the month.
     - It never lands on a day that has not happened: movement clamps to
-      today rather than refusing, so no key is dead.
+      today rather than refusing, so no key is dead. The other end clamps
+      too: a day or a week back from the first day a date can be stops
+      there instead of overflowing, which used to crash the app.
     - Paging a month keeps the day of the month where the month it lands
       in is long enough, and stops at that month's last day where it is
       not. Paging off the ends of what a date can be leaves it alone.
@@ -189,6 +191,20 @@ async def test_the_arrow_keys_move_a_day_and_a_week():
         assert app.calendar.date == dt.date(2020, 8, 7)
         await pilot.press("down", "down")
         assert app.calendar.date == dt.date(2020, 8, 21)
+
+
+async def test_the_first_day_there_is_stops_a_day_or_a_week_back():
+    """1 January of year 1, where `date - timedelta` overflows. That used
+    to raise out of the key handler and take the app down; it stops there
+    instead, and a week back from a few days in gets as far as the 1st."""
+    app = CalendarHarness(dt.date(1, 1, 3))
+    async with app.run_test() as pilot:
+        await pilot.press("up")
+        assert app.calendar.date == dt.date.min
+        await pilot.press("left", "up")
+        assert app.calendar.date == dt.date.min
+        await pilot.press("right")
+        assert app.calendar.date == dt.date(1, 1, 2)
 
 
 async def test_the_page_keys_move_a_month():
