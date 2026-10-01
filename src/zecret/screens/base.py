@@ -29,8 +29,10 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from textual.containers import VerticalScroll
+from textual.content import Content
 from textual.screen import Screen
 from textual.widgets import Input, Label, OptionList
+from textual.widgets.option_list import Option
 
 from zecret.models import Entry
 from zecret.storage import ZecretConflictError
@@ -218,6 +220,26 @@ def card(id: str) -> VerticalScroll:
     return VerticalScroll(id=id, can_focus=False)
 
 
+def plain(text: str) -> Content:
+    """`text` exactly as it is, never read as markup.
+
+    Textual reads a plain string handed to a Label, an Option or a
+    notification as markup. That is right for text Zecret writes and
+    wrong for anything it does not: a diary's first line holding `[bold]`
+    lost its brackets and turned bold, and one holding a stray `[/bold]`
+    raised MarkupError and took the app down every time the list was
+    drawn. The same went for an error message quoting a damaged file, a
+    path, or the operating system. Whatever was not typed into this
+    source file goes through here on its way to the screen.
+    """
+    return Content(text)
+
+
+def day_row(text: str) -> Option:
+    """One row of a DayList -- see plain() for why it is not a string."""
+    return Option(plain(text))
+
+
 class DayList(OptionList):
     """A list of days -- the entry list's, and search's -- that stops at its ends.
 
@@ -335,7 +357,8 @@ class FormScreen(ZecretScreen):
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
         line.remove_class("-advice", "-advice-strong")
-        line.update(message)
+        # Plain: an error can quote the operating system, or a path.
+        line.update(plain(message))
 
     def advise_on_password(self, password: str) -> None:
         """Show how strong a password being chosen is, without refusing it.
@@ -372,7 +395,7 @@ class FormScreen(ZecretScreen):
             return
         line.add_class("-advice")
         line.set_class(strength.score > NEEDS_HELP, "-advice-strong")
-        line.update(strength.line())
+        line.update(plain(strength.line()))
 
     def clear_inputs(self) -> None:
         """Empty every text field.

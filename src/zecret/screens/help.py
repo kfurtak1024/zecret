@@ -31,6 +31,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, Static
 
 from zecret import __version__
+from zecret.screens.base import plain
 from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
@@ -122,6 +123,15 @@ SECTIONS: list[Section] = [
     ),
 ]
 
+#: Between a key and what it does.
+KEY_GAP = "   "
+
+
+def key_width(rows: list[tuple[str, str]]) -> int:
+    """How wide the widest key in `rows` is -- the column they align to."""
+    return max((len(display) for display, _ in rows), default=0)
+
+
 #: The rules no key can express. Kept short: this is a popup, and every
 #: line here is a line of the diary it is covering.
 NOTES = [
@@ -177,11 +187,22 @@ class HelpScreen(ModalScreen[None]):
             # The short sections sit side by side rather than stacking:
             # between them they are six rows of content under three
             # headings, and the popup has more width to spend than height.
+            # Measured like any other set of columns, so that a terminal
+            # too narrow for three abreast stacks them instead of wrapping
+            # their rows -- see fit_columns.
+            omits = [diary_rows if section.shares_diary_keys else [] for section in SECTIONS]
+            self.note_columns_width(
+                [
+                    max(
+                        len(section.title), self.rows_width(self.section_rows(section.groups, omit))
+                    )
+                    for section, omit in zip(SECTIONS, omits, strict=True)
+                ]
+            )
             with Horizontal(classes="help-columns"):
-                for section in SECTIONS:
+                for section, omit in zip(SECTIONS, omits, strict=True):
                     with Vertical(classes="help-column"):
                         yield Label(section.title, classes="section-title")
-                        omit = diary_rows if section.shares_diary_keys else []
                         yield from self.section_keys(section.groups, omit)
 
             yield Label("Worth knowing", classes="section-title")
@@ -248,34 +269,49 @@ class HelpScreen(ModalScreen[None]):
         the split reads as one section laid out in two columns rather than
         as two sections that happen to be adjacent.
         """
-        rows = [row for row in self.key_rows(groups) if row not in (omit or [])]
+        rows = self.section_rows(groups, omit)
 
-        width = max((len(display) for display, _ in rows), default=0)
+        width = key_width(rows)
         if len(rows) <= COLUMN_THRESHOLD:
             yield from self.key_labels(rows, width)
             return
 
-        self.note_columns_width(rows, width)
         half = (len(rows) + 1) // 2
+        self.note_columns_width([self.rows_width(rows)] * 2)
         with Horizontal(classes="help-columns"):
             for chunk in (rows[:half], rows[half:]):
                 with Vertical(classes="help-column"):
                     yield from self.key_labels(chunk, width)
 
+    def section_rows(
+        self, groups: list[list[BindingType]], omit: list[tuple[str, str]] | None = None
+    ) -> list[tuple[str, str]]:
+        """The rows a section lists: its keys, less any in `omit`."""
+        return [row for row in self.key_rows(groups) if row not in (omit or [])]
+
+    def rows_width(self, rows: list[tuple[str, str]]) -> int:
+        """How wide the widest of `rows` is, laid out by key_labels."""
+        width = key_width(rows)
+        return max((width + len(KEY_GAP) + len(description) for _, description in rows), default=0)
+
     def key_labels(self, rows: list[tuple[str, str]], width: int) -> ComposeResult:
         """The rows of one column, keys right-aligned to `width`."""
         for display, description in rows:
-            yield Label(f"{display:>{width}}   {description}", classes="help-key")
+            yield Label(plain(f"{display:>{width}}{KEY_GAP}{description}"), classes="help-key")
 
-    def note_columns_width(self, rows: list[tuple[str, str]], width: int) -> None:
-        """Record how wide a terminal these rows need to sit in two columns.
+    def note_columns_width(self, widths: list[int]) -> None:
+        """Record how wide a terminal these columns need to sit side by side.
 
-        Two of the widest row, the gap between them, and the box's own
-        border and padding.
+        `widths` is how wide each column's widest line is. Columns share the
+        row equally (`1fr` each in app.tcss), so every one of them is given
+        room for the widest; then the gaps between them, and the box's own
+        border and padding. Every set of columns on the page is measured --
+        the long sections split in two, and the row of short sections side
+        by side -- and the widest need decides when they all stack.
         """
-        widest = max(width + 3 + len(description) for _display, description in rows)
         chrome = 2 + 2 * 2  # border, then padding: 1 2
-        self.min_columns_width = max(self.min_columns_width, 2 * widest + COLUMN_GAP + chrome)
+        needed = len(widths) * max(widths) + (len(widths) - 1) * COLUMN_GAP + chrome
+        self.min_columns_width = max(self.min_columns_width, needed)
 
     def action_back(self) -> None:
         self.dismiss()

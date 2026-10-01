@@ -19,12 +19,10 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.content import Content
 from textual.widgets import Input, Label
-from textual.widgets.option_list import Option
 
 from zecret.models import Entry
-from zecret.screens.base import DayList, ZecretScreen, entry_summary, unchanged
+from zecret.screens.base import DayList, ZecretScreen, day_row, entry_summary, unchanged
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 
@@ -83,6 +81,10 @@ class SearchScreen(ZecretScreen):
         diary, _ = self.zecret.unlocked
         if not unchanged(self.drawn, diary.entries):
             self.refresh_results()
+            # Taken here rather than on every refresh: the diary cannot
+            # change while this screen is the one in front, only while the
+            # editor is, so a keystroke has no reason to copy it.
+            self.drawn = dict(diary.entries)
 
     def on_input_changed(self, _event: Input.Changed) -> None:
         """Live filtering -- no submit step."""
@@ -123,11 +125,8 @@ class SearchScreen(ZecretScreen):
         # results, so narrowing a query left the cursor on whatever day now
         # sat at that row -- neither the day you were on nor the top.
         was_on = self.highlighted_date
-        self.drawn = dict(diary.entries)
         self.results = found_entries
-        # Content, not a string Textual would read as markup -- see
-        # entry_option in entry_list.py for what that cost.
-        results.set_options(Option(Content(entry_summary(entry))) for entry in self.results)
+        results.set_options(day_row(entry_summary(entry)) for entry in self.results)
 
         found = bool(self.results)
         self.query_one("#search-empty", Label).display = not found

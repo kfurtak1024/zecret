@@ -39,6 +39,10 @@ Required coverage:
     - A move within the year redraws only the months it touched; a move
       into another year redraws all twelve.
     - Both calendars walk by one key map, WalkableCalendar's.
+    - The year's cursor is drawn solid while the year has focus and soft
+      while it does not. The rule is keyed on the year and the cursor is
+      painted by a month inside it, so this checks what reaches the screen
+      rather than trusting the stylesheet.
 """
 
 from __future__ import annotations
@@ -619,3 +623,33 @@ def test_both_calendars_walk_by_the_same_keys():
     """One key map, written once: a fix to one calendar is a fix to both."""
     for widget in (MonthCalendar, YearCalendar):
         assert issubclass(widget, WalkableCalendar)
+
+
+def painted_cursor(app: YearHarness) -> str:
+    """The background the cursor's day is painted on, read off the screen."""
+    month = app.year.cursor_month
+    day = f"{app.year.date.day:>2}"
+    region = month.region
+    for y, strip in enumerate(app.screen._compositor.render_strips()):
+        if not region.y <= y < region.bottom:
+            continue
+        x = 0
+        for segment in strip:
+            if region.x <= x < region.right and segment.text.strip() == day.strip():
+                return str(segment.style.bgcolor if segment.style else None)
+            x += len(segment.text)
+    raise AssertionError("the cursor's day is not on the screen")
+
+
+async def test_the_year_cursor_is_solid_only_while_the_year_has_focus():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        focused = painted_cursor(app)
+        app.screen.set_focus(None)
+        await pilot.pause()
+        blurred = painted_cursor(app)
+        app.year.focus()
+        await pilot.pause()
+        assert blurred != focused, "the cursor should soften when the year loses focus"
+        assert painted_cursor(app) == focused

@@ -59,7 +59,6 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.content import Content
 from textual.widgets import Label
 from textual.widgets.option_list import Option
 
@@ -69,9 +68,11 @@ from zecret.screens.base import (
     DayList,
     ZecretScreen,
     count_entries,
+    day_row,
     day_summary,
     format_day,
     format_month,
+    plain,
     save_error,
     today,
     unchanged,
@@ -92,6 +93,12 @@ EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
 RELOAD_REKEYED = "The password was changed elsewhere. Quit and unlock again."
 
 
+#: Lines a month heading takes on screen: the blank line that sets it apart,
+#: and the heading. A day takes one. Paging counts these rather than rows --
+#: see EntryListScreen.move_cursor.
+HEADING_LINES = 2
+
+
 def heading_option(first_of_month: dt.date, count: int) -> Option:
     """The row naming a month, with a blank line above it to set it apart.
 
@@ -101,19 +108,12 @@ def heading_option(first_of_month: dt.date, count: int) -> Option:
     own, and a separate blank option would be one more row to step over.
     """
     heading = f"{format_month(first_of_month)} · {count_entries(count)}"
-    return Option(Content(f"\n{heading}"), disabled=True)
+    return Option(plain("\n" * (HEADING_LINES - 1) + heading), disabled=True)
 
 
 def entry_option(entry: Entry) -> Option:
-    """The row for one day.
-
-    `Content` rather than a plain string, which Textual would read as
-    markup: a first line holding `[bold]` lost its brackets and turned
-    bold, and one holding a stray `[/bold]` raised MarkupError and took the
-    app down every time the list was drawn. The row is what was written,
-    character for character.
-    """
-    return Option(Content(day_summary(entry)))
+    """The row for one day, exactly as written -- see base.plain()."""
+    return day_row(day_summary(entry))
 
 
 class EntryListScreen(ZecretScreen):
@@ -420,7 +420,9 @@ class EntryListScreen(ZecretScreen):
             return
         except (OSError, ValueError) as error:
             detail = error.strerror if isinstance(error, OSError) and error.strerror else error
-            self.notify(f"Could not re-read the diary: {detail}.", severity="error")
+            # Not markup: the detail can quote the file, which is the very
+            # thing this is reporting as damaged.
+            self.notify(f"Could not re-read the diary: {detail}.", severity="error", markup=False)
             return
 
         self.zecret.diary = reopened
@@ -457,11 +459,21 @@ class EntryListScreen(ZecretScreen):
 
     @property
     def page_rows(self) -> int:
-        """A screenful, less a row, so the jump keeps something in view."""
+        """A screenful of lines, less one, so the jump keeps something in view."""
         return max(1, self.entries_list.scrollable_content_region.height - 1)
 
-    def move_cursor(self, rows: int) -> None:
-        """Move the highlight `rows` rows, landing on a day.
+    def lines_of(self, row: int) -> int:
+        """How many lines of the screen a row takes."""
+        return HEADING_LINES if self.rows[row] is None else 1
+
+    def move_cursor(self, lines: int) -> None:
+        """Move the highlight about `lines` lines of the screen, landing on a day.
+
+        Lines and not rows: a month heading is two lines tall, so a jump of
+        a screenful of rows went further than a screenful -- and in a diary
+        with a few days a month, where every third row is a heading, page
+        down stepped clean over days that never once reached the screen.
+        At least one row is always crossed, so a page key is never dead.
 
         Assigning an index is not filtered by the skip-disabled rule that
         arrow keys follow, so a jump that lands on a month heading has to
@@ -471,8 +483,14 @@ class EntryListScreen(ZecretScreen):
         here = self.entries_list.highlighted
         if here is None:
             return
-        target = min(max(here + rows, 0), len(self.rows) - 1)
-        onwards = 1 if rows > 0 else -1
+        onwards = 1 if lines > 0 else -1
+        target, travelled = here, 0
+        while 0 <= target + onwards < len(self.rows):
+            step = self.lines_of(target + onwards)
+            if target != here and travelled + step > abs(lines):
+                break
+            target += onwards
+            travelled += step
         landing = self.entry_row_from(target, onwards)
         if landing is None:
             # Ran out of list that way: the top of the diary is always a
@@ -581,5 +599,5 @@ class EntryListScreen(ZecretScreen):
             # The file still holds the entry, so put it back in memory too
             # rather than let the user believe the deletion stuck.
             diary.add_entry(entry)
-            self.notify(save_error(error), severity="error")
+            self.notify(save_error(error), severity="error", markup=False)
         self.refresh_entries()

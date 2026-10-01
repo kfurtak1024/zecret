@@ -14,7 +14,8 @@ the way back -- see EntryListScreen.action_calendar.
 
 Responsibilities:
     - Lay out the year the cursor is in, three to six months across as the
-      terminal allows (app.tcss, keyed on the breakpoint classes below).
+      terminal allows (app.tcss, keyed on the class fit_months sets) --
+      decided, and scrolled to the cursor, before the first frame is drawn.
     - 'e' or enter opens the day under the cursor in the editor, whether
       or not it has been written -- the editor decides which it is, as it
       does from everywhere else.
@@ -28,8 +29,10 @@ Responsibilities:
 from __future__ import annotations
 
 import datetime as dt
+from contextlib import ExitStack
 from typing import ClassVar
 
+from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Center
@@ -50,9 +53,16 @@ MONTH_GAP = 2
 #: needs scrolling, because the card always reserves them -- see
 #: `scrollbar-gutter` on #year-box in app.tcss. A scrollbar that came and
 #: went would make the right count depend on the terminal's height, which
-#: a width breakpoint cannot see, and would nudge the centred year sideways
+#: fit_months does not look at, and would nudge the centred year sideways
 #: as it appeared.
 CHROME = 2 * 2 + 2 * 2 + 2
+
+
+#: How many months may sit side by side. Five is missing: twelve months in
+#: rows of five leave a ragged last row of two, and the extra width is
+#: better spent waiting for six, which is the year in two even rows. Three
+#: is what an 80-column terminal gets.
+ACROSS = (1, 2, 3, 4, 6)
 
 
 def needs(months: int) -> int:
@@ -60,24 +70,13 @@ def needs(months: int) -> int:
     return months * MONTH_WIDTH + (months - 1) * MONTH_GAP + CHROME
 
 
+def months_across(width: int) -> int:
+    """How many months a terminal `width` columns wide shows side by side."""
+    return max(months for months in ACROSS if months == 1 or width >= needs(months))
+
+
 class CalendarScreen(ZecretScreen):
     """A year at a time, walked by day, week, month and year."""
-
-    #: Which months-across class the screen wears at a given width. Five is
-    #: skipped: twelve months in rows of five leave a ragged last row of two,
-    #: and the extra width is better spent waiting for six, which is the
-    #: year in two even rows. Three is what an 80-column terminal gets.
-    #:
-    #: Unannotated, and ruff's ClassVar rule waived: Textual declares this
-    #: as an instance attribute on Screen, so the ClassVar ruff asks for is
-    #: one mypy refuses as an override.
-    HORIZONTAL_BREAKPOINTS = [  # noqa: RUF012
-        (0, "-months-1"),
-        (needs(2), "-months-2"),
-        (needs(3), "-months-3"),
-        (needs(4), "-months-4"),
-        (needs(6), "-months-6"),
-    ]
 
     #: Reading order, as everywhere: what this view is for, how to leave it,
     #: then the keys every main screen shares, then getting around.
@@ -112,13 +111,20 @@ class CalendarScreen(ZecretScreen):
             the view opens on the year being read. Today, if not given.
         """
         super().__init__()
-        self.start = date
+        # Repaints held back until the year is laid out and scrolled to the
+        # cursor -- see on_mount and show_first.
+        self.first_paint = ExitStack()
         #: The day the cursor is on, which the list lands near on the way
         #: back. A plain copy rather than a look into the YearCalendar: the
         #: list reads it as this screen is being torn down, and by then the
         #: widget may already be gone from the DOM -- Textual removes a
         #: popped screen in a task of its own, unordered against the list's
-        #: resume. Set properly on mount; this is only until then.
+        #: resume. Also the day the year opens on.
+        #:
+        #: Kept up to date by the widget's DateChanged, which is a message
+        #: and so arrives late: a key in the same burst as an arrow runs
+        #: before it does. Anything that acts on the day therefore takes it
+        #: from the widget first -- see take_date.
         self.date = reachable(today() if date is None else date)
         # The year the header was last worded for, so that a move within
         # it does not recount the diary -- see show_year.
@@ -132,11 +138,32 @@ class CalendarScreen(ZecretScreen):
             # Textual does not align the children of a container that
             # scrolls, and in most terminals this one does.
             with Center():
-                yield YearCalendar(self.start, self.written, id="year")
+                yield YearCalendar(self.date, self.written, id="year")
             yield Label(LEGEND, id="year-legend")
         yield DiaryFooter()
 
     def on_mount(self) -> None:
+        """Lay the year out for this terminal before anything is drawn.
+
+        Two things used to reach the screen a frame or more late, and the
+        year visibly rearranged itself as the view opened. How many months
+        sit across was a breakpoint class Textual applied on the screen's
+        first Resize event, which arrives after the first paint -- so a wide
+        terminal showed three months across and then jumped to four or six.
+        And scrolling to the cursor's month needs a finished layout to
+        measure, so it ran after the first paint too, and the view jumped
+        from January down to the month the cursor was in. (When the two
+        landed in the wrong order, the scroll was measured against the
+        layout about to be replaced, and the cursor's month was not brought
+        into view at all.)
+
+        So the class is set here, from the terminal's width, which comes
+        before the first layout; and repaints are held from here until
+        show_first has scrolled, after that layout. The first frame drawn
+        is the finished one.
+        """
+        self.fit_months(self.app.size.width)
+        self.first_paint.enter_context(self.app.batch_update())
         # Without the scroll: focusing a widget brings it into view, and
         # the top of the year is the row *under* the year's own title, so
         # the view opened with its heading scrolled off. Where the view
@@ -144,7 +171,49 @@ class CalendarScreen(ZecretScreen):
         self.calendar.focus(scroll_visible=False)
         self.date = self.calendar.date
         self.show_year()
+        self.call_after_refresh(self.show_first)
+
+    def show_first(self) -> None:
+        """Scroll to the cursor now there is a layout, then let it be drawn.
+
+        The release is in `finally` and on_unmount as well: repaints held
+        are held for the whole app, and a hold that outlived its reason
+        would freeze every screen, not just this one.
+        """
+        try:
+            self.reveal_cursor()
+        finally:
+            self.release_first_paint()
+
+    def release_first_paint(self) -> None:
+        """Let the screen be drawn, and draw it.
+
+        The explicit refresh is what Textual's own delay_update does after
+        its hold, and for the same reason: a frame rendered while repaints
+        were held was thrown away, and nothing else promises to draw the
+        screen again once they are not.
+        """
+        self.first_paint.close()
+        self.refresh()
+
+    def on_unmount(self) -> None:
+        self.first_paint.close()
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Rearrange the months for the new width, and keep the cursor in view."""
+        self.fit_months(event.size.width)
         self.call_after_refresh(self.reveal_cursor)
+
+    def fit_months(self, width: int) -> None:
+        """Wear the class saying how many months fit across -- see app.tcss.
+
+        Set by hand rather than through Textual's HORIZONTAL_BREAKPOINTS,
+        which does the same thing but only from the first Resize event,
+        after the screen has already been drawn once without it.
+        """
+        across = months_across(width)
+        for months in ACROSS:
+            self.set_class(months == across, f"-months-{months}")
 
     def on_screen_resume(self) -> None:
         """Back from the editor: mark whatever was written there.
@@ -220,11 +289,24 @@ class CalendarScreen(ZecretScreen):
 
     # --- actions -----------------------------------------------------------
 
+    def take_date(self) -> dt.date:
+        """The day the cursor is on now, copied into self.date.
+
+        From the widget rather than from the copy, which may not have
+        caught up: 'right' and 'enter' arriving together run both keys
+        before the widget's DateChanged reaches this screen, and opened the
+        day the cursor had just left.
+        """
+        self.date = self.calendar.date
+        return self.date
+
     def action_edit_day(self) -> None:
         """Open the day under the cursor -- written or not, the editor knows."""
-        self.app.push_screen(EditorScreen(self.date))
+        self.app.push_screen(EditorScreen(self.take_date()))
 
     def action_back(self) -> None:
+        """Back to the list, which lands on self.date -- taken fresh here."""
+        self.take_date()
         self.dismiss()
 
     def action_lock(self) -> None:

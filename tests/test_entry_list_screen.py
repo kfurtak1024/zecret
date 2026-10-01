@@ -36,10 +36,16 @@ Required coverage:
       once, never saved up for whatever the list is resumed from next.
       Backing out of a day that was never written leaves the cursor where
       it was.
+    - Page keys move a screenful of *lines*, not rows: a month heading is
+      two lines, and counting rows made page down step over days in a
+      sparse diary without ever showing them.
     - The cursor stops at the ends of the list: down on the oldest day and
       up on the newest stay put rather than wrapping around.
     - A row shows the first line exactly as written: text that looks like
-      Textual markup is neither interpreted nor fatal.
+      Textual markup is neither interpreted nor fatal. So does anything else
+      that quotes text Zecret did not write -- a reload reporting a damaged
+      file shows what the file says, rather than crashing on it, and the
+      delete question shows its wording as given.
     - A row carries the entry's whole first line rather than a fixed slice
       of it, and is clipped to the window at render time. This is what lets
       a wide terminal show more of a day without any of it being recomputed
@@ -49,14 +55,17 @@ Required coverage:
 from __future__ import annotations
 
 import datetime as dt
+import json
 from pathlib import Path
 
 import pytest
 from textual.widgets import Button, Input, Label, MaskedInput, OptionList
+from textual.widgets._toast import Toast
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import EMPTY_BODY, format_day, format_day_short, format_month, unchanged
+from zecret.screens.confirm import ConfirmScreen as Question
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import (
@@ -1230,3 +1239,62 @@ def test_unchanged_is_judged_by_identity():
     assert not unchanged(drawn, {**drawn, first.date: first.edited("One")}), (
         "an edit is a new object even when the text reads the same"
     )
+
+
+async def test_paging_through_a_sparse_diary_shows_every_day(diary_path):
+    """One entry a month, so every other row is a two-line heading. Paged
+    by rows, a jump went half again further than the screen and some days
+    were never on it at all."""
+    days = [dt.date(2020, 1, 15) + dt.timedelta(days=31 * month) for month in range(40)]
+    seed(
+        diary_path, *(Entry.new(day, f"Day of month {month:02d}") for month, day in enumerate(days))
+    )
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        seen: set[str] = set()
+        for _ in range(12):
+            for strip in app.screen._compositor.render_strips():
+                line = "".join(segment.text for segment in strip)
+                if "Day of month" in line:
+                    seen.add(line.split("Day of month")[1].split()[0])
+            await pilot.press("pagedown")
+            await pilot.pause()
+        assert seen == {f"{month:02d}" for month in range(40)}
+
+
+async def test_a_reload_quoting_markup_from_the_file_does_not_crash(diary_path, notifications):
+    """The reload error quotes the file, and the file is the thing that is
+    damaged: a version field of '[/bold]' reached the notification as
+    markup, and Textual raised MarkupError the moment it drew it."""
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        document = json.loads(diary_path.read_text())
+        document["version"] = "[/bold]"
+        diary_path.write_text(json.dumps(document))
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+        assert any("[/bold]" in message for message in notifications(app)), (
+            "the failure should be reported, quoting the file"
+        )
+        # Drawn the way Textual draws it: a toast built from each live
+        # notification. A headless run mounts none of its own, which is
+        # why this went unseen.
+        for notification in app._notifications:
+            drawn = str(Toast(notification).render())
+            assert drawn == notification.message
+
+
+async def test_a_question_shows_its_wording_as_given(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.push_screen(Question("Keep [/bold] as typed?"))
+        await pilot.pause()
+        label = app.screen.query_one("#confirm-question", Label)
+        assert str(label.render()) == "Keep [/bold] as typed?"

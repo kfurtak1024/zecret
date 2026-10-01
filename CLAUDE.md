@@ -126,6 +126,18 @@ Keep this layering strict:
   also, now, most of what a rebuild costs: an OptionList measures every
   row up front, and an ellipsised row is measured across its whole
   snippet.
+- **Text Zecret did not write never reaches Textual as markup.** A plain
+  string handed to a `Label`, an `Option` or `notify()` is parsed as
+  markup, and a stray closing tag in it raises `MarkupError` — taking the
+  app down at the moment it was trying to show something. Entry text is the
+  obvious case, but not the only one: an error can quote the diary file
+  (which is exactly when it is damaged), a path, or the operating system.
+  So entry text, error lines (`FormScreen.set_error`, the date prompt's),
+  the confirm question and the help's key rows all go through `plain()` in
+  `screens/base.py`, and a notification carrying anything but a constant
+  passes `markup=False`. A test drives each with `[/bold]`. Headless tests
+  mount no toasts, so a notification is checked by rendering a `Toast`
+  from it — that is how this hid from the suite.
 - **A list of days is an `OptionList`, never a `ListView`.** Both lists —
   the entry list and search — are `DayList` (`screens/base.py`), an
   `OptionList` that stops at its ends instead of wrapping. A `ListView` is
@@ -134,17 +146,20 @@ Keep this layering strict:
   every return to the list, and every keystroke in search that still
   matched most of the diary. An `OptionList` is one widget that draws the
   rows in view, and builds the same ten years in well under a second.
-  Three things come with it. A row's text is `Content`, never a plain
-  string: Textual reads a string as markup, so a first line holding
-  `[bold]` changed style and one holding a stray `[/bold]` raised
-  `MarkupError` and took the app down whenever the list was drawn. A
+  Three things come with it. A row is built with `day_row()`, whose text
+  is `Content` and never a plain string: Textual reads a string as markup,
+  so a first line holding `[bold]` changed style and one holding a stray
+  `[/bold]` raised `MarkupError` and took the app down whenever the list
+  was drawn. A
   rebuild is synchronous and needs no lock, since nothing in it awaits —
   and it happens on resume only when the diary has changed since the rows
   were drawn (`unchanged()` in `screens/base.py`, which compares entries by
   identity: `Entry` is frozen, so an edit is always a new object).
   And the page keys stay with the screen (`priority=True`):
   `OptionList`'s own page up finds nothing enabled above the month heading
-  at the top and drops the highlight. `tests/test_scale.py` holds the
+  at the top and drops the highlight. They count screen *lines*, not rows
+  (`HEADING_LINES`): a heading is two lines, and a jump of a screenful of
+  rows stepped over days in a sparse diary without ever showing them. `tests/test_scale.py` holds the
   rebuild to a ceiling at ten years.
 
 Interface note: `DiaryFile.create_new()` and `DiaryFile.unlock()` return
@@ -548,10 +563,17 @@ patch number, not a retry. This is why `check` and `verify` run first.
   through the same module functions (`draw_month`, `day_role`), and wear
   the same `month-calendar--*`
   component classes, so one set of rules in `app.tcss` paints both. How
-  many months sit across is the stylesheet's call, from breakpoint
-  classes `CalendarScreen` wears (`HORIZONTAL_BREAKPOINTS`), not the
+  many months sit across is the stylesheet's call, from a `-months-N`
+  class `CalendarScreen.fit_months` sets from the terminal's width, not the
   widget's — nothing measures the terminal, and three months fit 80
   columns only because a day there is three columns wide, not four.
+  Set by hand, in `on_mount` and on resize, rather than through Textual's
+  `HORIZONTAL_BREAKPOINTS`: that applies the class from the screen's first
+  Resize event, which lands after the first paint, and the year was seen
+  rearranging itself. For the same reason the screen holds repaints
+  (`App.batch_update`) from mount until it has scrolled to the cursor's
+  month, so the first frame drawn is the finished one — released in a
+  `finally` and on unmount, since a hold left behind freezes the whole app.
   Up and down move a week, never "to the month drawn above", which would
   mean something different at every width.
   `MonthCalendar` owns nothing. The date belongs to the field above it; the grid posts
@@ -787,7 +809,9 @@ patch number, not a retry. This is why `check` and `verify` run first.
   is too narrow to pair them — the same bargain `fit_logo()` already makes.
   This is what keeps the page to 35 rows rather than 50-odd, with the
   calendar, the editor and the rest sitting three columns abreast under
-  the list's two. Its full height is
+  the list's two. Every set of columns is measured (`note_columns_width`),
+  the three abreast included: the widest need decides when they all
+  stack, and a set left unmeasured is squeezed until its rows wrap. Its full height is
   coupled to two constants that must move together: `ROWS["help"]` in
   `tools/screenshots.py` (what the picture is shot at) and `SHOT_ROWS` in
   `tests/test_help_screen.py` (which fails if the page outgrows it).

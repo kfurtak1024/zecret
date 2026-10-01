@@ -420,7 +420,7 @@ class MonthCalendar(WalkableCalendar):
 YEAR_CELL = 3
 
 #: How wide one month is in the year view, which app.tcss sizes the grid
-#: columns to and the calendar screen's breakpoints are counted in.
+#: columns to and CalendarScreen counts how many fit across in.
 MONTH_WIDTH = YEAR_CELL * DAYS
 
 
@@ -475,10 +475,10 @@ class MonthGrid(Widget):
 class YearCalendar(WalkableCalendar):
     """A year of months, one cursor walking through all of them.
 
-    How many months sit side by side is the stylesheet's business, not
-    this widget's: it is a grid of twelve MonthGrids and app.tcss decides
-    the grid's width from the calendar screen's breakpoints. Nothing here
-    measures the terminal, so nothing here has to be redone when it
+    How many months sit side by side is not this widget's business: it is
+    a grid of twelve MonthGrids, and app.tcss sizes the grid from the
+    `-months-N` class CalendarScreen wears for the terminal's width. Nothing
+    here measures the terminal, so nothing here has to be redone when it
     changes size.
 
     The keys are a calendar's -- WalkableCalendar's, the same as
@@ -557,17 +557,6 @@ class YearCalendar(WalkableCalendar):
     def cursor_month(self) -> MonthGrid:
         """The month the cursor is in, for whoever scrolls the year."""
         return self.months[self.date.month - 1]
-
-    def on_focus(self) -> None:
-        # The cursor is drawn solid while the year has focus and soft while
-        # it does not, and that rule lives on this widget while the cursor
-        # is painted by its children -- which do not repaint for a change
-        # of focus that is not theirs. Only the one with the cursor in it
-        # looks any different.
-        self.redraw(self.cursor_month)
-
-    def on_blur(self) -> None:
-        self.redraw(self.cursor_month)
 
     # --- getting around ----------------------------------------------------
 

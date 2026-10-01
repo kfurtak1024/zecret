@@ -9,12 +9,19 @@ Required coverage:
       widgets are gone.
     - 'e' and enter both open the day under the cursor in the editor,
       written or not, and a day written there is marked on the way back.
+      The day under the cursor means the widget's, even when the key that
+      moved it has not yet been heard about by the screen -- 'right' and
+      'enter' in one burst used to open the day just left, and 'c' after
+      it landed the list on the wrong day.
     - '[' and ']' move a year, and the header names the year on show and
       how many of its days are written.
     - The months sit three across at 80 columns, four at 100, six where
       there is room for six -- never five -- and none is cut off.
     - In a terminal too short for the year, the cursor's month is scrolled
       into view, and the top row of months brings the year's title along.
+    - The first frame drawn is already the finished one: the right number
+      of months across and scrolled to the cursor. The year used to be seen
+      rearranging itself as the view opened. Resizing rearranges it again.
     - ctrl+l locks from here -- and from a day opened here -- '?' opens
       help, 'q' quits.
     - The whole year fits the size tools/screenshots.py shoots it at.
@@ -33,7 +40,7 @@ from textual.widgets import Input, Label
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.calendar import YearCalendar
-from zecret.screens.calendar_view import CalendarScreen
+from zecret.screens.calendar_view import CalendarScreen, months_across
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import HelpScreen, documented_bindings
@@ -380,3 +387,110 @@ async def test_the_whole_year_fits_the_size_the_screenshots_use(diary_path):
         assert box.virtual_size.height <= box.size.height, (
             f"the year no longer fits {SHOT_SIZE}; the screenshot will be cropped"
         )
+
+
+# --- the first frame -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("width", "across"),
+    [(53, 1), (54, 2), (76, 2), (77, 3), (99, 3), (100, 4), (145, 4), (146, 6)],
+)
+def test_months_across_steps_at_the_width_each_needs(width, across):
+    assert months_across(width) == across
+
+
+@pytest.mark.parametrize("size", [(80, 24), (150, 30)], ids=["scrolled", "wide"])
+async def test_the_first_frame_drawn_is_the_finished_one(diary_path, size):
+    """Every frame the calendar reaches the terminal with, recorded: none of
+    them may be the year half laid out -- the wrong number of months
+    across, or the view not yet scrolled to the cursor."""
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    frames: list[tuple[frozenset[str], float]] = []
+    display = app._display
+
+    def recording(screen, renderable) -> None:
+        if isinstance(screen, CalendarScreen) and not app._batch_count:
+            box = screen.query_one("#year-box")
+            frames.append((frozenset(screen.classes), box.scroll_y))
+        display(screen, renderable)
+
+    app._display = recording
+    async with app.run_test(size=size) as pilot:
+        await unlock(pilot)
+        # The list opens on the newest entry, 2 September -- low enough in
+        # its year that at 80x24 the view has to scroll to show it.
+        await press(pilot, "c")
+        await pilot.pause()
+        final = (frozenset(app.screen.classes), app.screen.query_one("#year-box").scroll_y)
+
+    assert f"-months-{months_across(size[0])}" in final[0]
+    if size == (80, 24):
+        assert final[1] > 0, "September should need scrolling to at 80x24"
+    assert frames, "the calendar was never drawn"
+    assert frames[0] == final, f"first frame {frames[0]}, settled on {final}"
+
+
+async def test_resizing_rearranges_the_months(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        assert app.screen.has_class("-months-3")
+        await pilot.resize_terminal(150, 30)
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen.has_class("-months-6")
+        assert not app.screen.has_class("-months-3")
+
+
+async def test_repaints_are_released_once_the_calendar_is_shown(diary_path):
+    """The hold on repaints is app-wide: one left behind would freeze every
+    screen, not just this one."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        assert app._batch_count == 0
+        await press(pilot, "escape", "c", "ctrl+l")
+        assert app._batch_count == 0
+
+
+# --- keys in a burst -------------------------------------------------------
+
+
+async def test_a_key_right_after_a_move_acts_on_the_new_day(diary_path):
+    """The move and the key in one go, with no chance for the widget's
+    DateChanged to reach the screen in between -- which is what a fast
+    typist or a batched SSH connection delivers."""
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(dt.date(2024, 3, 10))
+        await pilot.pause()
+
+        year(app).action_next_day()
+        app.screen.action_edit_day()
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.date == dt.date(2024, 3, 11)
+
+
+async def test_leaving_right_after_a_move_hands_back_the_new_day(diary_path):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        calendar = app.screen
+        year(app).move_to(WRITTEN[0])
+        await pilot.pause()
+
+        year(app).action_previous_day()
+        calendar.action_back()
+        assert calendar.date == WRITTEN[0] - dt.timedelta(days=1)

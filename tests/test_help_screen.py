@@ -12,7 +12,9 @@ Required coverage:
     - The logo and version are shown, and the logo gives way rather than
       being drawn half-cut on a narrow terminal.
     - A long section is laid out in two columns side by side, and stacks
-      back into one where the terminal is too narrow to pair them.
+      back into one where the terminal is too narrow to pair them. The row
+      of short sections three abreast is measured the same way: below the
+      width it needs it stacks, rather than wrapping its rows.
     - The whole popup fits the height tools/screenshots.py shoots it at, so
       a layout that grows is caught here rather than by someone noticing a
       cropped picture months later.
@@ -387,3 +389,23 @@ async def test_question_mark_in_search_is_typed_not_a_shortcut(diary_path):
         await pilot.pause()
         assert isinstance(app.screen, SearchScreen)
         assert app.screen.query_one("#query", Input).value == "?"
+
+
+def section_row(app: ZecretApp) -> list[Widget]:
+    """The columns of the row of short sections, under the list's keys."""
+    return list(list(app.screen.query(".help-columns"))[-1].query(".help-column"))
+
+
+@pytest.mark.parametrize(("width", "abreast"), [(60, False), (80, True)])
+async def test_the_short_sections_sit_abreast_only_where_they_fit(diary_path, width, abreast):
+    """At 56 to 70 columns the three used to stay side by side, about
+    seventeen columns each, and 'Previous year' wrapped onto two lines."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(width, SHOT_ROWS)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        tops = {column.region.y for column in section_row(app)}
+        assert (len(tops) == 1) is abreast
+        assert all(label.size.height == 1 for label in app.screen.query(".help-key")), (
+            "no key row may wrap"
+        )

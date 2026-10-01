@@ -49,7 +49,9 @@ file matters as much as that does.
   straight after unlocking. Text in square brackets that did make sense as
   markup, such as `[bold]`, was quietly applied: it disappeared from the
   row and changed how the row looked. Both now show exactly what you
-  wrote.
+  wrote. The same went for error messages that quote something Zecret did
+  not write: re-reading (<kbd>r</kbd>) a damaged diary file could crash
+  while reporting it, instead of saying what was wrong.
 
 ## [0.7.1] - 2026-09-30
 

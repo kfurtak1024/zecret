@@ -21,6 +21,9 @@ Required coverage:
       does not refuse them entry to it. The reading goes away when the
       field is emptied, and an error outranks it. Nothing is rated on an
       existing diary, where the password is recalled rather than chosen.
+    - An error line shows its message as given. Some quote the operating
+      system or a path, and a stray closing tag in one was read as markup
+      -- and raised, taking the app down while it reported a failure.
 """
 
 from __future__ import annotations
@@ -445,3 +448,14 @@ async def test_a_real_error_takes_the_line_back_from_the_rating(diary_path):
         assert str(line.content) == "Passwords do not match."
         assert not line.has_class("-advice")
         assert not line.has_class("-advice-strong")
+
+
+async def test_an_error_line_shows_its_message_as_given(tmp_path):
+    """Every screen's error line goes through FormScreen.set_error."""
+    app = ZecretApp(diary_path=tmp_path / "diary.enc")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.set_error("Could not open /tmp/[/bold]/diary.enc: Permission denied.")
+        await pilot.pause()
+        line = app.screen.query_one("#unlock-error", Label)
+        assert str(line.render()) == "Could not open /tmp/[/bold]/diary.enc: Permission denied."

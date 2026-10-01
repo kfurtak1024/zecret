@@ -683,7 +683,7 @@ YearCalendar:focus > MonthGrid > .month-calendar--cursor {
     background: $surface;
     /* The scrollbar's columns are kept whether or not the year needs
        them, so how many months fit across depends on the width alone --
-       which is all CalendarScreen's breakpoints can see -- and the year
+       which is all CalendarScreen.fit_months looks at -- and the year
        does not shift sideways when a resize brings the bar in. */
     scrollbar-gutter: stable;
 }
@@ -707,7 +707,7 @@ YearCalendar:focus > MonthGrid > .month-calendar--cursor {
    fixed 21 columns -- seven days of three -- and eight rows, always six
    weeks deep for the reason MonthCalendar is: a month drawn to its own
    height would make every row of the year a different height. The gutter
-   is the one CalendarScreen counts its breakpoints with (MONTH_GAP), and
+   is the one CalendarScreen counts months across with (MONTH_GAP), and
    the row gap is what keeps one month's last week off the next month's
    name. */
 YearCalendar {
@@ -725,8 +725,9 @@ MonthGrid {
     height: 8;
 }
 
-/* How many months across, from the breakpoint classes CalendarScreen wears
-   (HORIZONTAL_BREAKPOINTS). Five is left out on purpose -- see there. */
+/* How many months across, from the class CalendarScreen wears for the
+   terminal's width (fit_months). Five is left out on purpose -- see ACROSS
+   there. */
 CalendarScreen.-months-1 YearCalendar {
     grid-size: 1;
     width: 21;

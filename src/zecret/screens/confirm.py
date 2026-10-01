@@ -22,6 +22,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label
 
+from zecret.screens.base import plain
 from zecret.screens.header import DiaryFooter
 
 
@@ -79,7 +80,7 @@ class ConfirmScreen(ModalScreen[Choice]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-box"):
-            yield Label(self.question, id="confirm-question")
+            yield Label(plain(self.question), id="confirm-question")
             # Left to right: the answer that keeps your writing, the one
             # that goes ahead without it, then the way out.
             with Horizontal(id="confirm-buttons"):
