@@ -574,8 +574,16 @@ patch number, not a retry. This is why `check` and `verify` run first.
   (`App.batch_update`) from mount until it has scrolled to the cursor's
   month, so the first frame drawn is the finished one — released in a
   `finally` and on unmount, since a hold left behind freezes the whole app.
-  Up and down move a week, never "to the month drawn above", which would
-  mean something different at every width.
+  In the year the arrows are spatial: each moves to the cell drawn in that
+  direction (`spatial_step`, over `year_layout`'s grid of cells), so down
+  from January is whichever month is drawn below it at this width. It
+  was a week at first, on the argument that a key whose meaning changes
+  with the window cannot be learned; in use, a cursor that went sideways
+  on a press of down read as broken, and the reader is looking at a grid.
+  The arrows stop at the edge of the year (the year keys cross it) and
+  refuse a day not yet come rather than clamping to today. The modal's
+  `MonthCalendar` keeps day-and-week arrows: one month has nothing beside
+  it, and spatial arrows there would strand the cursor in it.
   `MonthCalendar` owns nothing. The date belongs to the field above it; the grid posts
   `DateChanged` and `DatePicked` for `DatePromptScreen` to act on, which is
   what lets typing and pointing both work without either being the

@@ -10,6 +10,17 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Changed
+
+- **The arrow keys in the calendar go where they point.** Each moves to the
+  day drawn in that direction, so down from the last week of January is
+  the month below it and right from a Sunday is the month beside it — not
+  the next week, or the next Monday a row down at the far left. Blank days
+  around a month are stepped over. At the edge of the year the cursor
+  stays put; <kbd>[</kbd> and <kbd>]</kbd> are what change the year. The
+  "which day?" question keeps moving a day and a week at a time, since a
+  single month has nothing beside it.
+
 ## [0.8.0] - 2026-10-01
 
 ### Added

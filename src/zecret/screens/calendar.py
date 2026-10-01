@@ -10,9 +10,11 @@ is the question someone filling a diary in actually has.
 Two widgets share it. MonthCalendar is one month, inside the which-day
 modal. YearCalendar is twelve of them at once, and is the whole of the
 calendar view: a year is the span over which the gaps in a diary show. They
-draw a month the same way and walk the days by the same rules, which is
+draw a month the same way and share every key but the arrows, which is
 why both live here and why the drawing and the walking are functions
-rather than methods of either.
+rather than methods of either. The arrows differ on purpose: in the year
+they move to the cell drawn in that direction (spatial_step), and in the
+single month of the modal, which has nothing beside it, by day and week.
 
 They are widgets rather than screens, and their keys are their own for the
 same reason DiaryTextArea's are: the help popup and the key bar are built from
@@ -24,8 +26,10 @@ Three things neither will do:
 
 - Land on a day that has not happened. Zecret refuses a future entry, so a
   cursor that could sit on one would be offering something the screen
-  behind it is going to turn down. Movement clamps to today instead of
-  refusing, so no key is ever dead: paging into next month lands on today.
+  behind it is going to turn down. A move in time clamps to today instead
+  of refusing, so no such key is ever dead: paging into next month lands
+  on today. A move across the year's grid does refuse -- clamping there
+  would send the cursor to a cell nobody pointed at.
 - Change the month it shows on its own. The month is wherever the cursor
   is, so the grid only ever moves because someone moved it.
 - Own the date. The field above it does; this posts what it is on and lets
@@ -39,6 +43,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+from functools import cache
 from typing import ClassVar
 
 from rich.text import Text
@@ -257,13 +262,13 @@ class WalkableCalendar(Widget, can_focus=True):
     """What every calendar here shares: a cursor, and the keys that walk it.
 
     A day, a week, a month and the ends of a month, each clamped the same
-    way -- see stepped and reachable. MonthCalendar and YearCalendar both
-    walk by these and differ only in what they draw and what they say about
-    it, which is why the keys are written once, here, rather than once per
-    calendar: two copies of a key map are two places for a fix to miss.
+    way -- see stepped and reachable. Written once, here, rather than once
+    per calendar: two copies of a key map are two places for a fix to miss.
+    YearCalendar takes the four arrows over for moves across its grid and
+    keeps the rest.
 
     Textual merges BINDINGS down the class hierarchy, so a subclass lists
-    only the keys it adds.
+    only the keys it adds or replaces.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -424,6 +429,69 @@ YEAR_CELL = 3
 MONTH_WIDTH = YEAR_CELL * DAYS
 
 
+#: (x, y) on the year's grid of days. x counts day columns across every
+#: month in a row of months; y counts week rows down every row of months.
+Cell = tuple[int, int]
+
+
+@cache
+def year_layout(year: int, across: int) -> tuple[dict[dt.date, Cell], dict[Cell, dt.date]]:
+    """Where every day of `year` sits with `across` months side by side.
+
+    The same arrangement app.tcss draws: months fill rows of `across`, each
+    seven columns wide and always six weeks deep (see WEEKS), so the grid
+    of cells is regular even where a month's own days leave blanks. The
+    gutters between months take no cells: they are space between columns,
+    not a column a cursor could stop in.
+
+    Both ways round, since a move starts from a day and looks for a cell.
+    Cached per year and width -- there are at most a handful of each in a
+    session, and every arrow press asks.
+    """
+    cells: dict[dt.date, Cell] = {}
+    for month in range(1, 13):
+        band, column = divmod(month - 1, across)
+        for row, week in enumerate(month_weeks(year, month)):
+            for weekday, day in enumerate(week):
+                if day:
+                    cells[dt.date(year, month, day)] = (
+                        column * DAYS + weekday,
+                        band * WEEKS + row,
+                    )
+    return cells, {cell: date for date, cell in cells.items()}
+
+
+def spatial_step(date: dt.date, dx: int, dy: int, across: int, now: dt.date) -> dt.date | None:
+    """The day in the next cell that way from `date`, as the year is drawn.
+
+    One of `dx` and `dy` is 1 or -1 and the other 0. Blank cells -- the
+    padding around a month, and the gaps where a short month ends -- are
+    passed over, so the move lands on the nearest day there is in that
+    direction: right from the last day of a month continues into the month
+    beside it on the same row, and down from the last week continues into
+    the month below.
+
+    None means there is nowhere to go, and the cursor should stay put:
+    either the edge of the year is in the way (the year keys cross into the
+    next, not the arrows), or the day there has not happened yet. Every
+    cell further on in a direction is later than the one before it, so a
+    future day means everything beyond it is future too.
+    """
+    cells, days = year_layout(date.year, across)
+    x, y = cells[date]
+    if dx:
+        candidates = [cx for (cx, cy) in days if cy == y and (cx - x) * dx > 0]
+        if not candidates:
+            return None
+        target = days[(min(candidates, key=lambda cx: abs(cx - x)), y)]
+    else:
+        candidates = [cy for (cx, cy) in days if cx == x and (cy - y) * dy > 0]
+        if not candidates:
+            return None
+        target = days[(x, min(candidates, key=lambda cy: abs(cy - y)))]
+    return None if target > now else target
+
+
 class MonthGrid(Widget):
     """One month of the twelve in a YearCalendar. Draws; owns nothing.
 
@@ -481,14 +549,40 @@ class YearCalendar(WalkableCalendar):
     here measures the terminal, so nothing here has to be redone when it
     changes size.
 
-    The keys are a calendar's -- WalkableCalendar's, the same as
-    MonthCalendar's -- and here they continue across the edges of a month
-    and of a year. Up and down move a week rather than to the month drawn
-    above, because which month that is depends on how wide the window is,
-    and a key whose meaning changes with the window is not a key anyone
-    can learn. The year keys are the screen's, since they are what the
-    help popup has to tell someone about -- see CalendarScreen.
+    The arrows move to the cell in the direction pressed, as the year is
+    drawn: down from the last week of January is the month below it, not
+    the month after it. That makes what an arrow does depend on how many
+    months sit across, which is a function of the window -- and that is
+    the point: the reader is looking at a grid, and a cursor that goes
+    sideways on a press of down is wrong whatever the reason. Within a
+    month it is the same thing as a day or a week either way; only the
+    edges of a month differ. See spatial_step for the edges of the year and
+    days not yet come, where the cursor stays put.
+
+    How many months across is asked of the grid's own resolved style, never
+    measured off the terminal: what the stylesheet drew is what the arrows
+    walk.
+
+    The other keys are WalkableCalendar's and move in time: the page keys a
+    month, home and end the ends of one. The year keys are the screen's,
+    since they are what the help popup has to tell someone about -- see
+    CalendarScreen.
+
+    MonthCalendar does not do this, on purpose. A single month has nothing
+    beside it, so spatial arrows there would stop at every edge and leave
+    no way to arrow into the next month; it walks by day and week instead.
     """
+
+    #: The arrows, replacing the day-and-week moves WalkableCalendar binds
+    #: them to. Textual merges BINDINGS down the class hierarchy with the
+    #: subclass's winning, so these four take the keys over and the rest of
+    #: WalkableCalendar's map stays.
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("left", "move_left", "Left", show=False),
+        Binding("right", "move_right", "Right", show=False),
+        Binding("up", "move_up", "Up", show=False),
+        Binding("down", "move_down", "Down", show=False),
+    ]
 
     class DateChanged(Message):
         """The cursor moved, and perhaps the year with it."""
@@ -559,6 +653,29 @@ class YearCalendar(WalkableCalendar):
         return self.months[self.date.month - 1]
 
     # --- getting around ----------------------------------------------------
+
+    @property
+    def across(self) -> int:
+        """How many months the stylesheet has laid side by side."""
+        return max(1, self.styles.grid_size_columns)
+
+    def move(self, dx: int, dy: int) -> None:
+        """One cell that way, or nowhere -- see spatial_step."""
+        target = spatial_step(self.date, dx, dy, self.across, today())
+        if target is not None:
+            self.date = target
+
+    def action_move_left(self) -> None:
+        self.move(-1, 0)
+
+    def action_move_right(self) -> None:
+        self.move(1, 0)
+
+    def action_move_up(self) -> None:
+        self.move(0, -1)
+
+    def action_move_down(self) -> None:
+        self.move(0, 1)
 
     def previous_year(self) -> None:
         """The same day a year earlier, or the 28th from a 29 February."""

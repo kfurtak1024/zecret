@@ -15,6 +15,8 @@ Required coverage:
       it landed the list on the wrong day.
     - '[' and ']' move a year, and the header names the year on show and
       how many of its days are written.
+    - The arrows walk the year as this screen lays it out: with six months
+      across, the month under January is July.
     - The months sit three across at 80 columns, four at 100, six where
       there is room for six -- never five -- and none is cut off.
     - In a terminal too short for the year, the cursor's month is scrolled
@@ -494,3 +496,16 @@ async def test_leaving_right_after_a_move_hands_back_the_new_day(diary_path):
         year(app).action_previous_day()
         calendar.action_back()
         assert calendar.date == WRITTEN[0] - dt.timedelta(days=1)
+
+
+async def test_down_goes_to_the_month_drawn_below(diary_path):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(150, 30)) as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        assert app.screen.has_class("-months-6")
+        year(app).move_to(dt.date(2024, 1, 31))
+        await pilot.pause()
+        await press(pilot, "down")
+        assert year(app).date.month == 7

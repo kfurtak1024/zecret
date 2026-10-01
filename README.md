@@ -141,8 +141,9 @@ the asterisks exactly where you typed them, and a line like `2 * 3` — or
 The list shows what you wrote; press <kbd>c</kbd> to see *when*. The
 calendar lays out the whole year, every day you have written marked, so a
 missed week is a hole in a month and a missed month is a hole in the year.
-The arrow keys walk a day or a week at a time — straight on across the end
-of a month or a year — the page keys move a month, and
+The arrow keys move to the day drawn in that direction — across into the
+month beside, or down into the month below, stepping over the blank days
+around a month — the page keys move a month, and
 <kbd>[</kbd>/<kbd>]</kbd> jump a year either way. Press <kbd>e</kbd> (or
 <kbd>enter</kbd>) on any day up to today to write it or carry on with it,
 and <kbd>c</kbd> or <kbd>esc</kbd> to go back to the list, which picks up

@@ -29,8 +29,12 @@ Required coverage:
     - It draws the twelve months of the year the cursor is in, each named
       without the year, at three columns a day so that three of them fit
       an 80-column terminal.
-    - The day and week keys carry the cursor across the end of a month and
-      of a year, and the year on show follows it.
+    - The arrows move to the cell drawn in that direction, however many
+      months sit across: across the edge of a month into the one beside or
+      below it, over the blank cells around a month, and nowhere at all at
+      the edge of the year or into a day not yet come. Within a month that
+      is the same as a day or a week. The page, home and end keys still
+      move in time, and the year on show follows the cursor.
     - A year either way keeps the day, clips 29 February to the 28th, and
       clamps to today going forward like every other move.
     - It never starts, or lands, on a day that has not happened.
@@ -38,7 +42,8 @@ Required coverage:
     - A click on a day in any month moves the cursor there.
     - A move within the year redraws only the months it touched; a move
       into another year redraws all twelve.
-    - Both calendars walk by one key map, WalkableCalendar's.
+    - Both calendars share one key map, WalkableCalendar's, and the year
+      replaces only its arrows.
     - The year's cursor is drawn solid while the year has focus and soft
       while it does not. The rule is keyed on the year and the cursor is
       painted by a month inside it, so this checks what reaches the screen
@@ -67,6 +72,8 @@ from zecret.screens.calendar import (
     day_role,
     month_weeks,
     shift_month,
+    spatial_step,
+    year_layout,
 )
 
 TODAY = dt.date.today()
@@ -496,24 +503,95 @@ async def test_a_new_set_of_written_days_is_drawn_at_once():
         assert " 1•" in drawn(app)[5]
 
 
-async def test_the_day_keys_cross_into_the_next_month():
-    app = YearHarness(dt.date(2020, 3, 31))
-    async with app.run_test(size=(120, 40)) as pilot:
-        await pilot.press("right")
-        assert app.year.date == dt.date(2020, 4, 1)
-        await pilot.press("up")
-        assert app.year.date == dt.date(2020, 3, 25)
+#: 2020 at three months across. January opens on a Wednesday and ends on a
+#: Friday; February opens on a Saturday; April opens on a Wednesday.
+NOW = dt.date(2026, 10, 1)
 
 
-async def test_the_day_keys_cross_into_the_next_year_and_bring_it_along():
-    app = YearHarness(dt.date(2019, 12, 30))
+@pytest.mark.parametrize(
+    ("start", "dx", "dy", "expected"),
+    [
+        # Inside a month: a day and a week, as they always were.
+        (dt.date(2020, 1, 15), 1, 0, dt.date(2020, 1, 16)),
+        (dt.date(2020, 1, 15), 0, 1, dt.date(2020, 1, 22)),
+        # A Sunday's right is the month beside it, on the same row of weeks
+        # -- not the next Monday, a row down at the far left.
+        (dt.date(2020, 1, 12), 1, 0, dt.date(2020, 2, 3)),
+        # A Monday's left, likewise, is the month to the left.
+        (dt.date(2020, 2, 3), -1, 0, dt.date(2020, 1, 12)),
+        # Over the blank weekend after 31 January, into February's row.
+        (dt.date(2020, 1, 31), 1, 0, dt.date(2020, 2, 24)),
+        # Down from the last week is the month below, not the month after.
+        (dt.date(2020, 1, 31), 0, 1, dt.date(2020, 4, 3)),
+        # And up from April's first week is January's last Wednesday, over
+        # the blank row January does not fill.
+        (dt.date(2020, 4, 1), 0, -1, dt.date(2020, 1, 29)),
+        # Edges of the year: nowhere to go, so nowhere is gone.
+        (dt.date(2020, 1, 6), -1, 0, None),
+        (dt.date(2020, 3, 31), 1, 0, None),
+        (dt.date(2020, 1, 1), 0, -1, None),
+        (dt.date(2020, 12, 31), 0, 1, None),
+        # A day not yet come is refused, not clamped to.
+        (NOW, 1, 0, None),
+        (NOW, 0, 1, None),
+    ],
+    ids=[
+        "a-day-right",
+        "a-week-down",
+        "sunday-right-to-the-month-beside",
+        "monday-left-to-the-month-beside",
+        "over-blanks-to-the-month-beside",
+        "down-to-the-month-below",
+        "up-over-a-blank-row",
+        "left-edge",
+        "right-edge",
+        "top-edge",
+        "bottom-edge",
+        "tomorrow",
+        "next-week",
+    ],
+)
+def test_an_arrow_moves_to_the_cell_drawn_that_way(start, dx, dy, expected):
+    assert spatial_step(start, dx, dy, 3, NOW) == expected
+
+
+def test_what_is_below_depends_on_how_many_months_sit_across():
+    """The point of the change, not a side effect of it: down from January
+    is whichever month is drawn under it."""
+    january = dt.date(2020, 1, 31)
+    assert spatial_step(january, 0, 1, 3, NOW).month == 4
+    assert spatial_step(january, 0, 1, 4, NOW).month == 5
+    assert spatial_step(january, 0, 1, 6, NOW).month == 7
+
+
+def test_every_day_of_a_year_has_one_cell_and_every_cell_one_day():
+    for across in (1, 2, 3, 4, 6):
+        cells, days = year_layout(2024, across)
+        assert len(cells) == len(days) == 366
+
+
+async def test_the_arrows_walk_the_grid_the_stylesheet_drew():
+    """Asked of the grid's own style, so a wider layout is walked as wide."""
+    app = YearHarness(dt.date(2020, 1, 31))
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.press("down")
-        assert app.year.date == dt.date(2020, 1, 6)
-        assert app.year.months[0].first == dt.date(2020, 1, 1)
-        await pilot.press("up", "left")
-        assert app.year.date == dt.date(2019, 12, 29)
-        assert app.year.months[11].first == dt.date(2019, 12, 1)
+        assert app.year.date == dt.date(2020, 4, 3), "three across: April is below"
+        await pilot.press("left")
+        assert app.year.date == dt.date(2020, 4, 2)
+        await pilot.press("right", "up")
+        app.year.styles.grid_size_columns = 4
+        await pilot.pause()
+        await pilot.press("down")
+        assert app.year.date.month == 5, "four across: May is below"
+
+
+async def test_an_arrow_at_the_edge_of_the_year_stays_put():
+    """The year keys cross into the next year; the arrows do not."""
+    app = YearHarness(dt.date(2019, 12, 31))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("down", "right")
+        assert app.year.date == dt.date(2019, 12, 31)
+        assert app.changes == [], "a move that goes nowhere says nothing"
 
 
 async def test_the_page_and_end_keys_work_as_in_a_month():
@@ -620,7 +698,8 @@ async def test_a_move_within_the_year_redraws_only_the_months_it_touched():
 
 
 def test_both_calendars_walk_by_the_same_keys():
-    """One key map, written once: a fix to one calendar is a fix to both."""
+    """One key map, written once: a fix to one calendar is a fix to both.
+    The year takes over the arrows and nothing else."""
     for widget in (MonthCalendar, YearCalendar):
         assert issubclass(widget, WalkableCalendar)
 
