@@ -30,11 +30,19 @@ today's entry instead of starting a second one.
 
 Grouping is presentation only -- nothing about it reaches models.py or
 storage.py, which know only about individual dated entries. The month
-headings share the ListView with the entries as disabled rows, which
+headings share the OptionList with the entries as disabled options, which
 Textual's cursor navigation steps over and its clicks ignore. That leaves
 one thing to get right: a row index is no longer an index into the
 entries, so everything that maps a selection back to an entry goes through
 self.rows.
+
+An OptionList and not a ListView, because a diary is kept for years. A
+ListView is a widget per row -- a ListItem holding a Label -- and every
+one of them is mounted, styled and laid out on every rebuild, whether or
+not it is anywhere near the screen: ten years of entries was 7,500 widgets
+and eight seconds, on every return to this screen. An OptionList is one
+widget that draws only the lines in view, and rebuilds the same ten years
+in about a tenth of a second.
 
 The delete confirmation uses the shared ConfirmScreen modal (screens/
 confirm.py), as does leaving unsaved edits in the editor. That modal
@@ -44,7 +52,6 @@ this question does not take it, since a deletion has no such road.
 
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 from collections.abc import Callable
 from itertools import groupby
@@ -52,11 +59,14 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.widgets import Label, ListItem, ListView
+from textual.content import Content
+from textual.widgets import Label
+from textual.widgets.option_list import Option
 
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
 from zecret.screens.base import (
+    DayList,
     ZecretScreen,
     count_entries,
     day_summary,
@@ -80,8 +90,29 @@ EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
 #: session that could cause it is one that changed the password.
 RELOAD_REKEYED = "The password was changed elsewhere. Quit and unlock again."
 
-#: Marks the rows that are month headings rather than entries.
-HEADING_CLASS = "group-heading"
+
+def heading_option(first_of_month: dt.date, count: int) -> Option:
+    """The row naming a month, with a blank line above it to set it apart.
+
+    Disabled, so the cursor steps over it and a click on it does nothing --
+    it is a signpost, not somewhere to be. The blank line is part of the
+    option rather than padding around it: an option has no margin of its
+    own, and a separate blank option would be one more row to step over.
+    """
+    heading = f"{format_month(first_of_month)} · {count_entries(count)}"
+    return Option(Content(f"\n{heading}"), disabled=True)
+
+
+def entry_option(entry: Entry) -> Option:
+    """The row for one day.
+
+    `Content` rather than a plain string, which Textual would read as
+    markup: a first line holding `[bold]` lost its brackets and turned
+    bold, and one holding a stray `[/bold]` raised MarkupError and took the
+    app down every time the list was drawn. The row is what was written,
+    character for character.
+    """
+    return Option(Content(day_summary(entry)))
 
 
 class EntryListScreen(ZecretScreen):
@@ -129,23 +160,27 @@ class EntryListScreen(ZecretScreen):
         # question about unsaved writing rather than one of them not.
         Binding("q", "app.quit", "Quit"),
         # --- real, but not worth the width -------------------------------
-        # ListView has focus and handles Enter itself, posting Selected --
-        # which on_list_view_selected turns into the same call. The action
-        # behind this binding is a second door onto the same room rather
-        # than the one you walk through, and guards its own selection
-        # accordingly. Hidden because the ListView's own enter binding
-        # shadows it in the bar anyway: it never rendered there.
+        # The OptionList has focus and handles Enter itself, posting
+        # OptionSelected -- which on_option_list_option_selected turns into
+        # the same call. The action behind this binding is a second door
+        # onto the same room rather than the one you walk through, and
+        # guards its own selection accordingly. Hidden because the list's
+        # own enter binding shadows it in the bar anyway: it never rendered
+        # there.
         Binding("enter", "open_entry", "Open", show=False),
         Binding("r", "reload", "Reload", show=False),
         # --- getting around ----------------------------------------------
         # A diary kept for years is a long list, and arrow keys alone make
         # its far end hundreds of presses away. j/k/g/G are what a terminal
         # reader will try first; home/end/page are what everyone else will.
-        # j/k/g/G are ours alone. home, end and the page keys are not:
-        # ListView inherits them from ScrollView, which scrolls the view
-        # without moving the highlight -- leaving the cursor somewhere off
-        # screen. `priority` takes them back, which is safe here because
-        # this screen has no text field for them to mean anything else in.
+        # j/k/g/G are ours alone. home, end and the page keys are the
+        # OptionList's as well, and its page keys cannot be trusted with a
+        # diary: a page up that lands on the month heading at the top finds
+        # nothing enabled above it and drops the highlight altogether.
+        # `priority` takes all four back so that every jump goes through
+        # move_cursor, which walks off a heading rather than giving up --
+        # safe here because this screen has no text field for them to mean
+        # anything else in.
         Binding("j", "cursor_down", "Down a day", show=False),
         Binding("k", "cursor_up", "Up a day", show=False),
         Binding("pagedown", "page_down", "Down a screenful", show=False, priority=True),
@@ -158,15 +193,10 @@ class EntryListScreen(ZecretScreen):
 
     def __init__(self) -> None:
         super().__init__()
-        # One element per row of the ListView, in display order: the entry
+        # One element per option of the list, in display order: the entry
         # that row shows, or None where the row is a month heading. This is
         # the only thing that maps a highlighted row back to a day.
         self.rows: list[Entry | None] = []
-        # Rebuilding the list is a sequence of awaits, and two rebuilds can
-        # be in flight at once -- deleting an entry refreshes, and popping
-        # the confirmation modal resumes this screen, which also refreshes.
-        # Interleaved, they duplicate rows; serialized, the last one wins.
-        self.refresh_lock = asyncio.Lock()
         # A day for the next rebuild to put the cursor on, in place of the
         # one it was on. Set only by land_on, and only when that rebuild is
         # known to be on its way -- so it is always taken by the rebuild it
@@ -179,10 +209,10 @@ class EntryListScreen(ZecretScreen):
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
         yield Label(EMPTY_MESSAGE, id="entries-empty")
-        yield ListView(id="entries")
+        yield DayList(id="entries")
         yield DiaryFooter()
 
-    async def on_screen_resume(self) -> None:
+    def on_screen_resume(self) -> None:
         """Fires when this screen is shown, including after returning from
         the editor or search -- so the list always reflects app.diary.
 
@@ -194,56 +224,56 @@ class EntryListScreen(ZecretScreen):
             return
         if self.calendar is not None:
             self.pending_landing, self.calendar = self.calendar.date, None
-        await self.refresh_entries()
+        self.refresh_entries()
 
-    async def refresh_entries(self) -> None:
+    def refresh_entries(self) -> None:
         """Rebuild the list from the in-memory diary, most recent day first,
-        with a heading above each month."""
-        async with self.refresh_lock:
-            diary, _ = self.zecret.unlocked
-            entries = sorted(diary.entries.values(), key=lambda entry: entry.date, reverse=True)
+        with a heading above each month.
 
-            list_view = self.query_one("#entries", ListView)
-            # Read before clearing: rebuilding is what loses the reader's
-            # place, so where they were has to be taken down first.
-            # Unless land_on has asked for a day that has no row yet, or the
-            # calendar is handing back the day it was on -- which may have
-            # no entry at all, and row_for then finds the nearest that does.
-            landing, self.pending_landing = self.pending_landing, None
-            was_on = landing if landing is not None else self.highlighted_date
-            await list_view.clear()
-            self.rows = []
-            items: list[ListItem] = []
-            # Sorted by date, so each month's entries are already adjacent.
-            for first_of_month, group in groupby(
-                entries, key=lambda entry: entry.date.replace(day=1)
-            ):
-                month = list(group)
-                self.rows.append(None)
-                heading = f"{format_month(first_of_month)} · {count_entries(len(month))}"
-                # Disabled, so the cursor steps over it and clicks on it do
-                # nothing -- it is a signpost, not somewhere to be.
-                items.append(ListItem(Label(heading), disabled=True, classes=HEADING_CLASS))
-                for entry in month:
-                    self.rows.append(entry)
-                    items.append(ListItem(Label(day_summary(entry))))
+        Synchronous, start to finish: an OptionList takes its options in one
+        call with nothing to await, so no two rebuilds can interleave and
+        nothing else can see the list half-built. (A ListView rebuild was a
+        sequence of awaits, and needed a lock to keep two of them from
+        duplicating rows.)
+        """
+        diary, _ = self.zecret.unlocked
+        entries = sorted(diary.entries.values(), key=lambda entry: entry.date, reverse=True)
 
-            # Mounted in one pass. Appending row by row re-lays-out every row
-            # already mounted, which is quadratic: a decade of entries took
-            # over a minute to draw, on every return to this screen.
-            await list_view.extend(items)
+        listing = self.entries_list
+        # Read before clearing: rebuilding is what loses the reader's place,
+        # so where they were has to be taken down first. Unless land_on has
+        # asked for a day that has no row yet, or the calendar is handing
+        # back the day it was on -- which may have no entry at all, and
+        # row_for then finds the nearest that does.
+        landing, self.pending_landing = self.pending_landing, None
+        was_on = landing if landing is not None else self.highlighted_date
+        self.rows = []
+        options: list[Option] = []
+        # Sorted by date, so each month's entries are already adjacent.
+        for first_of_month, group in groupby(entries, key=lambda entry: entry.date.replace(day=1)):
+            month = list(group)
+            self.rows.append(None)
+            options.append(heading_option(first_of_month, len(month)))
+            for entry in month:
+                self.rows.append(entry)
+                options.append(entry_option(entry))
+        listing.set_options(options)
 
-            self.sub_title = "no entries" if not entries else count_entries(len(entries))
+        self.sub_title = "no entries" if not entries else count_entries(len(entries))
 
-            has_entries = bool(entries)
-            self.query_one("#entries-empty", Label).display = not has_entries
-            list_view.display = has_entries
-            if has_entries:
-                # Never left at 0: that is a month heading, and assigning an
-                # index is not filtered by the skip-disabled rule that
-                # cursor movement follows -- Enter would then open nothing.
-                list_view.index = self.row_for(was_on)
-                list_view.focus()
+        has_entries = bool(entries)
+        self.query_one("#entries-empty", Label).display = not has_entries
+        listing.display = has_entries
+        if has_entries:
+            # Never left at 0: that is a month heading, and assigning a
+            # highlight is not filtered by the skip-disabled rule that
+            # cursor movement follows -- Enter would then open nothing.
+            listing.highlighted = self.row_for(was_on)
+            listing.focus()
+
+    @property
+    def entries_list(self) -> DayList:
+        return self.query_one("#entries", DayList)
 
     @property
     def first_entry_row(self) -> int | None:
@@ -300,11 +330,11 @@ class EntryListScreen(ZecretScreen):
     @property
     def selected_entry(self) -> Entry | None:
         """The highlighted entry, or None when the list is empty."""
-        return self.entry_at(self.query_one("#entries", ListView).index)
+        return self.entry_at(self.entries_list.highlighted)
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
+    def on_option_list_option_selected(self, event: DayList.OptionSelected) -> None:
         """Enter (or a click) on a row opens it."""
-        entry = self.entry_at(event.list_view.index)
+        entry = self.entry_at(event.option_index)
         if entry is not None:
             self.open_day(entry.date)
 
@@ -377,7 +407,7 @@ class EntryListScreen(ZecretScreen):
 
         self.zecret.diary = reopened
         self.notify(f"Reloaded — {count_entries(len(reopened.entries))}.")
-        self.run_worker(self.refresh_entries())
+        self.refresh_entries()
 
     def action_delete_entry(self) -> None:
         entry = self.selected_entry
@@ -389,11 +419,11 @@ class EntryListScreen(ZecretScreen):
     # --- getting around ----------------------------------------------------
 
     def action_cursor_down(self) -> None:
-        """j, handed to the ListView, which already steps over headings."""
-        self.query_one("#entries", ListView).action_cursor_down()
+        """j, handed to the list, which already steps over headings."""
+        self.entries_list.action_cursor_down()
 
     def action_cursor_up(self) -> None:
-        self.query_one("#entries", ListView).action_cursor_up()
+        self.entries_list.action_cursor_up()
 
     def action_page_down(self) -> None:
         self.move_cursor(self.page_rows)
@@ -410,7 +440,7 @@ class EntryListScreen(ZecretScreen):
     @property
     def page_rows(self) -> int:
         """A screenful, less a row, so the jump keeps something in view."""
-        return max(1, self.query_one("#entries", ListView).size.height - 1)
+        return max(1, self.entries_list.scrollable_content_region.height - 1)
 
     def move_cursor(self, rows: int) -> None:
         """Move the highlight `rows` rows, landing on a day.
@@ -420,8 +450,7 @@ class EntryListScreen(ZecretScreen):
         walk off it -- onwards first, since that is the way the reader was
         already going.
         """
-        list_view = self.query_one("#entries", ListView)
-        here = list_view.index
+        here = self.entries_list.highlighted
         if here is None:
             return
         target = min(max(here + rows, 0), len(self.rows) - 1)
@@ -444,7 +473,7 @@ class EntryListScreen(ZecretScreen):
     def move_cursor_to(self, row: int | None) -> None:
         """Highlight `row`, or do nothing when there is no day to go to."""
         if row is not None:
-            self.query_one("#entries", ListView).index = row
+            self.entries_list.highlighted = row
 
     # --- helpers -----------------------------------------------------------
 
@@ -459,11 +488,11 @@ class EntryListScreen(ZecretScreen):
         """
 
         def returned(_: None) -> None:
-            self.run_worker(self.land_on(date))
+            self.land_on(date)
 
         self.app.push_screen(EditorScreen(date), returned)
 
-    async def land_on(self, date: dt.date) -> None:
+    def land_on(self, date: dt.date) -> None:
         """Put the cursor on `date`, the day the editor was just left on.
 
         Without this the cursor stayed on the day it was on when the editor
@@ -481,30 +510,29 @@ class EntryListScreen(ZecretScreen):
         cursor on its day; a day that has none yet is handed to that
         rebuild through pending_landing. Which of the two has happened is
         read off the rows -- a day the diary holds with no row means the
-        rebuild is still to come -- and the lock makes sure it is not
-        half-done while it is read.
+        rebuild is still to come. A rebuild is never half-done when this
+        reads it: it runs start to finish without yielding.
 
         A day left without being written is not in the diary, and the
         cursor stays where it was.
         """
-        async with self.refresh_lock:
-            if not self.zecret.is_unlocked:
-                return
-            diary, _ = self.zecret.unlocked
-            if date not in diary.entries:
-                return
-            row = next(
-                (
-                    row
-                    for row, entry in enumerate(self.rows)
-                    if entry is not None and entry.date == date
-                ),
-                None,
-            )
-            if row is None:
-                self.pending_landing = date
-            else:
-                self.move_cursor_to(row)
+        if not self.zecret.is_unlocked:
+            return
+        diary, _ = self.zecret.unlocked
+        if date not in diary.entries:
+            return
+        row = next(
+            (
+                row
+                for row, entry in enumerate(self.rows)
+                if entry is not None and entry.date == date
+            ),
+            None,
+        )
+        if row is None:
+            self.pending_landing = date
+        else:
+            self.move_cursor_to(row)
 
     def open_chosen_day(self, date: dt.date | None) -> None:
         """Callback for DatePromptScreen; None means the user backed out."""
@@ -536,4 +564,4 @@ class EntryListScreen(ZecretScreen):
             # rather than let the user believe the deletion stuck.
             diary.add_entry(entry)
             self.notify(save_error(error), severity="error")
-        self.run_worker(self.refresh_entries())
+        self.refresh_entries()

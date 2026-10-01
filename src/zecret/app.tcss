@@ -171,19 +171,19 @@ PasswordScreen {
 
 /* --- Lists: entry list and search results ------------------------------- */
 
+/* Both are OptionLists: one widget that draws only the rows in view, rather
+   than a widget per row -- see EntryListScreen for what a decade of rows
+   cost the other way. Its parts are component classes rather than child
+   widgets, which is why everything below is spelled `.option-list--*`. */
 #entries,
 #results {
     height: 1fr;
     /* Same 2-cell gutter as the search box above it and the editor's
        fields, so text lines up down the left edge of every screen. */
     margin: 0 2;
+    padding: 0;
     background: $surface;
     border: none;
-
-    & > ListItem {
-        padding: 0 2;
-        background: transparent;
-    }
 
     /* A row shows as much of the entry's first line as the window has room
        for, and trims what will not fit with an ellipsis. Done here rather
@@ -193,28 +193,40 @@ PasswordScreen {
        every event of a window drag. Rows must not wrap either -- a row is
        a day, and a day that took two lines would break the alignment the
        whole list is read by. */
-    & > ListItem > Label {
-        width: 100%;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+
+    /* Inside the row rather than around the list, so the highlight still
+       runs the full width of the panel while the text starts two cells in. */
+    & > .option-list--option {
+        padding: 0 2;
     }
 
     /* The selected row is the one thing the eye should find instantly. */
-    & > ListItem.-highlight {
+    & > .option-list--option-highlighted {
+        color: $foreground;
         background: $accent-muted;
         text-style: bold;
     }
 
-    &:focus > ListItem.-highlight {
-        background: $accent;
-        color: $block-cursor-foreground;
+    /* OptionList tints its whole background while focused. The list is
+       focused nearly all the time it is on screen, so the tint would only
+       make the panel a different grey from every other panel. */
+    &:focus {
+        background-tint: $foreground 0%;
     }
 
-    /* Month headings. Disabled so the cursor skips them, which is a
-       navigation decision, not a visual one -- they read as headings, not
-       as something unavailable. */
-    & > ListItem.group-heading {
-        padding: 1 2 0 2;
+    &:focus > .option-list--option-highlighted {
+        background: $accent;
+        color: $block-cursor-foreground;
+        text-style: bold;
+    }
+
+    /* Month headings, with the blank line above them that is part of the
+       option. Disabled so the cursor skips them, which is a navigation
+       decision, not a visual one -- they read as headings, not as
+       something unavailable. Only headings are ever disabled. */
+    & > .option-list--option-disabled {
         color: $text-accent;
         text-style: bold;
     }
@@ -800,10 +812,11 @@ DiaryHeader:light {
    -- it is not re-tuned for a pale background, and a full-width row of it
    is a fluorescent slab rather than a highlight. $block-cursor-* is what
    Textual selects a row with everywhere else, so the list now agrees with
-   the Select and OptionList on the settings screen instead of shouting
-   over them. Dark keeps the orange: on a dark page it reads as warmth. */
-#entries:focus > ListItem.-highlight:light,
-#results:focus > ListItem.-highlight:light {
+   the Select on the settings screen instead of shouting over it. Dark
+   keeps the orange: on a dark page it reads as warmth. The pseudo-class
+   sits on the widget, since a component class cannot answer to it. */
+#entries:focus:light > .option-list--option-highlighted,
+#results:focus:light > .option-list--option-highlighted {
     background: $block-cursor-background;
     color: $block-cursor-foreground;
 }

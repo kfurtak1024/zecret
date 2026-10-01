@@ -118,11 +118,31 @@ Keep this layering strict:
   time (`text-wrap: nowrap` + `text-overflow: ellipsis`), so a wide window
   shows more of a day for free. Never compute the trim from a measured
   width: that makes the row text depend on the size, which means rebuilding
-  on resize, and `refresh_entries()` is a full clear-and-remount that takes
-  over a second at 1500 entries — on every event of a window drag.
+  on resize, and `refresh_entries()` replaces every row of the list —
+  tenths of a second at ten years, on every event of a window drag.
   `SNIPPET_CAP` in `screens/base.py` is a guard against one pasted
   paragraph with no newline in it, not a display width; it is far past any
-  terminal, and shortening it back into a width would undo this.
+  terminal, and shortening it back into a width would undo this. It is
+  also, now, most of what a rebuild costs: an OptionList measures every
+  row up front, and an ellipsised row is measured across its whole
+  snippet.
+- **A list of days is an `OptionList`, never a `ListView`.** Both lists —
+  the entry list and search — are `DayList` (`screens/base.py`), an
+  `OptionList` that stops at its ends instead of wrapping. A `ListView` is
+  a widget per row, each mounted, styled and laid out whether or not it is
+  on screen: ten years of entries was 7,500 widgets and eight seconds on
+  every return to the list, and every keystroke in search that still
+  matched most of the diary. An `OptionList` is one widget that draws the
+  rows in view, and builds the same ten years in well under a second.
+  Three things come with it. A row's text is `Content`, never a plain
+  string: Textual reads a string as markup, so a first line holding
+  `[bold]` changed style and one holding a stray `[/bold]` raised
+  `MarkupError` and took the app down whenever the list was drawn. A
+  rebuild is synchronous and needs no lock, since nothing in it awaits.
+  And the page keys stay with the screen (`priority=True`):
+  `OptionList`'s own page up finds nothing enabled above the month heading
+  at the top and drops the highlight. `tests/test_scale.py` holds the
+  rebuild to a ceiling at ten years.
 
 Interface note: `DiaryFile.create_new()` and `DiaryFile.unlock()` return
 `(DiaryFile, key)`, not just the `DiaryFile`. The derived key has to reach

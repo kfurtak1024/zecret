@@ -15,6 +15,8 @@ question only this layer asks (models.py takes the date it is given).
 And the warning about a forgotten password, which the two screens that
 set one both carry, and which must say the same thing on both.
 
+And DayList, the list both the entry list and search show days in.
+
 And the wording for a save that did not happen, which is the same wherever
 a save is attempted -- three screens attempt one, and none of them should
 be deciding for itself how to describe a diary that changed underneath it.
@@ -27,7 +29,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from textual.containers import VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Input, Label
+from textual.widgets import Input, Label, OptionList
 
 from zecret.models import Entry
 from zecret.storage import ZecretConflictError
@@ -197,6 +199,39 @@ def card(id: str) -> VerticalScroll:
     lets the arrow keys read a page taller than the terminal.
     """
     return VerticalScroll(id=id, can_focus=False)
+
+
+class DayList(OptionList):
+    """A list of days -- the entry list's, and search's -- that stops at its ends.
+
+    Textual's OptionList wraps around: down on the last option goes to the
+    first. In a list of years of entries that is a jump from 2016 to today
+    for one keypress too many, and the reader does not see it happen --
+    the ListView these lists used to be stopped at the end, and so does
+    this. Up and down are the only keys that wrapped; the screens handle
+    the page keys and the ends themselves (see EntryListScreen).
+    """
+
+    def action_cursor_up(self) -> None:
+        self._step(-1)
+
+    def action_cursor_down(self) -> None:
+        self._step(1)
+
+    def _step(self, direction: int) -> None:
+        """The next enabled option that way, or stay put at the end.
+
+        Written out rather than borrowed from Textual's own navigation
+        helpers, which live in a private module.
+        """
+        if self.highlighted is None:
+            return
+        index = self.highlighted + direction
+        while 0 <= index < self.option_count:
+            if not self.get_option_at_index(index).disabled:
+                self.highlighted = index
+                return
+            index += direction
 
 
 class ZecretScreen(Screen[None]):

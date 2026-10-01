@@ -25,10 +25,27 @@ file matters as much as that does.
 
 ### Changed
 
+- **A long diary is quick again.** Coming back to the list, opening search
+  and typing into it each took around eight seconds on a diary ten years
+  long, because every row on the list was a separate piece of the screen
+  to build — whether or not it was anywhere near the window. The list and
+  the search results now draw only the rows in view, and the same ten
+  years come back in under half a second, most of it well under.
+
 - **<kbd>a</kbd> is no longer in the key bar.** The calendar took its
   place there: it answers the same question — which day? — with the whole
   year to point at. <kbd>a</kbd> still works exactly as before, and is
   still the quicker road when you know the date; <kbd>?</kbd> lists it.
+
+### Fixed
+
+- **An entry whose first line looks like markup no longer crashes the
+  app.** A first line holding a stray closing tag such as `[/bold]` stopped
+  Zecret every time the list or search was drawn — and the list is drawn
+  straight after unlocking. Text in square brackets that did make sense as
+  markup, such as `[bold]`, was quietly applied: it disappeared from the
+  row and changed how the row looked. Both now show exactly what you
+  wrote.
 
 ## [0.7.1] - 2026-09-30
 

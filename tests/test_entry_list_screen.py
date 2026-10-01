@@ -32,6 +32,10 @@ Required coverage:
       once, never saved up for whatever the list is resumed from next.
       Backing out of a day that was never written leaves the cursor where
       it was.
+    - The cursor stops at the ends of the list: down on the oldest day and
+      up on the newest stay put rather than wrapping around.
+    - A row shows the first line exactly as written: text that looks like
+      Textual markup is neither interpreted nor fatal.
     - A row carries the entry's whole first line rather than a fixed slice
       of it, and is clipped to the window at render time. This is what lets
       a wide terminal show more of a day without any of it being recomputed
@@ -44,7 +48,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, Label, ListView, MaskedInput
+from textual.widgets import Button, Input, Label, MaskedInput, OptionList
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
@@ -53,7 +57,6 @@ from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import (
     EMPTY_MESSAGE,
-    HEADING_CLASS,
     ConfirmScreen,
     EntryListScreen,
 )
@@ -103,21 +106,19 @@ async def unlock(pilot) -> None:
     await pilot.pause()
 
 
+def entries_list(app: ZecretApp) -> OptionList:
+    return app.screen.query_one("#entries", OptionList)
+
+
 def row_labels(app: ZecretApp) -> list[str]:
-    """Every row, month headings included, in display order."""
-    return [
-        str(item.query_one(Label).content)
-        for item in app.screen.query_one("#entries", ListView).children
-    ]
+    """Every row, month headings included, in display order -- without the
+    blank line a heading carries above it."""
+    return [str(option.prompt).strip("\n") for option in entries_list(app).options]
 
 
 def entry_labels(app: ZecretApp) -> list[str]:
-    """Only the rows that are entries."""
-    return [
-        str(item.query_one(Label).content)
-        for item in app.screen.query_one("#entries", ListView).children
-        if not item.has_class(HEADING_CLASS)
-    ]
+    """Only the rows that are entries: headings are the disabled ones."""
+    return [str(option.prompt) for option in entries_list(app).options if not option.disabled]
 
 
 def snippets(app: ZecretApp) -> list[str]:
@@ -228,7 +229,7 @@ async def test_the_highlight_starts_on_an_entry_not_a_heading(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        assert app.screen.query_one("#entries", ListView).index == 1
+        assert entries_list(app).highlighted == 1
         assert app.screen.selected_entry.date == MARCH[2]
 
 
@@ -557,7 +558,7 @@ async def test_list_refreshes_when_the_screen_resumes(diary_path):
 
 
 async def test_open_on_an_empty_list_does_nothing(diary_path):
-    """Pressing enter is already swallowed by the focused (empty) ListView,
+    """Pressing enter is already swallowed by the focused (empty) list,
     so the action is invoked directly: its guard is what keeps a stale or
     absent selection from opening the editor on nothing."""
     seed(diary_path)
@@ -577,7 +578,7 @@ async def test_open_on_an_empty_list_does_nothing(diary_path):
 
 async def test_the_open_action_opens_the_highlighted_day(diary_path):
     """The footer advertises enter as Open. The key itself is handled by
-    the ListView, so this covers the action the binding names."""
+    the list itself, so this covers the action the binding names."""
     seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -613,7 +614,7 @@ async def test_the_cursor_stays_on_the_day_you_opened(diary_path):
         for _ in range(3):  # down past the March/February heading
             await pilot.press("down")
             await pilot.pause()
-        row, day = app.screen.query_one("#entries", ListView).index, app.screen.selected_entry.date
+        row, day = entries_list(app).highlighted, app.screen.selected_entry.date
         assert day == FEBRUARY[1]
 
         await pilot.press("enter")
@@ -623,7 +624,7 @@ async def test_the_cursor_stays_on_the_day_you_opened(diary_path):
         await pilot.pause()
         await pilot.pause()
 
-        assert app.screen.query_one("#entries", ListView).index == row
+        assert entries_list(app).highlighted == row
         assert app.screen.selected_entry.date == day
 
 
@@ -801,7 +802,7 @@ async def test_deleting_the_oldest_day_leaves_the_cursor_at_the_foot(diary_path)
         await pilot.pause()
 
         screen = app.screen
-        assert screen.query_one("#entries", ListView).index == len(screen.rows) - 1
+        assert entries_list(app).highlighted == len(screen.rows) - 1
         assert screen.selected_entry.date == FEBRUARY[1]
 
 
@@ -926,7 +927,7 @@ def long_diary(diary_path: Path, days: int = 90) -> None:
 
 
 def cursor(app: ZecretApp) -> int:
-    return app.screen.query_one("#entries", ListView).index
+    return entries_list(app).highlighted
 
 
 async def test_j_and_k_move_a_day_at_a_time(diary_path):
@@ -1083,13 +1084,68 @@ async def test_rows_are_clipped_by_the_window_rather_than_wrapped(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(60, 20)) as pilot:
         await unlock(pilot)
-        rows = [
-            item.query_one(Label)
-            for item in app.screen.query_one("#entries", ListView).children
-            if not item.has_class(HEADING_CLASS)
+        listing = entries_list(app)
+        assert listing.styles.text_wrap == "nowrap"
+        assert listing.styles.text_overflow == "ellipsis"
+        # The heading's blank line and the heading, then the day on one row
+        # -- trimmed with an ellipsis at the edge of the window, not wrapped
+        # onto a second.
+        lines = [
+            "".join(segment.text for segment in strip).rstrip()
+            for strip in app.screen._compositor.render_strips()
         ]
-        assert rows
-        for label in rows:
-            assert label.styles.text_wrap == "nowrap"
-            assert label.styles.text_overflow == "ellipsis"
-            assert label.size.height == 1, "a day must not become two rows"
+        day = [line for line in lines if "The morning was clear" in line]
+        assert len(day) == 1, "a day must not become two rows"
+        assert day[0].endswith("…")
+
+
+# --- what is written is what is shown --------------------------------------
+
+#: A first line that Textual would read as markup if it were handed over as
+#: a string: tags that would restyle the row and lose their brackets, and a
+#: closing tag nobody opened, which raised MarkupError and took the app down
+#: every time the list was drawn.
+MARKUP_LINE = "Met [bold]Sam[/bold] and [red]Jo[/] -- closing [/i] for no reason"
+
+
+async def test_a_first_line_that_looks_like_markup_is_shown_as_written(diary_path):
+    seed(diary_path, Entry.new(TODAY, MARKUP_LINE))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(120, 20)) as pilot:
+        await unlock(pilot)
+        assert snippets(app) == [MARKUP_LINE]
+        screen = "\n".join(
+            "".join(segment.text for segment in strip)
+            for strip in app.screen._compositor.render_strips()
+        )
+        assert MARKUP_LINE in screen
+
+
+# --- the ends of the list --------------------------------------------------
+
+
+async def test_down_on_the_oldest_day_stays_there(diary_path):
+    """The list Textual offers wraps around; a diary should not jump from
+    its first page back to today for one keypress too many."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("G")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[0]
+        await pilot.press("down", "j")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[0]
+
+
+async def test_up_on_the_newest_day_stays_there(diary_path):
+    """Above it is only the month heading, which cannot be landed on."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert app.screen.selected_entry.date == MARCH[-1]
+        await pilot.press("up", "k")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == MARCH[-1]

@@ -75,7 +75,7 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, Label, ListView, TextArea
+from textual.widgets import Button, Input, Label, OptionList, TextArea
 
 from zecret.app import SAVE_AND_QUIT, ZecretApp
 from zecret.models import Entry
@@ -157,8 +157,8 @@ async def save_and_leave(pilot) -> None:
 
 def row_labels(app: ZecretApp) -> list[str]:
     return [
-        str(item.query_one(Label).content)
-        for item in app.screen.query_one("#entries", ListView).children
+        str(option.prompt).strip("\n")
+        for option in app.screen.query_one("#entries", OptionList).options
     ]
 
 

@@ -45,7 +45,7 @@ from pathlib import Path
 
 import pytest
 from textual.containers import VerticalScroll
-from textual.widgets import Button, Footer, Input, Label, ListView, TextArea
+from textual.widgets import Button, Footer, Input, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
@@ -189,6 +189,19 @@ async def test_reaching_the_diary_before_unlocking_is_a_programming_error(diary_
 TEXT_COLUMN = 4
 
 
+def text_column(app: ZecretApp, text: str) -> int:
+    """The column the line holding `text` starts at on screen, as drawn.
+
+    Read off the screen rather than off a widget's region: a list row is a
+    line inside an OptionList, not a widget with a region of its own.
+    """
+    for strip in app.screen._compositor.render_strips():
+        line = "".join(segment.text for segment in strip)
+        if text in line:
+            return len(line) - len(line.lstrip())
+    raise AssertionError(f"{text!r} is not on the screen")
+
+
 async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
     """The search box used to sit one cell right of the results under it.
     Input pads its inside by two cells and TextArea by one, so bordering
@@ -197,8 +210,7 @@ async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(NARROWEST, 20)) as pilot:
         await unlock(pilot)
-        rows = app.screen.query_one("#entries", ListView).children
-        assert rows[-1].query_one(Label).region.x == TEXT_COLUMN, "an entry row"
+        assert text_column(app, "A body") == TEXT_COLUMN, "an entry row"
 
         await pilot.press("slash")
         await pilot.pause()
@@ -206,8 +218,7 @@ async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert app.screen.query_one("#query", Input).content_region.x == TEXT_COLUMN, "the query"
-        results = app.screen.query_one("#results", ListView).children
-        assert results[-1].query_one(Label).region.x == TEXT_COLUMN, "a result row"
+        assert text_column(app, "A body") == TEXT_COLUMN, "a result row"
 
         await pilot.press("escape")
         await pilot.pause()
