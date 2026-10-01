@@ -39,7 +39,8 @@ Required coverage:
       clamps to today going forward like every other move.
     - It never starts, or lands, on a day that has not happened.
     - A new set of written days is drawn as soon as it is handed over.
-    - A click on a day in any month moves the cursor there.
+    - A click on a day in any month moves the cursor there; a click on a
+      day not yet come does nothing, as the arrows do nothing there.
     - A move within the year redraws only the months it touched; a move
       into another year redraws all twelve.
     - Both calendars share one key map, WalkableCalendar's, and the year
@@ -732,3 +733,15 @@ async def test_the_year_cursor_is_solid_only_while_the_year_has_focus():
         await pilot.pause()
         assert blurred != focused, "the cursor should soften when the year loses focus"
         assert painted_cursor(app) == focused
+
+
+async def test_clicking_a_day_not_yet_come_does_nothing():
+    """It used to clamp to today, which is a cell in another month."""
+    # Not on today, so that a clamp to today would show as a move.
+    app = YearHarness(YESTERDAY)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.year.post_message(MonthGrid.DayClicked(TOMORROW))
+        app.year.post_message(MonthGrid.DayClicked(dt.date(TODAY.year + 1, 1, 1)))
+        await pilot.pause()
+        assert app.year.date == YESTERDAY
+        assert app.changes == []

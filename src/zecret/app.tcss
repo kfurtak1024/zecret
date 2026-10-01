@@ -727,30 +727,29 @@ MonthGrid {
 
 /* How many months across, from the class CalendarScreen wears for the
    terminal's width (fit_months). Five is left out on purpose -- see ACROSS
-   there. */
+   there. Only the count: the grid's width follows from it (width: auto
+   above), so no width is written here to fall out of step. The sizes that
+   are written twice -- the month's 21 columns, the gutter, the card's
+   margin, padding and scrollbar -- are held to calendar_view.py's
+   constants by tests/test_calendar_screen.py. */
 CalendarScreen.-months-1 YearCalendar {
     grid-size: 1;
-    width: 21;
 }
 
 CalendarScreen.-months-2 YearCalendar {
     grid-size: 2;
-    width: 44;
 }
 
 CalendarScreen.-months-3 YearCalendar {
     grid-size: 3;
-    width: 67;
 }
 
 CalendarScreen.-months-4 YearCalendar {
     grid-size: 4;
-    width: 90;
 }
 
 CalendarScreen.-months-6 YearCalendar {
     grid-size: 6;
-    width: 136;
 }
 
 /* --- Light themes ------------------------------------------------------- */

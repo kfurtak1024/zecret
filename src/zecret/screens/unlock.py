@@ -35,7 +35,7 @@ from textual.binding import Binding, BindingType
 from textual.widgets import Input, Label
 
 from zecret.crypto import ZecretDecryptError
-from zecret.screens.base import NO_RECOVERY, FormScreen, card
+from zecret.screens.base import NO_RECOVERY, FormScreen, card, plain
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.storage import DiaryFile
 
@@ -80,8 +80,13 @@ class UnlockScreen(FormScreen):
         with card("unlock-box"):
             if self.creating:
                 yield Label("Create a new diary", id="unlock-title")
+                # Plain: the path is the user's, and a directory named with a
+                # stray closing tag raised MarkupError before the diary could
+                # be created at all -- see base.plain().
                 yield Label(
-                    f"No diary at {self.zecret.diary_path}. Choose a master password for it.",
+                    plain(
+                        f"No diary at {self.zecret.diary_path}. Choose a master password for it."
+                    ),
                     id="unlock-hint",
                 )
                 # Above the fields rather than below them: it is the thing

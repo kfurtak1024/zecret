@@ -57,9 +57,14 @@ file matters as much as that does.
   straight after unlocking. Text in square brackets that did make sense as
   markup, such as `[bold]`, was quietly applied: it disappeared from the
   row and changed how the row looked. Both now show exactly what you
-  wrote. The same went for error messages that quote something Zecret did
-  not write: re-reading (<kbd>r</kbd>) a damaged diary file could crash
-  while reporting it, instead of saying what was wrong.
+  wrote. The same went for other text Zecret did not write: re-reading
+  (<kbd>r</kbd>) a damaged diary file could crash while reporting it,
+  instead of saying what was wrong, and a diary path with such a tag in a
+  folder name crashed the screen for creating a new diary as it opened.
+
+- **Clicking a day in the "which day?" calendar picks that day.** The month
+  is drawn centred, and clicks were counted from the left edge instead, so
+  a click landed a day or more to the right of the one you meant.
 
 ## [0.7.1] - 2026-09-30
 

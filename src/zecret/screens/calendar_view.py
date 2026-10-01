@@ -38,7 +38,8 @@ from textual.binding import Binding, BindingType
 from textual.containers import Center
 from textual.widgets import Label
 
-from zecret.screens.base import ZecretScreen, card, count_entries, today
+from zecret.models import Entry
+from zecret.screens.base import ZecretScreen, card, count_entries, today, unchanged
 from zecret.screens.calendar import LEGEND, MONTH_WIDTH, YearCalendar, reachable
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
@@ -133,8 +134,13 @@ class CalendarScreen(ZecretScreen):
         # The year the header was last worded for, so that a move within
         # it does not recount the diary -- see show_year.
         self.shown_year: int | None = None
+        # The diary the year was last drawn from -- see on_screen_resume.
+        self.drawn: dict[dt.date, Entry] | None = None
 
     def compose(self) -> ComposeResult:
+        diary, _ = self.zecret.unlocked
+        # What the year below is drawn from -- see on_screen_resume.
+        self.drawn = dict(diary.entries)
         yield DiaryHeader()
         with card("year-box"):
             yield Label("", id="year-title")
@@ -142,7 +148,7 @@ class CalendarScreen(ZecretScreen):
             # Textual does not align the children of a container that
             # scrolls, and in most terminals this one does.
             with Center():
-                yield YearCalendar(self.date, self.written, id="year")
+                yield YearCalendar(self.date, self.written_days, id="year")
             yield Label(LEGEND, id="year-legend")
         yield DiaryFooter()
 
@@ -224,30 +230,25 @@ class CalendarScreen(ZecretScreen):
 
         Also fires as the screen is first shown, a moment after compose
         drew the year from this same diary -- so the year is redrawn only
-        when the written days actually differ from what it holds, which
-        rules out the first showing and a day that was opened and left
-        alone. Comparing the sets is a pass over the diary; drawing twelve
-        months for nothing was the cost worth avoiding.
+        when the diary has changed since, judged by identity as the list
+        judges it (base.unchanged). That rules out the first showing and a
+        day opened and left alone without building the set of written days
+        again just to compare it with itself.
 
         Skipped while locking, which pops this screen with the diary
         already on its way out -- see EntryListScreen.
         """
         if not self.zecret.is_unlocked:
             return
-        written = self.written
-        if written != self.calendar.written:
-            self.calendar.set_written(written)
+        diary, _ = self.zecret.unlocked
+        if not unchanged(self.drawn, diary.entries):
+            self.drawn = dict(diary.entries)
+            self.calendar.set_written(self.written_days)
             self.show_year(recount=True)
 
     @property
     def calendar(self) -> YearCalendar:
         return self.query_one("#year", YearCalendar)
-
-    @property
-    def written(self) -> frozenset[dt.date]:
-        """Every day the diary holds an entry for, as of now."""
-        diary, _ = self.zecret.unlocked
-        return frozenset(diary.entries)
 
     def show_year(self, recount: bool = False) -> None:
         """Name the year on show, and how much of it is written.

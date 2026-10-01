@@ -9,11 +9,11 @@ Responsibilities:
     - Keybindings: 'n' write today -> EditorScreen, 'c' the year laid out
       -> CalendarScreen, 'a' pick another day -> DatePromptScreen (given
       the days already written, which its calendar marks) -> EditorScreen,
-      'enter' open selected day
-      -> EditorScreen, 'd' delete selected (with confirmation modal),
-      'r' re-read the file, '/' -> SearchScreen, 's' -> SettingsScreen,
-      'L' lock, 'q' quit. Plus getting around a long diary: j/k, g/G,
-      home/end and the page keys, none of which reach the footer.
+      'enter' open selected day -> EditorScreen, 'd' delete selected (with
+      confirmation modal), 'r' re-read the file, '/' -> SearchScreen,
+      's' -> SettingsScreen, ctrl+l lock, '?' help, 'q' quit. Plus getting
+      around a long diary: j/k, g/G, home/end and the page keys, none of
+      which reach the footer.
     - After returning from EditorScreen/SearchScreen/CalendarScreen,
       refresh the list from
       the current in-memory app.diary state (no re-read from disk needed,
@@ -203,13 +203,11 @@ class EntryListScreen(ZecretScreen):
         # The diary the rows were last built from, so that coming back to
         # an unchanged one does not rebuild it -- see on_screen_resume.
         self.drawn: dict[dt.date, Entry] | None = None
-        # A day for the next rebuild to put the cursor on, in place of the
-        # one it was on. Set only by land_on, and only when that rebuild is
-        # known to be on its way -- so it is always taken by the rebuild it
-        # was meant for, and never lingers for an unrelated one later.
-        self.pending_landing: dt.date | None = None
-        # The calendar while it is open over this screen, so the rebuild on
-        # the way back can land where its cursor was. See action_calendar.
+        # The two screens this one sends the reader to and lands back from:
+        # the day open in the editor, and the calendar while it is open over
+        # this screen. Both are read in on_screen_resume, which is what
+        # decides where the cursor goes on the way back -- see there.
+        self.editing: dt.date | None = None
         self.calendar: CalendarScreen | None = None
 
     def compose(self) -> ComposeResult:
@@ -226,28 +224,51 @@ class EntryListScreen(ZecretScreen):
         Most returns change nothing -- closing the help, cancelling a
         question, leaving settings, a calendar visit or a day read and not
         written -- and a rebuild replaces every row of a list that can be
-        years long. Where nothing changed but there is a day to land on
-        (the calendar's), the cursor goes there over the rows as they are.
+        years long. Where nothing changed but there is a day to land on,
+        the cursor goes there over the rows as they are.
+
+        Where to land is decided here, for both of the screens that hand a
+        day back, because this is the one place certain to run after the
+        screen has gone and before the list is redrawn. Coming back from
+        the editor lands on the day just written -- including one that had
+        no row until now -- and on nothing new if the day was left
+        unwritten. Coming back from the calendar lands on its cursor's day,
+        or the nearest older one written.
+
+        (The editor's day used to come back through its dismiss callback,
+        which nothing orders against this handler: which of the two ran
+        first depended on the road out of the editor, and the callback had
+        to work out from the rows whether the rebuild had happened yet.)
 
         Also fires on the way out, as locking pops the screens above this
         one. There is no diary to draw from by then, and nothing to draw
         it onto.
+
+        And fires late, sometimes, behind a screen already pushed over this
+        one: the which-day question opens the editor from its dismiss
+        callback, which can run before this handler does. Nothing is
+        decided then -- the editor is still open, and this will be asked
+        again when it closes.
         """
-        if not self.zecret.is_unlocked:
+        if not self.zecret.is_unlocked or self.app.screen is not self:
             return
-        if self.calendar is not None:
-            self.pending_landing, self.calendar = self.calendar.date, None
         diary, _ = self.zecret.unlocked
+        landing: dt.date | None = None
+        if self.calendar is not None:
+            landing, self.calendar = self.calendar.date, None
+        if self.editing is not None:
+            if self.editing in diary.entries:
+                landing = self.editing
+            self.editing = None
         if not unchanged(self.drawn, diary.entries):
-            self.refresh_entries()
-            return
-        landing, self.pending_landing = self.pending_landing, None
-        if landing is not None:
+            self.refresh_entries(landing)
+        elif landing is not None:
             self.move_cursor_to(self.row_for(landing))
 
-    def refresh_entries(self) -> None:
+    def refresh_entries(self, landing: dt.date | None = None) -> None:
         """Rebuild the list from the in-memory diary, most recent day first,
-        with a heading above each month.
+        with a heading above each month, and put the cursor on `landing` --
+        or, if there is none, back on the day it was on.
 
         Synchronous, start to finish: an OptionList takes its options in one
         call with nothing to await, so no two rebuilds can interleave and
@@ -260,11 +281,9 @@ class EntryListScreen(ZecretScreen):
 
         listing = self.entries_list
         # Read before clearing: rebuilding is what loses the reader's place,
-        # so where they were has to be taken down first. Unless land_on has
-        # asked for a day that has no row yet, or the calendar is handing
-        # back the day it was on -- which may have no entry at all, and
+        # so where they were has to be taken down first. A day to land on
+        # may have no entry at all -- the calendar's often does not -- and
         # row_for then finds the nearest that does.
-        landing, self.pending_landing = self.pending_landing, None
         was_on = landing if landing is not None else self.highlighted_date
         self.drawn = dict(diary.entries)
         self.rows = []
@@ -377,10 +396,7 @@ class EntryListScreen(ZecretScreen):
         open to be asked. A frozenset of the keys, so what the modal holds
         cannot drift from the diary or be changed by it.
         """
-        diary, _ = self.zecret.unlocked
-        self.app.push_screen(
-            DatePromptScreen(written=frozenset(diary.entries)), self.open_chosen_day
-        )
+        self.app.push_screen(DatePromptScreen(written=self.written_days), self.open_chosen_day)
 
     def action_calendar(self) -> None:
         """Lay out the year, opening on the day the cursor is on here.
@@ -388,8 +404,7 @@ class EntryListScreen(ZecretScreen):
         The calendar is kept so that coming back lands on the day its own
         cursor was left on -- read in on_screen_resume, which is the one
         thing certain to run after it has gone and before the list is
-        rebuilt. A dismiss callback would not be: nothing orders it against
-        that rebuild (see land_on for what that costs).
+        rebuilt.
         """
         self.calendar = CalendarScreen(self.highlighted_date)
         self.app.push_screen(self.calendar)
@@ -518,59 +533,10 @@ class EntryListScreen(ZecretScreen):
     def open_day(self, date: dt.date) -> None:
         """Open a day for writing. The editor decides whether that means a
         new entry or the existing one, and the list refreshes on resume to
-        pick up the change.
-
-        The callback is there for the cursor, not for the change: coming
-        back from a day lands on that day. See land_on. Locking pops the
-        editor without dismissing it, so the callback does not run then.
+        pick up the change -- and lands on the day, see on_screen_resume.
         """
-
-        def returned(_: None) -> None:
-            self.land_on(date)
-
-        self.app.push_screen(EditorScreen(date), returned)
-
-    def land_on(self, date: dt.date) -> None:
-        """Put the cursor on `date`, the day the editor was just left on.
-
-        Without this the cursor stayed on the day it was on when the editor
-        opened. A day opened with 'n' or 'a' may have had no row then, so
-        the cursor was elsewhere, and after the rebuild it sat next to the
-        day just written -- usually just below it.
-
-        This runs from the editor's dismiss callback, and nothing orders
-        that against the rebuild the same dismiss sets off through
-        ScreenResume: which comes first depends on the road out of the
-        editor (a plain escape, or "Save and go back" from the question).
-        So it works either way round. After the rebuild, the day has a row
-        and the cursor simply goes to it. Before it, a day that already had
-        a row is gone to now and kept by the rebuild, which holds the
-        cursor on its day; a day that has none yet is handed to that
-        rebuild through pending_landing. Which of the two has happened is
-        read off the rows -- a day the diary holds with no row means the
-        rebuild is still to come. A rebuild is never half-done when this
-        reads it: it runs start to finish without yielding.
-
-        A day left without being written is not in the diary, and the
-        cursor stays where it was.
-        """
-        if not self.zecret.is_unlocked:
-            return
-        diary, _ = self.zecret.unlocked
-        if date not in diary.entries:
-            return
-        row = next(
-            (
-                row
-                for row, entry in enumerate(self.rows)
-                if entry is not None and entry.date == date
-            ),
-            None,
-        )
-        if row is None:
-            self.pending_landing = date
-        else:
-            self.move_cursor_to(row)
+        self.editing = date
+        self.app.push_screen(EditorScreen(date))
 
     def open_chosen_day(self, date: dt.date | None) -> None:
         """Callback for DatePromptScreen; None means the user backed out."""

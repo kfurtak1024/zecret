@@ -41,8 +41,14 @@ from textual.widgets import Input, Label
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.calendar import YearCalendar
-from zecret.screens.calendar_view import CalendarScreen, months_across
+from zecret.screens.calendar import MONTH_WIDTH, YearCalendar
+from zecret.screens.calendar_view import (
+    CHROME,
+    MONTH_GAP,
+    CalendarScreen,
+    months_across,
+    needs,
+)
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import HelpScreen, documented_bindings
@@ -275,8 +281,23 @@ async def test_the_header_and_title_name_the_year_and_count_it(diary_path):
 
 @pytest.mark.parametrize(
     ("width", "across"),
-    [(60, 2), (80, 3), (100, 4), (130, 4), (150, 6)],
-    ids=["narrow", "default-terminal", "screenshot-width", "no-five", "wide"],
+    [
+        (60, 2),
+        (80, 3),
+        (100, 4),
+        (130, 4),
+        (150, 6),
+        # Either side of every step, where a width written in the
+        # stylesheet and a width counted in Python first disagree.
+        (needs(2) - 1, 1),
+        (needs(2), 2),
+        (needs(3) - 1, 2),
+        (needs(3), 3),
+        (needs(4) - 1, 3),
+        (needs(4), 4),
+        (needs(6) - 1, 4),
+        (needs(6), 6),
+    ],
 )
 async def test_months_sit_as_many_across_as_fit(diary_path, width, across):
     seed(diary_path)
@@ -289,6 +310,35 @@ async def test_months_sit_as_many_across_as_fit(diary_path, width, across):
         assert len(top_row) == across
         # Not cut off: every month of the row ends inside the window.
         assert all(month.region.right <= width for month in top_row)
+
+
+async def test_the_counted_sizes_are_the_drawn_ones(diary_path):
+    """months_across() counts in MONTH_WIDTH, MONTH_GAP and CHROME, and the
+    stylesheet draws in its own numbers. Nothing else ties the two
+    together, so this does: change one alone and months get clipped, or
+    room goes unused, at widths no other test happens to sample."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        grid = year(app)
+        assert [column.value for column in grid.styles.grid_columns] == [MONTH_WIDTH]
+        # The gap measured rather than read off a style: Textual names the
+        # gutter between columns its *vertical* one, which is easy to get
+        # backwards, and the arithmetic only cares how far apart they sit.
+        january, february = grid.months[:2]
+        assert february.region.x - january.region.right == MONTH_GAP
+        assert {month.region.width for month in grid.months} == {MONTH_WIDTH}
+        box = app.screen.query_one("#year-box").styles
+        chrome = (
+            box.margin.left
+            + box.margin.right
+            + box.padding.left
+            + box.padding.right
+            + box.scrollbar_size_vertical
+        )
+        assert chrome == CHROME
 
 
 async def test_the_cursors_month_is_scrolled_into_view(diary_path):

@@ -31,9 +31,10 @@ Required coverage:
       it had no row before ('n' and 'a'). The cursor used to stay on the
       day it was on, which after the rebuild sat next to the new one --
       usually just below it. That holds on every road out of the editor,
-      including "Save and go back", which runs the editor's callback after
-      the list's rebuild rather than before it; and the landing is used
-      once, never saved up for whatever the list is resumed from next.
+      including "Save and go back" and a day chosen with 'a', whose dialog
+      opens the editor before the list has finished resuming; and the
+      landing is used once, never saved up for whatever the list is resumed
+      from next.
       Backing out of a day that was never written leaves the cursor where
       it was.
     - Page keys move a screenful of *lines*, not rows: a month heading is
@@ -682,9 +683,10 @@ async def test_writing_another_day_leaves_the_cursor_on_it(diary_path):
 
 
 async def test_saving_from_the_question_on_the_way_out_lands_on_the_day(diary_path):
-    """escape, then "Save and go back". Leaving through the question runs
-    the editor's callback after the list has been rebuilt rather than
-    before it, and landing used to depend on the order."""
+    """escape, then "Save and go back". Leaving through the question used
+    to run the editor's dismiss callback after the list had been rebuilt
+    rather than before it, and landing depended on the order. The list now
+    reads the day on resume, which leaves no order to depend on."""
     seed(diary_path, *(Entry.new(TODAY - dt.timedelta(days=n), f"Day {n}") for n in range(1, 6)))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -1173,9 +1175,9 @@ def rebuilds(app: ZecretApp, monkeypatch) -> list[None]:
     counted: list[None] = []
     original = screen.refresh_entries
 
-    def counting() -> None:
+    def counting(*args) -> None:
         counted.append(None)
-        original()
+        original(*args)
 
     monkeypatch.setattr(screen, "refresh_entries", counting)
     return counted
@@ -1298,3 +1300,19 @@ async def test_a_question_shows_its_wording_as_given(diary_path):
         await pilot.pause()
         label = app.screen.query_one("#confirm-question", Label)
         assert str(label.render()) == "Keep [/bold] as typed?"
+
+
+async def test_the_newest_entry_is_shown_under_its_heading(diary_path):
+    """'g' and home land on the newest day, and the list scrolled only far
+    enough to show that row -- leaving its month heading off the top, so
+    the top of the diary was never actually on screen."""
+    long_diary(diary_path, days=200)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        # Page up enough times to cover two hundred rows, a screenful each.
+        for keys in (("G", "g"), ("end", "home"), ("G", *["pageup"] * 15)):
+            await pilot.press(*keys)
+            await pilot.pause()
+            assert entries_list(app).scroll_y == 0, f"{keys} left the heading scrolled off"
+            assert app.screen.selected_entry is not None

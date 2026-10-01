@@ -251,6 +251,23 @@ class DayList(OptionList):
     the page keys and the ends themselves (see EntryListScreen).
     """
 
+    def scroll_to_highlight(self, top: bool = False) -> None:
+        """Bring the highlight into view -- and on the first day, the top.
+
+        Textual scrolls just far enough to show the highlighted row, which
+        on the newest entry leaves the month heading above it, and the
+        blank line above that, out of sight: 'g' went to the top of the
+        diary without ever showing it. Where nothing but headings comes
+        before the highlight, the top of the list is the place to be.
+        """
+        highlighted = self.highlighted
+        if highlighted is not None and all(
+            self.get_option_at_index(index).disabled for index in range(highlighted)
+        ):
+            self.scroll_home(animate=False, immediate=True)
+            return
+        super().scroll_to_highlight(top)
+
     def action_cursor_up(self) -> None:
         self._step(-1)
 
@@ -300,6 +317,18 @@ class ZecretScreen(Screen[None]):
     def zecret(self) -> ZecretApp:
         """The running app, typed -- `self.app` is only known as App here."""
         return cast("ZecretApp", self.app)
+
+    @property
+    def written_days(self) -> frozenset[dt.date]:
+        """Every day the diary holds an entry for, as of now.
+
+        What the calendars mark. A frozenset of the keys, so what a calendar
+        holds cannot drift from the diary or be changed by it -- and handed
+        to the calendar, never looked up by it: a widget that reached for
+        storage would be the one place outside a screen that does.
+        """
+        diary, _ = self.zecret.unlocked
+        return frozenset(diary.entries)
 
     @property
     def blocks_lock(self) -> bool:

@@ -610,7 +610,12 @@ patch number, not a retry. This is why `check` and `verify` run first.
   nearest older one written. It reads `CalendarScreen.date`, a plain copy
   the screen keeps, and never the widget: Textual tears a popped screen's
   DOM down in a task of its own, so a query into it from the list's resume
-  can find nothing there.
+  can find nothing there. The editor hands its day back the same way —
+  `EntryListScreen.editing`, read in that same handler — so where the list
+  lands is decided in one place for every screen it sends you to. A resume
+  that arrives while another screen is already in front (the which-day
+  dialog opens the editor from its dismiss callback) decides nothing; the
+  next one will.
 - **The editor wraps before it paints.** Textual wraps a `TextArea` when
   it handles the `Resize` message, which is queued — so the compositor has
   already drawn the widget at the new size by the time it arrives, and

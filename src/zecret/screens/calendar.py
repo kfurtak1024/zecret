@@ -407,13 +407,31 @@ class MonthCalendar(WalkableCalendar):
         offset = event.get_content_offset(self)
         if offset is None:
             return
-        date = self.date_at(offset.x, offset.y)
+        date = self.date_at(offset.x - self.grid_left, offset.y)
         if date is not None:
             self.focus()
             self.move_to(date)
 
+    @property
+    def grid_left(self) -> int:
+        """Columns the month is drawn in from the widget's left edge.
+
+        app.tcss centres the 28-column month in a widget as wide as the
+        card, so a click's offset into the widget is not an offset into the
+        month: without this every click landed a few days right of the one
+        clicked. Read from the widget's own alignment rather than assumed,
+        so the arithmetic follows the stylesheet. Textual puts the odd
+        column of a centring on the right, which floor division matches.
+        """
+        spare = max(0, self.content_region.width - CELL * DAYS)
+        align = self.styles.content_align_horizontal
+        if align == "center":
+            return spare // 2
+        return spare if align == "right" else 0
+
     def date_at(self, x: int, y: int) -> dt.date | None:
-        """The day drawn at a point in the grid -- see day_at."""
+        """The day drawn at a point in the month -- see day_at. `x` is
+        counted from the month's own left edge, not the widget's."""
         return day_at(self.date, x, y, CELL)
 
 
@@ -686,6 +704,13 @@ class YearCalendar(WalkableCalendar):
         self.move_to(shift_month(self.date, 12))
 
     def on_month_grid_day_clicked(self, event: MonthGrid.DayClicked) -> None:
+        """Go to the day clicked -- unless it has not happened yet.
+
+        Refused rather than clamped, as the arrows refuse: clamping sent the
+        cursor to today, a cell in another month nobody pointed at.
+        """
         event.stop()
+        if event.date > today():
+            return
         self.focus()
         self.move_to(event.date)
