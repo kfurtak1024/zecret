@@ -19,7 +19,7 @@ keys are all dead while the modal has focus.
 
 Compact because the entry list advertises eight keys and the roomy spelling
 needs far more than a terminal's eighty columns to lay them out; at eighty
-it stopped mid-word at "? Hel". Compact, those eight come to seventy-two,
+it stopped mid-word at "? Hel". Compact, those eight come to sixty-nine,
 so this is the setting that gives way if the app ever grows another key --
 see the note in CLAUDE.md.
 """

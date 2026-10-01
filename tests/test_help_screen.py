@@ -59,7 +59,7 @@ TODAY = dt.date.today()
 #: run from one. It guards the direction that actually goes wrong -- a page
 #: that grows past its picture -- so raise this and ROWS["help"] together if
 #: the help ever genuinely needs more room.
-SHOT_ROWS = 36
+SHOT_ROWS = 39
 
 
 # Argon2 at test cost, and no pause after a failed unlock: this suite
@@ -211,9 +211,10 @@ def columns(app: ZecretApp) -> list[Widget]:
 
 
 async def test_a_long_section_is_laid_out_in_two_columns(diary_path):
-    """Eighteen keys in one column is a page you scroll; the same eighteen
+    """Nineteen keys in one column is a page you scroll; the same nineteen
     in two is most of a page you do not. Side by side means same top, and
-    different left -- geometry rather than the style that produced it."""
+    different left -- geometry rather than the style that produced it. An
+    odd count puts the extra row on the left, read first."""
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(100, 40)) as pilot:
         await unlock(pilot)
@@ -221,8 +222,8 @@ async def test_a_long_section_is_laid_out_in_two_columns(diary_path):
         left, right = columns(app)
         assert left.region.y == right.region.y, "columns should sit side by side"
         assert left.region.x < right.region.x
-        assert len(left.query(".help-key")) == len(right.query(".help-key")), (
-            "eighteen keys should split down the middle"
+        assert 0 <= len(left.query(".help-key")) - len(right.query(".help-key")) <= 1, (
+            "the keys should split down the middle"
         )
 
 

@@ -6,20 +6,23 @@ Responsibilities:
       under a heading per month ("August 2026 · 12 entries"). Because the
       heading names the month, the rows under it need only the weekday and
       day of the month.
-    - Keybindings: 'n' write today -> EditorScreen, 'a' pick another day
-      -> DatePromptScreen (given the days already written, which its
-      calendar marks) -> EditorScreen, 'enter' open selected day
+    - Keybindings: 'n' write today -> EditorScreen, 'c' the year laid out
+      -> CalendarScreen, 'a' pick another day -> DatePromptScreen (given
+      the days already written, which its calendar marks) -> EditorScreen,
+      'enter' open selected day
       -> EditorScreen, 'd' delete selected (with confirmation modal),
       'r' re-read the file, '/' -> SearchScreen, 's' -> SettingsScreen,
       'L' lock, 'q' quit. Plus getting around a long diary: j/k, g/G,
       home/end and the page keys, none of which reach the footer.
-    - After returning from EditorScreen/SearchScreen, refresh the list from
+    - After returning from EditorScreen/SearchScreen/CalendarScreen,
+      refresh the list from
       the current in-memory app.diary state (no re-read from disk needed,
       since app.diary is the source of truth during the session), leaving
       the cursor on the day it was on -- a refresh is a redraw, not a
       reason to send a reader of a years-long diary back to the top. After
       the editor, "the day it was on" is the day just written, even when
-      that day had no row until now.
+      that day had no row until now. After the calendar, it is the day
+      the calendar's cursor was on, or the nearest older one written.
 
 'n' and 'g' both land on a date rather than on a new entry: the editor
 opens whatever that day holds, so writing more about today just continues
@@ -62,11 +65,11 @@ from zecret.screens.base import (
     save_error,
     today,
 )
+from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
-from zecret.screens.help import HelpScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
 from zecret.storage import DiaryFile, ZecretConflictError
@@ -86,12 +89,17 @@ class EntryListScreen(ZecretScreen):
 
     #: `show` decides what goes in the footer and nothing else -- the help
     #: popup lists every binding here regardless. The bar holds about eighty
-    #: columns and these eight fill seventy-two of them, so the room that
-    #: was spare is now spent; everything below them is no less real for
-    #: being found through '?' instead.
+    #: columns and these eight fill sixty-nine of them, so the room that was
+    #: spare is spent; everything below them is no less real for being
+    #: found through '?' instead.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("n", "today", "Today"),
-        Binding("a", "another_day", "Another day"),
+        Binding("c", "calendar", "Calendar"),
+        # Out of the bar since the calendar arrived: the calendar answers
+        # the same question -- which day? -- with the whole year to point
+        # at, and the bar had room for one of the two. This stays the
+        # quicker road for a day whose date you already know.
+        Binding("a", "another_day", "Another day", show=False),
         Binding("d", "delete_entry", "Delete"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
@@ -110,8 +118,10 @@ class EntryListScreen(ZecretScreen):
         # on the screen. That is not true of 'r' or of the movement keys.
         Binding("ctrl+l", "lock", "Lock"),
         # Bound here rather than app-wide on purpose: a '?' typed into the
-        # editor, the search box or a password field must stay a '?'.
-        Binding("question_mark", "help", "Help", key_display="?"),
+        # editor, the search box or a password field must stay a '?'. The
+        # action is the app's, which the calendar shares -- see
+        # ZecretApp.action_help.
+        Binding("question_mark", "app.help", "Help", key_display="?"),
         # "app.quit", not "quit": a binding's action is dispatched on the
         # node that declares it, and a Screen has no action_quit -- an
         # unqualified "quit" here silently does nothing. The app's is
@@ -162,6 +172,9 @@ class EntryListScreen(ZecretScreen):
         # known to be on its way -- so it is always taken by the rebuild it
         # was meant for, and never lingers for an unrelated one later.
         self.pending_landing: dt.date | None = None
+        # The calendar while it is open over this screen, so the rebuild on
+        # the way back can land where its cursor was. See action_calendar.
+        self.calendar: CalendarScreen | None = None
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
@@ -179,6 +192,8 @@ class EntryListScreen(ZecretScreen):
         """
         if not self.zecret.is_unlocked:
             return
+        if self.calendar is not None:
+            self.pending_landing, self.calendar = self.calendar.date, None
         await self.refresh_entries()
 
     async def refresh_entries(self) -> None:
@@ -191,9 +206,11 @@ class EntryListScreen(ZecretScreen):
             list_view = self.query_one("#entries", ListView)
             # Read before clearing: rebuilding is what loses the reader's
             # place, so where they were has to be taken down first.
-            # Unless land_on has asked for a day that has no row yet.
+            # Unless land_on has asked for a day that has no row yet, or the
+            # calendar is handing back the day it was on -- which may have
+            # no entry at all, and row_for then finds the nearest that does.
             landing, self.pending_landing = self.pending_landing, None
-            was_on = landing if landing in diary.entries else self.highlighted_date
+            was_on = landing if landing is not None else self.highlighted_date
             await list_view.clear()
             self.rows = []
             items: list[ListItem] = []
@@ -312,16 +329,23 @@ class EntryListScreen(ZecretScreen):
             DatePromptScreen(written=frozenset(diary.entries)), self.open_chosen_day
         )
 
+    def action_calendar(self) -> None:
+        """Lay out the year, opening on the day the cursor is on here.
+
+        The calendar is kept so that coming back lands on the day its own
+        cursor was left on -- read in on_screen_resume, which is the one
+        thing certain to run after it has gone and before the list is
+        rebuilt. A dismiss callback would not be: nothing orders it against
+        that rebuild (see land_on for what that costs).
+        """
+        self.calendar = CalendarScreen(self.highlighted_date)
+        self.app.push_screen(self.calendar)
+
     def action_search(self) -> None:
         self.app.push_screen(SearchScreen())
 
     def action_settings(self) -> None:
         self.app.push_screen(SettingsScreen())
-
-    def action_help(self) -> None:
-        # This screen's own keys are handed over: HelpScreen cannot import
-        # the list it is opened from without closing an import cycle.
-        self.app.push_screen(HelpScreen(self.BINDINGS))
 
     def action_lock(self) -> None:
         """Put the diary away without leaving the app."""

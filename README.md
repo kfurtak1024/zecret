@@ -34,7 +34,7 @@ password only you know, in a terminal you already have open.
 
 - 📅 **One entry a day** — each day is a page, named by its date; come back and it is the same page
 - 🗓️ **Grouped by month** — the diary reads as months, each headed with how much of it you wrote
-- 📆 **The month at a glance** — choosing a day shows the month around it, with the days you have written marked
+- 📆 **The year at a glance** — a calendar view lays out the whole year with the days you have written marked, so the gaps show
 - 🔐 **Encrypted at rest** — Argon2id key derivation, AES-256-GCM per entry
 - ✍️ **Keyboard-driven** — a fast Textual TUI, no mouse required
 - 🔎 **Instant search** — live filtering across everything you have written
@@ -132,13 +132,33 @@ the asterisks exactly where you typed them, and a line like `2 * 3` — or
 
 <div align="center">
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/calendar-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/calendar-light.png">
+  <img alt="The calendar view: the months of a year laid out in a grid, with the days already written marked and the cursor on a day that was missed" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/calendar-dark.png" width="760">
+</picture>
+</div>
+
+The list shows what you wrote; press <kbd>c</kbd> to see *when*. The
+calendar lays out the whole year, every day you have written marked, so a
+missed week is a hole in a month and a missed month is a hole in the year.
+The arrow keys walk a day or a week at a time — straight on across the end
+of a month or a year — the page keys move a month, and
+<kbd>[</kbd>/<kbd>]</kbd> jump a year either way. Press <kbd>e</kbd> (or
+<kbd>enter</kbd>) on any day up to today to write it or carry on with it,
+and <kbd>c</kbd> or <kbd>esc</kbd> to go back to the list, which picks up
+where the calendar left off. It fits three months across an 80-column
+terminal and spreads out to six on a wide one.
+
+<div align="center">
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-light.png">
   <img alt="A modal asking which day to write about: a date field above a month of days, with the ones already written marked" src="https://raw.githubusercontent.com/kfurtak1024/zecret/main/assets/date-dark.png" width="760">
 </picture>
 </div>
 
-Missed a day? Press <kbd>a</kbd> and type the date. Under the field is the
+When you already know the date, <kbd>a</kbd> is quicker: type it, and
+<kbd>enter</kbd> opens the day. Under the field is the
 month it falls in, with every day you have already written marked — so the
 evenings you missed are the ones without a mark. <kbd>tab</kbd> (or
 <kbd>&darr;</kbd>) steps into it, the arrow keys walk a day at a time, the
@@ -221,15 +241,19 @@ so what you save is what you wrote.
 | Key | Where | Does |
 | --- | --- | --- |
 | <kbd>n</kbd> | entry list | Write about today |
+| <kbd>c</kbd> | entry list | The calendar: the whole year, written days marked |
 | <kbd>a</kbd> | entry list | Write about another day (asks which) |
 | <kbd>enter</kbd> | entry list | Open the selected day |
 | <kbd>d</kbd> | entry list | Delete the selected day's entry (asks first) |
 | <kbd>r</kbd> | entry list | Re-read the file, picking up another Zecret's writing |
 | <kbd>/</kbd> | entry list | Search |
 | <kbd>s</kbd> | entry list | Settings: theme, locking, master password |
-| <kbd>ctrl</kbd>+<kbd>l</kbd> | entry list, editor | Lock the diary without quitting (saves the day you are writing) |
-| <kbd>?</kbd> | entry list | Help — every key, on one page |
-| <kbd>q</kbd> | entry list | Quit |
+| <kbd>e</kbd> | calendar | Write the day under the cursor (<kbd>enter</kbd> too) |
+| <kbd>[</kbd> / <kbd>]</kbd> | calendar | The same day a year earlier / later |
+| <kbd>c</kbd> | calendar | Back to the list |
+| <kbd>ctrl</kbd>+<kbd>l</kbd> | entry list, calendar, editor | Lock the diary without quitting (saves the day you are writing) |
+| <kbd>?</kbd> | entry list, calendar | Help — every key, on one page |
+| <kbd>q</kbd> | entry list, calendar | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save, and carry on writing |
 | <kbd>ctrl</kbd>+<kbd>r</kbd> | editor | Cover the writing, leaving only the word you are on |
 | <kbd>esc</kbd> | anywhere | Back (offers to save first if you have unsaved edits) |

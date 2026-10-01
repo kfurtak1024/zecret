@@ -54,6 +54,11 @@ ROWS = {
     # is most of a short terminal -- and a shot that cut the calendar in
     # half would be showing the one thing this screen is for going wrong.
     "date": 26,
+    # The whole year without scrolling: at COLUMNS the calendar sits four
+    # months across, three rows of them, under its title and over its
+    # legend. A year cut off at September would be a picture of the one
+    # thing the view is for -- seeing all of it -- not happening.
+    "calendar": 34,
     "search": 20,
     # The password dialog is drawn to fit exactly this, which is the
     # shortest terminal it does not scroll in -- so a shot any shorter
@@ -65,7 +70,7 @@ ROWS = {
     # it tracks the layout rather than being padded for safety. Guarded by
     # SHOT_ROWS in tests/test_help_screen.py, since a cropped screenshot is
     # not something any test can see.
-    "help": 36,
+    "help": 39,
 }
 
 #: Width of the rendered PNGs, matching what the README embeds.
@@ -194,6 +199,27 @@ async def date(pilot: Pilot[None]) -> None:
     await pilot.pause()
 
 
+async def calendar_view(pilot: Pilot[None]) -> None:
+    """The year laid out, the cursor on a day the sample missed.
+
+    Moved to SHOT_DATE rather than left on today, for the reason the
+    which-day shot is: the sample diary was written in the summer of 2026,
+    and a cursor on whatever day this happens to be regenerated would be
+    in an empty month -- or an empty year.
+
+    One thing in it does still follow the calendar on the wall: which days
+    are drawn as not yet having happened. Run in 2026, the end of the year
+    is greyed out; run later, it is not. Both are true pictures of the app.
+    """
+    from zecret.screens.calendar import YearCalendar
+
+    await pilot.press("c")
+    await pilot.pause()
+    pilot.app.screen.query_one(YearCalendar).move_to(SHOT_DATE)
+    await pilot.pause()
+    await pilot.pause()
+
+
 async def password(pilot: Pilot[None]) -> None:
     """The dialog that changes the master password, over the settings it
     was opened from.
@@ -234,6 +260,7 @@ async def help_popup(pilot: Pilot[None]) -> None:
 
 SHOTS: dict[str, Callable[[Pilot[None]], Awaitable[None]]] = {
     "entries": entries,
+    "calendar": calendar_view,
     "editor": editor,
     "masked": masked,
     "date": date,

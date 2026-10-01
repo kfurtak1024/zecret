@@ -346,7 +346,7 @@ footer p.right { margin-left: auto; }
     Wed 29   Swam before breakfast. Cold, then not. Rain came in by n…
     Fri 24   Turned the desk to face the window. Better already.
     Sat 18   Rain all day. Made soup, read, did not go out once.
-<span class="bar"><span class="key">n</span> Today <span class="key">a</span> Another day <span class="key">d</span> Delete <span class="key">/</span> Search <span class="key">s</span> Settings <span class="key">^l</span> Lock <span class="key">?</span> Help <span class="key">q</span> Quit</span>
+<span class="bar"><span class="key">n</span> Today <span class="key">c</span> Calendar <span class="key">d</span> Delete <span class="key">/</span> Search <span class="key">s</span> Settings <span class="key">^l</span> Lock <span class="key">?</span> Help <span class="key">q</span> Quit</span>
 </pre>
   </div>
 </div>
@@ -435,11 +435,50 @@ footer p.right { margin-left: auto; }
   </div>
 </section>
 
+<section id="calendar">
+  <div class="wrap">
+    <h2>The year at a glance</h2>
+    <p class="sub">
+      The list shows what you wrote; <kbd>c</kbd> shows when. The calendar
+      lays out the whole year with every written day marked, so a missed
+      week is a hole in a month and a missed month is a hole in the year.
+      Walk to a gap with the arrow keys &mdash; straight on across the end of
+      a month or a year &mdash; jump a year with <kbd>[</kbd> and
+      <kbd>]</kbd>, and press <kbd>e</kbd> to write it.
+    </p>
+
+    <!-- A slice of the calendar view at 80 columns -- the summer band of
+         the sample diary in tools/screenshots.py, cursor on a day that was
+         missed -- with the classes added by hand. The key bar is checked
+         against CalendarScreen's bindings by tests/test_docs_page.py. -->
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="mono">Zecret</span></div>
+<pre>
+<span class="top">Zecret — Calendar · 2026 · 8 entries</span>
+
+<span class="head">                                2026</span>
+
+  <span class="head">        July                  August                September</span>
+  <span class="dim">Mo Tu We Th Fr Sa Su   Mo Tu We Th Fr Sa Su   Mo Tu We Th Fr Sa Su</span>
+         1  2  3  4  5                  <span class="mark"> 1•</span> 2       1  2  3  4  5  6
+   6  7  8  9 10 11 12    3 <span class="mark"> 4•</span><span class="cur"> 5 </span> 6  7  8 <span class="mark"> 9•</span>   7  8  9 10 11 12 13
+  13 14 15 16 17 <span class="mark">18•</span>19   10 11 <span class="mark">12•</span><span class="mark">13•</span>14 15 16   14 15 16 17 18 19 20
+  20 21 22 23 <span class="mark">24•</span>25 26   17 18 19 20 21 22 23   21 22 23 24 25 26 27
+  27 28 <span class="mark">29•</span>30 31         24 25 26 27 28 29 30   28 29 30
+                         31
+
+<span class="dim">                       • a day you have written</span>
+<span class="bar"><span class="key">e</span> Edit <span class="key">c</span> List <span class="key">^l</span> Lock <span class="key">?</span> Help <span class="key">q</span> Quit <span class="key">[</span> Previous year <span class="key">]</span> Next year</span>
+</pre>
+    </div>
+  </div>
+</section>
+
 <section id="which-day">
   <div class="wrap">
     <h2>Writing about another day</h2>
     <p class="sub">
-      <kbd>a</kbd> asks which day. Type the date if you know it — the month
+      <kbd>a</kbd> asks which day, for when you already know it. Type the date — the month
       below follows as you type — or step into the calendar and walk to the
       day you mean. The days you have already written are marked, so the
       month reads at a glance. Days that have not happened are not on offer:
@@ -596,15 +635,19 @@ footer p.right { margin-left: auto; }
       <thead><tr><th>Key</th><th>Where</th><th>Does</th></tr></thead>
       <tbody>
         <tr><td><kbd>n</kbd></td><td>entry list</td><td class="what">Write about today</td></tr>
+        <tr><td><kbd>c</kbd></td><td>entry list, calendar</td><td class="what">The calendar, and back to the list from it</td></tr>
         <tr><td><kbd>a</kbd></td><td>entry list</td><td class="what">Write about another day</td></tr>
-        <tr><td><kbd>enter</kbd></td><td>entry list</td><td class="what">Open the selected day</td></tr>
+        <tr><td><kbd>enter</kbd></td><td>entry list, calendar</td><td class="what">Open the selected day</td></tr>
+        <tr><td><kbd>e</kbd></td><td>calendar</td><td class="what">Write the day under the cursor</td></tr>
+        <tr><td><kbd>[</kbd></td><td>calendar</td><td class="what">The same day a year earlier</td></tr>
+        <tr><td><kbd>]</kbd></td><td>calendar</td><td class="what">The same day a year later</td></tr>
         <tr><td><kbd>d</kbd></td><td>entry list</td><td class="what">Delete the selected day's entry</td></tr>
         <tr><td><kbd>r</kbd></td><td>entry list</td><td class="what">Re-read the file, picking up another Zecret's writing</td></tr>
         <tr><td><kbd>/</kbd></td><td>entry list</td><td class="what">Search</td></tr>
         <tr><td><kbd>s</kbd></td><td>entry list</td><td class="what">Settings: theme, locking, and the way to change your master password</td></tr>
-        <tr><td><kbd>ctrl</kbd> + <kbd>l</kbd></td><td>entry list, editor</td><td class="what">Lock the diary without quitting — saves the day you are writing first</td></tr>
-        <tr><td><kbd>?</kbd></td><td>entry list</td><td class="what">Help</td></tr>
-        <tr><td><kbd>q</kbd></td><td>entry list</td><td class="what">Quit</td></tr>
+        <tr><td><kbd>ctrl</kbd> + <kbd>l</kbd></td><td>entry list, calendar, editor</td><td class="what">Lock the diary without quitting — saves the day you are writing first</td></tr>
+        <tr><td><kbd>?</kbd></td><td>entry list, calendar</td><td class="what">Help</td></tr>
+        <tr><td><kbd>q</kbd></td><td>entry list, calendar</td><td class="what">Quit</td></tr>
         <tr><td><kbd>ctrl</kbd> + <kbd>s</kbd></td><td>editor</td><td class="what">Save, and carry on writing</td></tr>
         <tr><td><kbd>ctrl</kbd> + <kbd>r</kbd></td><td>editor</td><td class="what">Cover the writing, leaving only the word you are on</td></tr>
         <tr><td><kbd>esc</kbd></td><td>anywhere</td><td class="what">Back</td></tr>
@@ -613,7 +656,7 @@ footer p.right { margin-left: auto; }
 
     <p class="sub" style="margin-top:1.5rem"><kbd>ctrl</kbd> + <kbd>q</kbd> quits from anywhere, including a screen with a password box on it where a bare <kbd>q</kbd> would only be typed. It asks first if you are part-way through writing a day, exactly as backing out of that day does — and either question offers to save the day on the way out, so the choice is never between losing the last paragraph and staying put.</p>
 
-    <p class="sub" style="margin-top:1.5rem">Getting around a long diary: <kbd>j</kbd> and <kbd>k</kbd> or the arrow keys move a day at a time, <kbd>g</kbd> and <kbd>G</kbd> (or <kbd>home</kbd> and <kbd>end</kbd>) jump to the newest and oldest entries, and the page keys move a screenful. None of these crowd the bar at the bottom; all of them are listed under <kbd>?</kbd>.</p>
+    <p class="sub" style="margin-top:1.5rem">Getting around a long diary: <kbd>j</kbd> and <kbd>k</kbd> or the arrow keys move a day at a time, <kbd>g</kbd> and <kbd>G</kbd> (or <kbd>home</kbd> and <kbd>end</kbd>) jump to the newest and oldest entries, and the page keys move a screenful. None of these crowd the bar at the bottom; all of them are listed under <kbd>?</kbd>. In the calendar the same arrow, page, <kbd>home</kbd> and <kbd>end</kbd> keys walk the year by day, week and month, carrying on across the end of a month or a year.</p>
 
     <p class="sub" style="margin-top:1.5rem">Choosing a day has two halves, and the keyboard reaches both: type the date into the field, or press <kbd>tab</kbd> (or <kbd>&darr;</kbd>) to step into the month below it, where the arrow keys walk a day at a time, the page keys move a month, <kbd>home</kbd> and <kbd>end</kbd> reach the ends of it, and <kbd>enter</kbd> takes the day the cursor is on. Whichever half you use, the other follows — and the calendar follows the typing as it happens, so the month you are aiming at is on screen before you have finished the date.</p>
 

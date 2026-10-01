@@ -34,6 +34,7 @@ import pytest
 from textual.binding import Binding
 
 from zecret.crypto import KdfParams
+from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import documented_bindings
@@ -56,7 +57,12 @@ def key_display(binding: Binding) -> str:
     """
     if binding.key_display:
         return binding.key_display
-    return {"escape": "esc", "ctrl+s": "ctrl+s"}.get(binding.key, binding.key)
+    return {
+        "escape": "esc",
+        "ctrl+s": "ctrl+s",
+        "left_square_bracket": "[",
+        "right_square_bracket": "]",
+    }.get(binding.key, binding.key)
 
 
 def page_keys(page: str) -> set[str]:
@@ -77,13 +83,13 @@ def page_keys(page: str) -> set[str]:
 
 
 def app_keys() -> set[str]:
-    """Every key the app binds on the two screens the page covers.
+    """Every key the app binds on the three screens the page covers.
 
     The page may list any of these; it may not list anything else.
     """
     return {
         key_display(binding)
-        for screen in (EntryListScreen, EditorScreen)
+        for screen in (EntryListScreen, CalendarScreen, EditorScreen)
         for binding in documented_bindings(screen.BINDINGS)
     }
 
@@ -100,7 +106,7 @@ def required_keys() -> set[str]:
     """
     return {
         key_display(binding)
-        for screen in (EntryListScreen, EditorScreen)
+        for screen in (EntryListScreen, CalendarScreen, EditorScreen)
         for binding in documented_bindings(screen.BINDINGS)
         if binding.show
     }
@@ -174,6 +180,11 @@ def test_the_covered_page_draws_the_editors_key_bar(page):
     its own: it is a picture of the editor, so it answers to the editor's
     bindings."""
     assert drawn_bar(page, "covered") == footer_bar(EditorScreen)
+
+
+def test_the_calendar_section_draws_the_calendars_key_bar(page):
+    """And for the drawing of the calendar view."""
+    assert drawn_bar(page, "calendar") == footer_bar(CalendarScreen)
 
 
 # --- other claims a reader would act on ------------------------------------

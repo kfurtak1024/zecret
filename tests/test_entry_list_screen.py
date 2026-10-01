@@ -10,6 +10,9 @@ Required coverage:
       selection back to a day (open, delete) lands on the right day.
     - 'a' offers another day to write about and opens the editor on it;
       backing out of the prompt changes nothing.
+    - 'c' opens the calendar, and coming back from it lands on the day its
+      cursor was on, or the nearest older one written. Those are tested
+      with the calendar, in test_calendar_screen.py.
     - Delete asks for confirmation first; cancelling changes nothing.
     - That question has two answers and not three: the modal offers to
       save where there is writing to save, and a deletion has nothing

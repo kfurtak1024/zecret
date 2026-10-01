@@ -31,6 +31,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, Static
 
 from zecret import __version__
+from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.password import PasswordScreen
@@ -73,7 +74,14 @@ COLUMN_GAP = 4
 
 #: What the page covers, in the order you meet it. EntryListScreen is
 #: missing on purpose: importing it here would close a cycle (it imports
-#: this screen to open it), and the list's own keys are passed in instead.
+#: the calendar, which opens this screen through the app), and the list's
+#: own keys are passed in instead.
+#:
+#: These sit side by side under the list's section, one column each. The
+#: calendar comes first because it is the other main view, and lists only
+#: what the list has not already said: its lock, help and quit are the
+#: list's own keys doing the list's own things, and saying them twice cost
+#: three rows of a page that has none spare -- see `shares_diary_keys`.
 #:
 #: The last group merges four screens rather than giving each its own
 #: heading: they advertise little beyond "escape goes back", and four
@@ -81,6 +89,7 @@ COLUMN_GAP = 4
 #: four does. Duplicates collapse, so this stays a merge and not an edit --
 #: every binding any of those screens advertises still appears.
 SECTIONS: list[tuple[str, list[list[BindingType]]]] = [
+    ("The calendar", [CalendarScreen.BINDINGS]),
     ("Writing a day", [EditorScreen.BINDINGS]),
     (
         "Anywhere else",
@@ -93,6 +102,12 @@ SECTIONS: list[tuple[str, list[list[BindingType]]]] = [
         ],
     ),
 ]
+
+#: The sections whose keys mean what the list's do wherever the two share
+#: one, so a row already under "The diary" is not repeated under them. Not
+#: every section: the editor's ctrl+l saves before it locks, which makes it
+#: worth its own line even though it reads the same.
+SHARES_DIARY_KEYS = {"The calendar"}
 
 #: The rules no key can express. Kept short: this is a popup, and every
 #: line here is a line of the diary it is covering.
@@ -149,15 +164,17 @@ class HelpScreen(ModalScreen[None]):
 
             yield Label("The diary", classes="section-title")
             yield from self.section_keys([self.list_bindings])
+            diary_rows = self.key_rows([self.list_bindings])
 
             # The short sections sit side by side rather than stacking:
-            # between them they are five rows of content under two headings,
-            # and the popup has more width to spend than height.
+            # between them they are six rows of content under three
+            # headings, and the popup has more width to spend than height.
             with Horizontal(classes="help-columns"):
                 for title, groups in SECTIONS:
                     with Vertical(classes="help-column"):
                         yield Label(title, classes="section-title")
-                        yield from self.section_keys(groups)
+                        omit = diary_rows if title in SHARES_DIARY_KEYS else []
+                        yield from self.section_keys(groups, omit)
 
             yield Label("Worth knowing", classes="section-title")
             for note in NOTES:
@@ -192,20 +209,12 @@ class HelpScreen(ModalScreen[None]):
         for row in self.query(".help-columns"):
             row.styles.layout = "vertical" if stacked else "horizontal"
 
-    def section_keys(self, groups: list[list[BindingType]]) -> ComposeResult:
-        """One row per key across `groups`, aligned into a column or two.
+    def key_rows(self, groups: list[list[BindingType]]) -> list[tuple[str, str]]:
+        """Every (key, description) row across `groups`, repeats dropped.
 
         Keys are rendered the way the footer renders them (ctrl+s as ^s,
         and a binding's own key_display honoured), so a key that does reach
-        the bar reads the same in both places. Rows repeated across screens
-        -- "esc  Back" on every one of them -- are listed once; two keys
-        doing the same thing are not, so g and home each get a line, which
-        is right, since the reader needs to know both exist.
-
-        A long section is split down the middle into two columns, read down
-        and then across. Both halves are aligned to the same key width, so
-        the split reads as one section laid out in two columns rather than
-        as two sections that happen to be adjacent.
+        the bar reads the same in both places.
         """
         rows: list[tuple[str, str]] = []
         for bindings in groups:
@@ -213,6 +222,25 @@ class HelpScreen(ModalScreen[None]):
                 row = (self.app.get_key_display(binding), binding.description)
                 if row not in rows:
                     rows.append(row)
+        return rows
+
+    def section_keys(
+        self, groups: list[list[BindingType]], omit: list[tuple[str, str]] | None = None
+    ) -> ComposeResult:
+        """One row per key across `groups`, aligned into a column or two.
+
+        Rows repeated across screens -- "esc  Back" on every one of them --
+        are listed once; two keys doing the same thing are not, so g and
+        home each get a line, which is right, since the reader needs to
+        know both exist. Rows in `omit` are left out: they are on the page
+        already, in a section this one shares its keys with.
+
+        A long section is split down the middle into two columns, read down
+        and then across. Both halves are aligned to the same key width, so
+        the split reads as one section laid out in two columns rather than
+        as two sections that happen to be adjacent.
+        """
+        rows = [row for row in self.key_rows(groups) if row not in (omit or [])]
 
         width = max((len(display) for display, _ in rows), default=0)
         if len(rows) <= COLUMN_THRESHOLD:

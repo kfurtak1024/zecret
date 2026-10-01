@@ -1,4 +1,5 @@
-"""Tests for MonthCalendar: the month grid inside the which-day modal.
+"""Tests for the calendar widgets: MonthCalendar, the month grid inside the
+which-day modal, and YearCalendar, the twelve of them the calendar view is.
 
 The widget is Zecret's own -- Textual ships no calendar -- so everything
 about it is worth guarding, including the parts a calendar library would
@@ -23,21 +24,47 @@ Required coverage:
       grid while it is being typed into.
     - A click lands the cursor on the day under it, and a click on the
       headings or on the blank around a month does nothing.
+
+    YearCalendar, over and above what the two share:
+    - It draws the twelve months of the year the cursor is in, each named
+      without the year, at three columns a day so that three of them fit
+      an 80-column terminal.
+    - The day and week keys carry the cursor across the end of a month and
+      of a year, and the year on show follows it.
+    - A year either way keeps the day, clips 29 February to the 28th, and
+      clamps to today going forward like every other move.
+    - It never starts, or lands, on a day that has not happened.
+    - A new set of written days is drawn as soon as it is handed over.
+    - A click on a day in any month moves the cursor there.
 """
 
 from __future__ import annotations
 
 import calendar
 import datetime as dt
+from pathlib import Path
 
 import pytest
 from textual.app import App, ComposeResult
 
-from zecret.screens.calendar import DAYS, WEEKS, MonthCalendar, day_in, shift_month
+import zecret
+from zecret.screens.calendar import (
+    DAYS,
+    MONTH_WIDTH,
+    WEEKS,
+    MonthCalendar,
+    MonthGrid,
+    YearCalendar,
+    day_in,
+    shift_month,
+)
 
 TODAY = dt.date.today()
 YESTERDAY = TODAY - dt.timedelta(days=1)
 TOMORROW = TODAY + dt.timedelta(days=1)
+#: Far enough back that a year forward is still in the past for most of
+#: it -- but not this one, whose year forward is a few days from now.
+LAST_YEAR_AND_A_BIT = shift_month(TODAY, -12) + dt.timedelta(days=3)
 
 #: A month in the past with a known shape: August 2020 starts on a
 #: Saturday and runs 31 days, so its grid needs six rows and its first row
@@ -370,3 +397,185 @@ async def test_the_month_and_the_weekdays_are_named():
         lines = app.calendar.render().plain.splitlines()
         assert lines[0].strip() == "August 2020"
         assert lines[1].split() == [calendar.day_abbr[day][:2] for day in range(DAYS)]
+
+
+# --- a year ----------------------------------------------------------------
+
+#: A day in a past year with known edges: 2020 is a leap year, and starts
+#: on a Wednesday.
+MIDYEAR = dt.date(2020, 6, 17)
+
+
+class YearHarness(App[None]):
+    """Bare app holding one year, recording where its cursor goes.
+
+    Wearing the app's stylesheet, since the grid the months are laid out
+    in is defined there -- without it every month is drawn at no size and
+    there is nothing to click on.
+    """
+
+    CSS_PATH = str(Path(zecret.__file__).with_name("app.tcss"))
+
+    def __init__(
+        self,
+        date: dt.date | None = None,
+        written: frozenset[dt.date] = frozenset(),
+    ) -> None:
+        super().__init__()
+        self.year = YearCalendar(date, written, id="year")
+        self.changes: list[dt.date] = []
+
+    def compose(self) -> ComposeResult:
+        yield self.year
+
+    def on_mount(self) -> None:
+        self.year.focus()
+
+    def on_year_calendar_date_changed(self, event: YearCalendar.DateChanged) -> None:
+        self.changes.append(event.date)
+
+
+def drawn(app: YearHarness) -> list[str]:
+    """Every month as drawn, one string each."""
+    return [month.render().plain for month in app.year.months]
+
+
+async def test_a_year_is_twelve_months_of_the_cursors_year():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)):
+        months = app.year.months
+        assert [month.first for month in months] == [dt.date(2020, m, 1) for m in range(1, 13)]
+
+
+async def test_each_month_is_named_without_the_year():
+    """The year is the screen's heading. Twelve copies of it would be
+    eleven nobody reads, and would not fit three columns a day."""
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)):
+        titles = [month.splitlines()[0].strip() for month in drawn(app)]
+        assert titles == [calendar.month_name[m] for m in range(1, 13)]
+
+
+async def test_a_month_of_the_year_is_three_columns_a_day():
+    """Four would put three months past eighty columns."""
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)):
+        for month in drawn(app):
+            assert {len(line) for line in month.splitlines()} == {MONTH_WIDTH}
+
+
+async def test_written_days_are_marked_in_whichever_month_they_fall():
+    written = frozenset({dt.date(2020, 2, 29), dt.date(2020, 11, 3)})
+    app = YearHarness(MIDYEAR, written)
+    async with app.run_test(size=(120, 40)):
+        months = drawn(app)
+        assert "29•" in months[1]
+        assert " 3•" in months[10]
+        assert "•" not in months[5], "June has nothing written"
+
+
+async def test_a_new_set_of_written_days_is_drawn_at_once():
+    """After the editor, which the calendar screen hands over on resume."""
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)):
+        app.year.set_written(frozenset({dt.date(2020, 6, 1)}))
+        assert " 1•" in drawn(app)[5]
+
+
+async def test_the_day_keys_cross_into_the_next_month():
+    app = YearHarness(dt.date(2020, 3, 31))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("right")
+        assert app.year.date == dt.date(2020, 4, 1)
+        await pilot.press("up")
+        assert app.year.date == dt.date(2020, 3, 25)
+
+
+async def test_the_day_keys_cross_into_the_next_year_and_bring_it_along():
+    app = YearHarness(dt.date(2019, 12, 30))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("down")
+        assert app.year.date == dt.date(2020, 1, 6)
+        assert app.year.months[0].first == dt.date(2020, 1, 1)
+        await pilot.press("up", "left")
+        assert app.year.date == dt.date(2019, 12, 29)
+        assert app.year.months[11].first == dt.date(2019, 12, 1)
+
+
+async def test_the_page_and_end_keys_work_as_in_a_month():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("pagedown")
+        assert app.year.date == dt.date(2020, 7, 17)
+        await pilot.press("home")
+        assert app.year.date == dt.date(2020, 7, 1)
+        await pilot.press("end")
+        assert app.year.date == dt.date(2020, 7, 31)
+        # Through June, which has no 31st -- and the clipped day sticks.
+        await pilot.press("pageup", "pageup")
+        assert app.year.date == dt.date(2020, 5, 30)
+
+
+async def test_a_year_either_way_keeps_the_day():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)):
+        app.year.previous_year()
+        assert app.year.date == dt.date(2019, 6, 17)
+        app.year.next_year()
+        assert app.year.date == MIDYEAR
+
+
+async def test_a_year_from_a_leap_day_lands_on_the_28th():
+    app = YearHarness(dt.date(2020, 2, 29))
+    async with app.run_test(size=(120, 40)):
+        app.year.next_year()
+        assert app.year.date == dt.date(2021, 2, 28)
+
+
+async def test_a_year_forward_into_the_future_lands_on_today():
+    app = YearHarness(LAST_YEAR_AND_A_BIT)
+    async with app.run_test(size=(120, 40)):
+        app.year.next_year()
+        assert app.year.date == TODAY
+
+
+async def test_the_year_cursor_stops_at_today():
+    app = YearHarness(TODAY)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("right", "down", "pagedown")
+        assert app.year.date == TODAY
+
+
+def test_a_year_never_starts_on_a_day_that_has_not_happened():
+    assert YearCalendar(TOMORROW).date == TODAY
+
+
+async def test_moving_through_the_year_is_announced():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("right")
+        await pilot.pause()
+        assert app.changes == [dt.date(2020, 6, 18)]
+
+
+async def test_clicking_a_day_in_any_month_moves_the_cursor_there():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)) as pilot:
+        november = app.year.months[10]
+        # 2 November 2020 is a Monday: first column of the first full week.
+        await pilot.click(november, offset=(0, 3))
+        await pilot.pause()
+        assert app.year.date == dt.date(2020, 11, 2)
+
+
+async def test_clicking_a_month_name_moves_nothing():
+    app = YearHarness(MIDYEAR)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.click(app.year.months[10], offset=(5, 0))
+        await pilot.pause()
+        assert app.year.date == MIDYEAR
+
+
+def test_a_month_of_the_year_owns_no_focus():
+    """One cursor for the year: focus never has to pass between months."""
+    assert not MonthGrid(MIDYEAR, MIDYEAR, frozenset()).can_focus

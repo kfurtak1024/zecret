@@ -61,7 +61,8 @@ src/zecret/
 ├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
 ├── strength.py   # How strong a chosen password is (zxcvbn). The only place the password reaches third-party code.
 ├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock, guarded quit.
-├── screens/      # One file per screen: unlock, entry_list, editor, search, settings, help.
+├── screens/      # One file per screen: unlock, entry_list, calendar_view, editor, search,
+│                 # settings, help.
 │                 # Plus shared pieces: base.py (ZecretScreen for typed
 │                 # access to the app, FormScreen for the screens with
 │                 # fields and an error line, card() for the scrolling
@@ -71,8 +72,9 @@ src/zecret/
 │                 # header.py (both bars -- the title above and the keys
 │                 # below, which every screen wears including the modals),
 │                 # confirm.py (yes/no modal), date_prompt.py (which-day
-│                 # modal), calendar.py (the month grid inside it, which is
-│                 # a widget rather than a screen) and password.py (the
+│                 # modal), calendar.py (the month grids -- one inside that
+│                 # modal, twelve in the calendar view -- which are widgets
+│                 # rather than screens) and password.py (the
 │                 # change-password dialog).
 └── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
 ```
@@ -510,12 +512,25 @@ patch number, not a retry. This is why `check` and `verify` run first.
   `PasswordScreen` inherits `ModalScreen[None]` **and** `FormScreen`, in
   that order, and both halves of that are load-bearing — see its module
   docstring and the note in `base.py`.
-- **Zecret has one widget of its own: `MonthCalendar`.** Textual ships no
-  calendar, so `screens/calendar.py` is one — a month laid out, walked with
-  the arrow keys, marking every day the diary already holds an entry for.
-  That mark is why it exists: a date field answers "which day did I mean",
-  and only a month laid out answers "which days have I missed".
-  It owns nothing. The date belongs to the field above it; the grid posts
+- **Zecret's own widgets are its calendars, in `screens/calendar.py`.**
+  Textual ships no calendar, so `MonthCalendar` is one — a month laid out,
+  walked with the arrow keys, marking every day the diary already holds an
+  entry for. That mark is why it exists: a date field answers "which day
+  did I mean", and only a month laid out answers "which days have I
+  missed". `YearCalendar` is twelve months of the same and the whole of
+  the calendar view; it is built from twelve `MonthGrid`s that draw and
+  own nothing, so one cursor walks the year and focus never has to change
+  hands at the end of a month. The two calendars draw a month and walk the
+  days through the same module functions (`draw_month`, `day_role`,
+  `stepped`, `reachable`), and wear the same `month-calendar--*`
+  component classes, so one set of rules in `app.tcss` paints both. How
+  many months sit across is the stylesheet's call, from breakpoint
+  classes `CalendarScreen` wears (`HORIZONTAL_BREAKPOINTS`), not the
+  widget's — nothing measures the terminal, and three months fit 80
+  columns only because a day there is three columns wide, not four.
+  Up and down move a week, never "to the month drawn above", which would
+  mean something different at every width.
+  `MonthCalendar` owns nothing. The date belongs to the field above it; the grid posts
   `DateChanged` and `DatePicked` for `DatePromptScreen` to act on, which is
   what lets typing and pointing both work without either being the
   authority.
@@ -527,11 +542,18 @@ patch number, not a retry. This is why `check` and `verify` run first.
   keystroke that names a month, so an announcement in that direction would
   come back as "write this date into the field" and finish a date under the
   cursor of the person still typing it.
-  Its cursor clamps to today rather than refusing to move, so no key is
+  Both cursors clamp to today rather than refusing to move, so no key is
   dead where the next day is one the screen would turn down anyway. Which
   days are written is handed in by the caller (`frozenset(diary.entries)`),
-  not looked up: a modal that reached for storage would be the one screen
-  in the app that does.
+  not looked up: a widget that reached for storage would be the one place
+  outside a screen that does. `CalendarScreen` hands a fresh set over each
+  time it comes back from the editor.
+  The calendar view is a screen pushed over the list, not a mode beside
+  it: the list stays where the diary opens, and locking pops it with
+  everything else. The list reads the calendar's cursor in its own
+  `on_screen_resume` on the way back — never in a dismiss callback, which
+  nothing orders against the list's rebuild — and lands on that day, or the
+  nearest older one written.
 - **The editor wraps before it paints.** Textual wraps a `TextArea` when
   it handles the `Resize` message, which is queued — so the compositor has
   already drawn the widget at the new size by the time it arrives, and
@@ -560,7 +582,9 @@ patch number, not a retry. This is why `check` and `verify` run first.
   `tests/test_help_screen.py` fails if one of these keys reaches the page.
   Add the next such key to `DiaryTextArea`; add it to the screen only if
   it does something to the diary. The same split is why `MonthCalendar`
-  carries the arrow and page keys, and why the date field's `down` lives
+  and `YearCalendar` carry the arrow and page keys while `[` and `]` (a
+  year) are on `CalendarScreen` — an arrow in a calendar needs no
+  explaining, a bracket does — and why the date field's `down` lives
   on a `DateInput` subclass rather than on `DatePromptScreen`.
 - **Moving by a word stops at word ends going right and word starts going
   left.** That asymmetry looks like a bug and is the convention on this
@@ -671,10 +695,12 @@ patch number, not a retry. This is why `check` and `verify` run first.
   navigation unaddable and left `enter` documented but invisible.
 - **The key bar fits 80 columns.** `DiaryFooter` (`screens/header.py`) is
   Textual's `Footer` in its compact spelling. The entry list's eight
-  advertised keys take 72 of the 80 a terminal defaults to, which spends
+  advertised keys take 69 of the 80 a terminal defaults to, which spends
   the room that used to be spare: the next key means either shortening a
-  description ("Another day" is the long one) or dropping one to
-  `show=False`, which costs only its place in the bar.
+  description or dropping one to `show=False`, which costs only its place
+  in the bar. That is how the calendar got in — `a` (another day) went to
+  `show=False` to make room for `c`, since the calendar answers the same
+  question with the year to point at.
   `tests/test_chrome.py` fails when anything advertised stops fitting.
   `ctrl+l` is in the bar rather than hidden because being able to find it
   is a security property — someone stepping away who cannot see it quits,
@@ -721,12 +747,20 @@ patch number, not a retry. This is why `check` and `verify` run first.
   rather than the app. Its key list is generated from the screens'
   `BINDINGS`, so a new binding appears there automatically and a test
   fails if it does not. Never hand-write a key into it. It is bound to `?`
-  on the entry list only, so `?` stays typeable in every text field.
+  on the two main views only — the entry list and the calendar, which have
+  no text field between them — so `?` stays typeable in every text field.
+  Both bind `app.help` (`ZecretApp.action_help`) rather than an action of
+  their own: the popup needs the list's bindings handed to it, and the
+  calendar cannot import the list without closing an import cycle. The
+  calendar's column on the page leaves out rows the list's section has
+  already given (`SHARES_DIARY_KEYS`).
 - **The help popup spends width to buy height.** A section longer than
   `COLUMN_THRESHOLD` is split down the middle into two columns, read down
   and then across, and `fit_columns()` stacks them again where the terminal
   is too narrow to pair them — the same bargain `fit_logo()` already makes.
-  This is what keeps the page to 30 rows rather than 47. Its full height is
+  This is what keeps the page to 35 rows rather than 50-odd, with the
+  calendar, the editor and the rest sitting three columns abreast under
+  the list's two. Its full height is
   coupled to two constants that must move together: `ROWS["help"]` in
   `tools/screenshots.py` (what the picture is shot at) and `SHOT_ROWS` in
   `tests/test_help_screen.py` (which fails if the page outgrows it).

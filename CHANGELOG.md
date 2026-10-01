@@ -10,6 +10,26 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Added
+
+- **A calendar view: the whole year, with the days you wrote marked.**
+  Press <kbd>c</kbd> on the list. The list shows what you wrote; this shows
+  when — a missed week is a hole in a month, a missed month a hole in the
+  year. The arrow keys walk a day or a week, carrying on across the end of
+  a month or a year, the page keys move a month, and <kbd>[</kbd> and
+  <kbd>]</kbd> jump a year. <kbd>e</kbd> or <kbd>enter</kbd> opens the day
+  under the cursor, written or not, and <kbd>c</kbd> or <kbd>esc</kbd>
+  takes you back to the list, on the day you were looking at or the
+  nearest one you wrote before it. Three months sit across an 80-column
+  terminal, and up to six on a wide one.
+
+### Changed
+
+- **<kbd>a</kbd> is no longer in the key bar.** The calendar took its
+  place there: it answers the same question — which day? — with the whole
+  year to point at. <kbd>a</kbd> still works exactly as before, and is
+  still the quicker road when you know the date; <kbd>?</kbd> lists it.
+
 ## [0.7.1] - 2026-09-30
 
 ### Security

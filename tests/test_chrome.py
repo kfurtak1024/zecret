@@ -440,7 +440,7 @@ async def test_the_footer_is_compact_on_every_screen(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(NARROWEST, 20)) as pilot:
         await unlock(pilot)
-        for key in ("n", "escape", "slash", "escape", "s", "escape", "a", "escape", "d"):
+        for key in ("n", "escape", "slash", "escape", "s", "escape", "a", "escape", "c", "c", "d"):
             await pilot.press(key)
             await pilot.pause()
             await pilot.pause()
@@ -469,6 +469,13 @@ async def test_no_screen_puts_an_empty_stop_on_the_tab_ring(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert not focusable_panels(app), "the which-day modal"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.pause()
+        assert not focusable_panels(app), "the calendar"
 
         await pilot.press("escape")
         await pilot.pause()
@@ -525,6 +532,8 @@ async def test_every_screen_opens_with_something_focused(diary_path):
             ("escape", "back again"),
             ("a", "the which-day modal"),
             ("escape", "back once more"),
+            ("c", "the calendar"),
+            ("escape", "back from the calendar"),
             ("s", "settings"),
         ]:
             await pilot.press(key)

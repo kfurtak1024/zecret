@@ -1,19 +1,26 @@
-"""A month at a time, with the days already written marked.
+"""Months laid out, with the days already written marked.
 
-Textual ships no calendar, so this is one: a grid of a single month that
-can be walked with the arrow keys, pages a month at a time, and draws a
-mark against every day the diary already holds an entry for. That mark is
+Textual ships no calendar, so these are Zecret's own: a grid of a month
+that can be walked with the arrow keys, pages a month at a time, and draws
+a mark against every day the diary already holds an entry for. That mark is
 the reason it exists. A date typed into a field answers "which day did I
 mean"; only a month laid out can answer "which days have I missed", which
 is the question someone filling a diary in actually has.
 
-It is a widget rather than a screen, and its keys are its own for the same
-reason DiaryTextArea's are: the help popup and the key bar are built from
+Two widgets share it. MonthCalendar is one month, inside the which-day
+modal. YearCalendar is twelve of them at once, and is the whole of the
+calendar view: a year is the span over which the gaps in a diary show. They
+draw a month the same way and walk the days by the same rules, which is
+why both live here and why the drawing and the walking are functions
+rather than methods of either.
+
+They are widgets rather than screens, and their keys are their own for the
+same reason DiaryTextArea's are: the help popup and the key bar are built from
 *screen* bindings, and they document what Zecret does with a diary -- not
 what arrow keys do inside a grid, which anyone who has used a calendar
 already knows. See CLAUDE.md on that split.
 
-Three things it will not do:
+Three things neither will do:
 
 - Land on a day that has not happened. Zecret refuses a future entry, so a
   cursor that could sit on one would be offering something the screen
@@ -36,7 +43,7 @@ from typing import ClassVar
 
 from rich.text import Text
 from textual import events
-from textual.app import RenderResult
+from textual.app import ComposeResult, RenderResult
 from textual.binding import Binding, BindingType
 from textual.message import Message
 from textual.reactive import reactive
@@ -96,10 +103,139 @@ def shift_month(date: dt.date, months: int) -> dt.date:
     return day_in(year, month + 1, date.day)
 
 
-class MonthCalendar(Widget, can_focus=True):
-    """One month, walkable, with the written days marked."""
+def month_weeks(year: int, month: int) -> list[list[int]]:
+    """A month as six rows of day numbers, 0 where the month is not.
 
-    COMPONENT_CLASSES: ClassVar[set[str]] = {
+    Padded to six rows so the grid is always the same height -- see
+    WEEKS. Monday first, matching the ISO dates the field takes.
+    """
+    rows = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    return rows + [[0] * DAYS for _ in range(WEEKS - len(rows))]
+
+
+def day_role(date: dt.date, cursor: dt.date, written: frozenset[dt.date]) -> str:
+    """Which component class a day is drawn in.
+
+    Most specific first, and the order is the argument: where the cursor is
+    beats everything, because losing it in a month of marked days would
+    leave the arrow keys with nothing to show for themselves, and a day
+    that cannot be chosen beats how interesting it is, because it is not on
+    offer whatever else is true of it.
+
+    Today is not in this list. It is a fact about a day rather than a way
+    of drawing one -- today is very often also the day the cursor is on and
+    the day you last wrote -- so it is laid over whichever of these applies
+    instead of competing with them. See draw_month.
+    """
+    if date == cursor:
+        return "month-calendar--cursor"
+    if date > today():
+        return "month-calendar--unavailable"
+    if date in written:
+        return "month-calendar--written"
+    return "month-calendar--day"
+
+
+def draw_month(
+    widget: Widget,
+    first: dt.date,
+    cursor: dt.date,
+    written: frozenset[dt.date],
+    cell: int,
+    title: str,
+) -> Text:
+    """The month `first` falls in, as the eight lines of text it is drawn as.
+
+    `widget` is what the colours are read from -- it must carry the
+    month-calendar component classes -- and `cell` is how many columns a
+    day takes, the last of them for the mark. The modal has room for four;
+    the year view has three, because four would put a year's twelve months
+    past an eighty-column terminal at any arrangement worth having.
+    """
+    # Looked up once rather than per cell: there are forty-two of them and
+    # six answers between them.
+    ink = {name: widget.get_component_rich_style(name) for name in COMPONENT_CLASSES}
+    # Today's is laid over whatever else the day is drawn in rather than
+    # replacing it -- see day_role. Partial, so it contributes only what its
+    # rule actually sets and leaves the colour alone.
+    landmark = widget.get_component_rich_style("month-calendar--today", partial=True)
+    digits = cell - 1
+
+    lines = [
+        Text(title.center(cell * DAYS), style=ink["month-calendar--month"]),
+        Text(
+            "".join(f"{calendar.day_abbr[day][:2]:>{digits}} " for day in range(DAYS)),
+            style=ink["month-calendar--heading"],
+        ),
+    ]
+    for week in month_weeks(first.year, first.month):
+        line = Text()
+        for day in week:
+            if day == 0:
+                # A day of the month either side of this one. Left blank
+                # rather than greyed in: the grid is read for which days of
+                # *this* month are marked, and a neighbour's dates in it are
+                # two more things to discount.
+                line.append(" " * cell)
+                continue
+            date = first.replace(day=day)
+            mark = WRITTEN if date in written else " "
+            style = ink[day_role(date, cursor, written)]
+            if date == today():
+                style = style + landmark
+            line.append(f"{day:>{digits}}{mark}", style)
+        lines.append(line)
+    return Text("\n").join(lines)
+
+
+def reachable(date: dt.date) -> dt.date:
+    """`date`, or today if that is further off.
+
+    Clamped rather than refused, so that no key in a calendar is ever dead:
+    the month after this one is a page away whether or not it has happened,
+    and the honest answer to paging into it is the last day there is.
+    """
+    return min(date, today())
+
+
+def stepped(date: dt.date, days: int) -> dt.date:
+    """`date` moved `days` days, stopping at either end of what can be chosen.
+
+    The far end is today, which reachable() holds. This end is 1 January of
+    year 1, where a day or a week back is out of range: `date - timedelta`
+    raises OverflowError, and on a key handler that took the app down.
+    Reaching it means typing year 0001 into the date field, or holding a
+    year key down for a very long time, but a key that crashes is worse
+    than a key that stops. Clamped rather than left alone, the same as the
+    far end, so a week back from the 3rd still gets as far as the 1st.
+    """
+    try:
+        target = date + dt.timedelta(days=days)
+    except OverflowError:
+        target = dt.date.min
+    return reachable(target)
+
+
+def day_at(first: dt.date, x: int, y: int, cell: int) -> dt.date | None:
+    """The day drawn at a point in the month `first` falls in, if any.
+
+    `y` counts the two heading rows the month is drawn under, and `x` is in
+    cells of `cell` columns. Padding around the month -- the days of the
+    neighbouring months, which the grid leaves blank -- is not a day and
+    answers None, as does a click on the headings.
+    """
+    row = y - 2
+    column = x // cell
+    if not (0 <= row < WEEKS and 0 <= column < DAYS):
+        return None
+    day = month_weeks(first.year, first.month)[row][column]
+    return None if day == 0 else first.replace(day=day)
+
+
+#: How a month is drawn, which both widgets share: the class names are the
+#: same on each, so one set of rules in app.tcss paints them both.
+COMPONENT_CLASSES: frozenset[str] = frozenset(
+    {
         "month-calendar--month",
         "month-calendar--heading",
         "month-calendar--day",
@@ -108,6 +244,13 @@ class MonthCalendar(Widget, can_focus=True):
         "month-calendar--cursor",
         "month-calendar--unavailable",
     }
+)
+
+
+class MonthCalendar(Widget, can_focus=True):
+    """One month, walkable, with the written days marked."""
+
+    COMPONENT_CLASSES: ClassVar[set[str]] = set(COMPONENT_CLASSES)
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("left", "previous_day", "Previous day", show=False),
@@ -165,75 +308,15 @@ class MonthCalendar(Widget, can_focus=True):
 
     @property
     def weeks(self) -> list[list[int]]:
-        """The month as six rows of day numbers, 0 where the month is not.
-
-        Padded to six rows so the grid is always the same height -- see
-        WEEKS. Monday first, matching the ISO dates the field takes.
-        """
-        rows = calendar.Calendar(firstweekday=0).monthdayscalendar(self.date.year, self.date.month)
-        return rows + [[0] * DAYS for _ in range(WEEKS - len(rows))]
+        """The month on show as six rows of day numbers -- see month_weeks."""
+        return month_weeks(self.date.year, self.date.month)
 
     def render(self) -> RenderResult:
-        # Looked up once rather than per cell: there are forty-two of them
-        # and six answers between them.
-        ink = {name: self.get_component_rich_style(name) for name in self.COMPONENT_CLASSES}
-        heading = ink["month-calendar--heading"]
-        # Today's is laid over whatever else the day is drawn in rather
-        # than replacing it -- see style_for. Partial, so it contributes
-        # only what its rule actually sets and leaves the colour alone.
-        landmark = self.get_component_rich_style("month-calendar--today", partial=True)
-
-        lines = [
-            Text(
-                format_month(self.date).center(CELL * DAYS),
-                style=ink["month-calendar--month"],
-            ),
-            Text(
-                "".join(f"{calendar.day_abbr[day][:2]:>3} " for day in range(DAYS)),
-                style=heading,
-            ),
-        ]
-        for week in self.weeks:
-            line = Text()
-            for day in week:
-                if day == 0:
-                    # A day of the month either side of this one. Left
-                    # blank rather than greyed in: the grid is read for
-                    # which days of *this* month are marked, and a
-                    # neighbour's dates in it are two more things to
-                    # discount.
-                    line.append(" " * CELL)
-                    continue
-                date = self.date.replace(day=day)
-                mark = WRITTEN if date in self.written else " "
-                style = ink[self.style_for(date)]
-                if date == today():
-                    style = style + landmark
-                line.append(f"{day:>3}{mark}", style)
-            lines.append(line)
-        return Text("\n").join(lines)
+        return draw_month(self, self.date, self.date, self.written, CELL, format_month(self.date))
 
     def style_for(self, date: dt.date) -> str:
-        """Which component class a day is drawn in.
-
-        Most specific first, and the order is the argument: where the
-        cursor is beats everything, because losing it in a month of marked
-        days would leave the arrow keys with nothing to show for
-        themselves, and a day that cannot be chosen beats how interesting
-        it is, because it is not on offer whatever else is true of it.
-
-        Today is not in this list. It is a fact about a day rather than a
-        way of drawing one -- today is very often also the day the cursor
-        is on and the day you last wrote -- so it is laid over whichever
-        of these applies instead of competing with them. See render.
-        """
-        if date == self.date:
-            return "month-calendar--cursor"
-        if date > today():
-            return "month-calendar--unavailable"
-        if date in self.written:
-            return "month-calendar--written"
-        return "month-calendar--day"
+        """Which component class a day is drawn in -- see day_role."""
+        return day_role(date, self.date, self.written)
 
     def watch_date(self, date: dt.date) -> None:
         self.refresh()
@@ -259,30 +342,13 @@ class MonthCalendar(Widget, can_focus=True):
     # --- getting around ----------------------------------------------------
 
     def move_to(self, date: dt.date) -> None:
-        """Put the cursor on `date`, or on today if that is further off.
-
-        Clamped rather than refused, so that no key here is ever dead: the
-        month after this one is a page away whether or not it has happened,
-        and the honest answer to paging into it is the last day there is.
-        """
-        self.date = min(date, today())
+        """Put the cursor on `date`, or on today if that is further off --
+        see reachable."""
+        self.date = reachable(date)
 
     def step(self, days: int) -> None:
-        """Move `days` days, stopping at the first day a date can be.
-
-        The far end is today and move_to already holds it. This end is
-        1 January of year 1, where a day or a week back is out of range:
-        `date - timedelta` raises OverflowError, and on a key handler that
-        took the app down. Reaching it means typing year 0001 into the
-        field, but a key that crashes is worse than a key that stops.
-        Clamped rather than left alone, the same as the far end, so a week
-        back from the 3rd still gets as far as the 1st.
-        """
-        try:
-            target = self.date + dt.timedelta(days=days)
-        except OverflowError:
-            target = dt.date.min
-        self.move_to(target)
+        """Move `days` days, stopping at either end -- see stepped."""
+        self.date = stepped(self.date, days)
 
     def action_previous_day(self) -> None:
         self.step(-1)
@@ -331,16 +397,203 @@ class MonthCalendar(Widget, can_focus=True):
             self.move_to(date)
 
     def date_at(self, x: int, y: int) -> dt.date | None:
-        """The day drawn at a point in the grid, if a day is drawn there.
+        """The day drawn at a point in the grid -- see day_at."""
+        return day_at(self.date, x, y, CELL)
 
-        `y` counts the two heading rows the month is drawn under, and `x`
-        is in cells of CELL columns. Padding around the month -- the days
-        of the neighbouring months, which this grid leaves blank -- is not
-        a day and answers None, as does a click on the headings.
+
+# --- a year ----------------------------------------------------------------
+
+#: Columns a day takes in the year view: two for the number and one for the
+#: mark. One fewer than the modal's, and that column is the whole reason a
+#: year fits an 80-column terminal three months across -- see draw_month.
+YEAR_CELL = 3
+
+#: How wide one month is in the year view, which app.tcss sizes the grid
+#: columns to and the calendar screen's breakpoints are counted in.
+MONTH_WIDTH = YEAR_CELL * DAYS
+
+
+class MonthGrid(Widget):
+    """One month of the twelve in a YearCalendar. Draws; owns nothing.
+
+    The cursor, the year and the written days all belong to the
+    YearCalendar around it, which hands them down with show(). That is
+    what lets the cursor walk off the end of one month and into the next
+    without focus changing hands twelve times a year: there is one cursor,
+    and this is where a twelfth of it is drawn.
+    """
+
+    COMPONENT_CLASSES: ClassVar[set[str]] = set(COMPONENT_CLASSES)
+
+    class DayClicked(Message):
+        """A click landed on a day. For the YearCalendar, which moves to it."""
+
+        def __init__(self, date: dt.date) -> None:
+            super().__init__()
+            self.date = date
+
+    def __init__(self, first: dt.date, cursor: dt.date, written: frozenset[dt.date]) -> None:
+        super().__init__()
+        self.first = first
+        self.cursor = cursor
+        self.written = written
+
+    def show(self, first: dt.date, cursor: dt.date, written: frozenset[dt.date]) -> None:
+        """Draw this month as `first` names it, with the cursor and marks given."""
+        self.first, self.cursor, self.written = first, cursor, written
+        self.refresh()
+
+    def render(self) -> RenderResult:
+        # The month alone, not the year: the year is the screen's heading,
+        # and twelve copies of it would be eleven more than anyone reads.
+        return draw_month(
+            self, self.first, self.cursor, self.written, YEAR_CELL, f"{self.first:%B}"
+        )
+
+    def on_click(self, event: events.Click) -> None:
+        """Say which day was clicked, if a day was. See MonthCalendar.on_click
+        for why that moves the cursor and stops short of opening the day."""
+        offset = event.get_content_offset(self)
+        if offset is None:
+            return
+        date = day_at(self.first, offset.x, offset.y, YEAR_CELL)
+        if date is not None:
+            self.post_message(self.DayClicked(date))
+
+
+class YearCalendar(Widget, can_focus=True):
+    """A year of months, one cursor walking through all of them.
+
+    How many months sit side by side is the stylesheet's business, not
+    this widget's: it is a grid of twelve MonthGrids and app.tcss decides
+    the grid's width from the calendar screen's breakpoints. Nothing here
+    measures the terminal, so nothing here has to be redone when it
+    changes size.
+
+    The keys are a calendar's: a day, a week, a month, the ends of a month,
+    the same as MonthCalendar and continuing across the edges of a month
+    and of a year. Up and down move a week rather than to the month drawn
+    above, because which month that is depends on how wide the window is,
+    and a key whose meaning changes with the window is not a key anyone
+    can learn. The year keys are the screen's, since they are what the
+    help popup has to tell someone about -- see CalendarScreen.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("left", "previous_day", "Previous day", show=False),
+        Binding("right", "next_day", "Next day", show=False),
+        Binding("up", "previous_week", "Previous week", show=False),
+        Binding("down", "next_week", "Next week", show=False),
+        Binding("pageup", "previous_month", "Previous month", show=False),
+        Binding("pagedown", "next_month", "Next month", show=False),
+        Binding("home", "start_of_month", "Start of the month", show=False),
+        Binding("end", "end_of_month", "End of the month", show=False),
+    ]
+
+    #: The day the cursor is on, and through it the year on show.
+    date: reactive[dt.date] = reactive(today)
+
+    class DateChanged(Message):
+        """The cursor moved, and perhaps the year with it."""
+
+        def __init__(self, date: dt.date) -> None:
+            super().__init__()
+            self.date = date
+
+    def __init__(
+        self,
+        date: dt.date | None = None,
+        written: frozenset[dt.date] = frozenset(),
+        id: str | None = None,
+    ) -> None:
+        """Args:
+        date: The day to start on, clamped to today. Today, if not given.
+        written: Every day the diary holds an entry for -- see
+            MonthCalendar, and set_written for when that changes.
+        id: The widget's id, as for any other widget.
         """
-        row = y - 2
-        column = x // CELL
-        if not (0 <= row < WEEKS and 0 <= column < DAYS):
-            return None
-        day = self.weeks[row][column]
-        return None if day == 0 else self.date.replace(day=day)
+        super().__init__(id=id)
+        self.written = written
+        # set_reactive, as in MonthCalendar: nothing is listening yet.
+        self.set_reactive(YearCalendar.date, reachable(today() if date is None else date))
+
+    def compose(self) -> ComposeResult:
+        for month in range(1, 13):
+            yield MonthGrid(self.date.replace(month=month, day=1), self.date, self.written)
+
+    @property
+    def months(self) -> list[MonthGrid]:
+        return list(self.query_children(MonthGrid))
+
+    def redraw(self) -> None:
+        """Hand every month what it needs to draw itself now."""
+        for month, grid in enumerate(self.months, start=1):
+            grid.show(self.date.replace(month=month, day=1), self.date, self.written)
+
+    def set_written(self, written: frozenset[dt.date]) -> None:
+        """Mark a new set of written days -- after an entry was saved, say."""
+        self.written = written
+        self.redraw()
+
+    def watch_date(self, date: dt.date) -> None:
+        self.redraw()
+        self.post_message(self.DateChanged(date))
+
+    @property
+    def cursor_month(self) -> MonthGrid:
+        """The month the cursor is in, for whoever scrolls the year."""
+        return self.months[self.date.month - 1]
+
+    def on_focus(self) -> None:
+        # The cursor is drawn solid while the year has focus and soft while
+        # it does not, and that rule lives on this widget while the cursor
+        # is painted by its children -- which do not repaint for a change
+        # of focus that is not theirs.
+        self.redraw()
+
+    def on_blur(self) -> None:
+        self.redraw()
+
+    # --- getting around ----------------------------------------------------
+
+    def move_to(self, date: dt.date) -> None:
+        """Put the cursor on `date`, or on today if that is further off."""
+        self.date = reachable(date)
+
+    def action_previous_day(self) -> None:
+        self.date = stepped(self.date, -1)
+
+    def action_next_day(self) -> None:
+        self.date = stepped(self.date, 1)
+
+    def action_previous_week(self) -> None:
+        self.date = stepped(self.date, -7)
+
+    def action_next_week(self) -> None:
+        self.date = stepped(self.date, 7)
+
+    def action_previous_month(self) -> None:
+        self.move_to(shift_month(self.date, -1))
+
+    def action_next_month(self) -> None:
+        self.move_to(shift_month(self.date, 1))
+
+    def action_start_of_month(self) -> None:
+        self.move_to(self.date.replace(day=1))
+
+    def action_end_of_month(self) -> None:
+        last = calendar.monthrange(self.date.year, self.date.month)[1]
+        self.move_to(self.date.replace(day=last))
+
+    def previous_year(self) -> None:
+        """The same day a year earlier, or the 28th from a 29 February."""
+        self.move_to(shift_month(self.date, -12))
+
+    def next_year(self) -> None:
+        """The same day a year later -- or today, if that has not come yet."""
+        self.move_to(shift_month(self.date, 12))
+
+    def on_month_grid_day_clicked(self, event: MonthGrid.DayClicked) -> None:
+        event.stop()
+        self.focus()
+        self.move_to(event.date)
