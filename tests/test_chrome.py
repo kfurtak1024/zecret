@@ -13,6 +13,13 @@ Required coverage:
     - A modal shows its own key. Without a footer of its own it let the
       entry list's bar show through, advertising eight keys that do
       nothing while a question has focus and none of the one that does.
+      The help popup too: it was left without one on the grounds that its
+      box covered the bar, which on a terminal wider than the box it did
+      not.
+    - Every bar reads the same way: this screen's own keys, the way out,
+      then Lock -- followed by Help and Quit on the two main views. And one
+      action has one name: opening a day in the editor is "Edit" on the
+      list and in the calendar alike.
     - The answers to a question are all one width, and every label fits
       the width it is given -- the buttons are sized in app.tcss rather
       than by their own text, so a longer label would be cut in silence.
@@ -49,6 +56,8 @@ from textual.widgets import Button, Footer, Input, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
+from zecret.screens.calendar_view import CalendarScreen
+from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.header import DiaryHeader
 from zecret.screens.help import documented_bindings
@@ -556,3 +565,39 @@ async def test_every_screen_opens_with_something_focused(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert app.focused is not None, "the password dialog"
+
+
+async def test_help_has_a_bar_of_its_own(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await unlock(pilot)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.pause()
+        bar = footer_text(app)
+        assert "esc Close" in bar, bar
+        assert "n Today" not in bar, f"the list's dead keys show beside the popup: {bar!r}"
+
+
+def advertised(screen: type) -> list[str]:
+    """What a screen's bar says, in order."""
+    return [binding.description for binding in documented_bindings(screen.BINDINGS) if binding.show]
+
+
+def test_every_bar_ends_the_same_way():
+    """Lock is where the eye has learnt to find it: last of this screen's
+    keys, then -- on the two views where the diary is open behind nothing
+    -- Help and Quit."""
+    assert advertised(EntryListScreen)[-3:] == ["Lock", "Help", "Quit"]
+    assert advertised(CalendarScreen)[-3:] == ["Lock", "Help", "Quit"]
+    assert advertised(EditorScreen)[-2:] == ["Back", "Lock"]
+    assert advertised(CalendarScreen)[-4] == "List", "the way out comes just before Lock"
+
+
+def test_opening_a_day_has_one_name():
+    def name(screen: type, key: str) -> str:
+        return next(b.description for b in documented_bindings(screen.BINDINGS) if b.key == key)
+
+    assert (
+        name(EntryListScreen, "enter") == name(CalendarScreen, "e") == name(CalendarScreen, "enter")
+    )

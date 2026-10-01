@@ -36,6 +36,7 @@ from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
+from zecret.screens.header import DiaryFooter
 from zecret.screens.password import PasswordScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
@@ -156,9 +157,12 @@ def documented_bindings(bindings: list[BindingType]) -> list[Binding]:
 class HelpScreen(ModalScreen[None]):
     """Every key Zecret answers to, over the diary rather than instead of it."""
 
+    #: "Close" for both, as the popup's own hint says: a popup dismisses
+    #: rather than going back. Only escape is on the bar -- one key per
+    #: action there, and escape is the one every other popup shows.
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "back", "Back", priority=True),
-        Binding("question_mark", "back", "Close", key_display="?"),
+        Binding("escape", "back", "Close", priority=True),
+        Binding("question_mark", "back", "Close", key_display="?", show=False),
     ]
 
     def __init__(self) -> None:
@@ -210,6 +214,11 @@ class HelpScreen(ModalScreen[None]):
                 yield Label(f"• {note}", classes="help-note")
 
             yield Label(CLOSE_HINT, id="help-close-hint")
+        # A bar of its own, as every popup has. The box used to be trusted
+        # to cover the one underneath, which it does only up to its own
+        # width: on a terminal wider than that, the list's keys showed on
+        # either side of it, every one of them dead while help was open.
+        yield DiaryFooter()
 
     def on_mount(self) -> None:
         self.fit_width()

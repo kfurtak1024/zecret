@@ -741,8 +741,22 @@ patch number, not a retry. This is why `check` and `verify` run first.
   replacing it, so one without a footer does not show *no* bar -- it shows
   the bar underneath, whose keys are all dead while the modal has focus.
   `tests/test_chrome.py` checks that a modal advertises its own key and
-  not the list's. `HelpScreen` is the exception and stays one: its box
-  fills the terminal and says "esc or ? to close" in its own corner.
+  not the list's. `HelpScreen` was the exception, on the grounds that its
+  box covered the bar -- which held only up to the box's 76 columns; on a
+  wider terminal the list's dead keys showed either side of it. It has
+  its own bar now, and there is no exception.
+- **Every bar reads the same way.** This screen's own actions first, then
+  the way out, then `^l Lock`, `? Help` and `q Quit` wherever the diary is
+  open -- so Lock is always in the same place relative to the end of the
+  bar, and the help popup, which lists keys in declaration order, reads
+  the same way. Naming follows three rules: a full screen's way out is
+  **Back**, a popup's is **Cancel** (it dismisses a question) or **Close**
+  (help, which asks nothing), and the two main views name where `c` goes
+  (**Calendar**, **List**). One action has one name wherever it is bound:
+  opening a day in the editor is **Edit** on the list's `enter` and the
+  calendar's `e` alike. Words are the writer's, not the code's — `^r` is
+  **Cover**, as the README and the product page say it, though the code
+  calls it the mask.
 - **`show` is a layout decision, not a documentation one.** A binding's
   `show=True` puts it in the footer and nothing more; the help popup lists
   every binding either way (`documented_bindings()` in `screens/help.py`).

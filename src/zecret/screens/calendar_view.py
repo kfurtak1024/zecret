@@ -78,14 +78,27 @@ def months_across(width: int) -> int:
 class CalendarScreen(ZecretScreen):
     """A year at a time, walked by day, week, month and year."""
 
-    #: Reading order, as everywhere: what this view is for, how to leave it,
-    #: then the keys every main screen shares, then getting around.
+    #: In the order every bar keeps: this screen's own actions, the way
+    #: out, then Lock, Help and Quit at the end, where the list has them --
+    #: see CLAUDE.md on the key bar.
     BINDINGS: ClassVar[list[BindingType]] = [
+        # "Edit", as the list's enter is: both open the chosen day in the
+        # editor, whether or not it has been written yet.
         Binding("e", "edit_day", "Edit"),
         # The list opens a day with enter, so this one does too. 'e' is the
         # one in the bar: enter is what a calendar is expected to answer to
         # and needs no advertising, while 'e' is the key this view adds.
         Binding("enter", "edit_day", "Edit", show=False),
+        # On the screen rather than the widget, unlike the arrows and the
+        # page keys: an arrow key in a calendar needs no explaining, a
+        # bracket does, and the help popup and the bar are built from
+        # screen bindings. In the bar as well, since it has the room --
+        # these make seven keys in 63 columns, where the list's eight take
+        # 69 -- and a year key nobody finds leaves the arrows to walk there
+        # instead.
+        Binding("left_square_bracket", "previous_year", "Previous year", key_display="["),
+        Binding("right_square_bracket", "next_year", "Next year", key_display="]"),
+        # The way out. Named for where it goes, as the list's 'c' is.
         Binding("c", "back", "List"),
         Binding("escape", "back", "List", show=False),
         # Shown, for the same reason as on the list -- see EntryListScreen.
@@ -94,15 +107,6 @@ class CalendarScreen(ZecretScreen):
         # one place for both main views -- see ZecretApp.action_help.
         Binding("question_mark", "app.help", "Help", key_display="?"),
         Binding("q", "app.quit", "Quit"),
-        # --- getting around ----------------------------------------------
-        # On the screen rather than the widget, unlike the day and month
-        # keys: an arrow key in a calendar needs no explaining, a bracket
-        # does, and the help popup and the bar are built from screen
-        # bindings. In the bar as well, since it has the room -- these make
-        # seven keys in 63 columns, where the list's eight take 69 -- and a
-        # year key nobody finds leaves the arrows to walk there instead.
-        Binding("left_square_bracket", "previous_year", "Previous year", key_display="["),
-        Binding("right_square_bracket", "next_year", "Next year", key_display="]"),
     ]
 
     def __init__(self, date: dt.date | None = None) -> None:

@@ -168,7 +168,9 @@ class EntryListScreen(ZecretScreen):
         # guards its own selection accordingly. Hidden because the list's
         # own enter binding shadows it in the bar anyway: it never rendered
         # there.
-        Binding("enter", "open_entry", "Open", show=False),
+        # "Edit", as the calendar's 'e' and enter are: both open the chosen
+        # day in the editor.
+        Binding("enter", "open_entry", "Edit", show=False),
         Binding("r", "reload", "Reload", show=False),
         # --- getting around ----------------------------------------------
         # A diary kept for years is a long list, and arrow keys alone make

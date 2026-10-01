@@ -37,6 +37,13 @@ file matters as much as that does.
   need to come back at all: closing the help, leaving settings or reading
   a day without changing it leaves the list exactly as it was.
 
+- **The key bars read the same way on every screen.** A screen's own keys
+  come first, then the way out, then <kbd>ctrl</kbd>+<kbd>l</kbd> Lock —
+  followed by Help and Quit on the list and the calendar. The editor's
+  <kbd>ctrl</kbd>+<kbd>r</kbd> is now called Cover, as it is everywhere
+  else, and the help popup has a bar of its own instead of letting the
+  list's show around it on a wide terminal.
+
 - **<kbd>a</kbd> is no longer in the key bar.** The calendar took its
   place there: it answers the same question — which day? — with the whole
   year to point at. <kbd>a</kbd> still works exactly as before, and is
