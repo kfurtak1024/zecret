@@ -10,6 +10,8 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-01
+
 ### Added
 
 - **A calendar view: the whole year, with the days you wrote marked.**
@@ -25,7 +27,7 @@ file matters as much as that does.
 
 ### Changed
 
-- **A long diary is quick again.** Coming back to the list, opening search
+- **A long diary is quick.** Coming back to the list, opening search
   and typing into it each took around eight seconds on a diary ten years
   long, because every row on the list was a separate piece of the screen
   to build — whether or not it was anywhere near the window. The list and
@@ -488,7 +490,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...v0.6.0
