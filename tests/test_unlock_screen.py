@@ -21,6 +21,11 @@ Required coverage:
       does not refuse them entry to it. The reading goes away when the
       field is emptied, and an error outranks it. Nothing is rated on an
       existing diary, where the password is recalled rather than chosen.
+    - The create screen shows the diary's path as given, brackets and all:
+      a directory named with a stray closing tag crashed it on opening.
+    - An error line shows its message as given. Some quote the operating
+      system or a path, and a stray closing tag in one was read as markup
+      -- and raised, taking the app down while it reported a failure.
 """
 
 from __future__ import annotations
@@ -44,16 +49,9 @@ TODAY = dt.date.today()
 WRONG_PASSWORD = "Correct horse battery staple"
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    """The 400ms anti-brute-force pause is real behavior, but waiting for it
-    in every test is not worth the wall time."""
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -445,3 +443,26 @@ async def test_a_real_error_takes_the_line_back_from_the_rating(diary_path):
         assert str(line.content) == "Passwords do not match."
         assert not line.has_class("-advice")
         assert not line.has_class("-advice-strong")
+
+
+async def test_an_error_line_shows_its_message_as_given(tmp_path):
+    """Every screen's error line goes through FormScreen.set_error."""
+    app = ZecretApp(diary_path=tmp_path / "diary.enc")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.set_error("Could not open /tmp/[/bold]/diary.enc: Permission denied.")
+        await pilot.pause()
+        line = app.screen.query_one("#unlock-error", Label)
+        assert str(line.render()) == "Could not open /tmp/[/bold]/diary.enc: Permission denied."
+
+
+async def test_a_path_that_looks_like_markup_is_shown_as_given(tmp_path):
+    # Two directories, "[" and "bold]": the slash in the tag is a separator.
+    folder = tmp_path / "[/bold]"
+    folder.mkdir(parents=True)
+    app = ZecretApp(diary_path=folder / "diary.enc")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.screen.creating
+        hint = str(app.screen.query_one("#unlock-hint", Label).render())
+        assert "[/bold]" in hint

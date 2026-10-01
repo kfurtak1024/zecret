@@ -15,6 +15,8 @@ question only this layer asks (models.py takes the date it is given).
 And the warning about a forgotten password, which the two screens that
 set one both carry, and which must say the same thing on both.
 
+And DayList, the list both the entry list and search show days in.
+
 And the wording for a save that did not happen, which is the same wherever
 a save is attempted -- three screens attempt one, and none of them should
 be deciding for itself how to describe a diary that changed underneath it.
@@ -23,11 +25,14 @@ be deciding for itself how to describe a diary that changed underneath it.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from textual.containers import VerticalScroll
+from textual.content import Content
 from textual.screen import Screen
-from textual.widgets import Input, Label
+from textual.widgets import Input, Label, OptionList
+from textual.widgets.option_list import Option
 
 from zecret.models import Entry
 from zecret.storage import ZecretConflictError
@@ -158,6 +163,22 @@ def day_summary(entry: Entry) -> str:
     return f"{format_day_short(entry.date)}   {body_snippet(entry.body)}"
 
 
+def unchanged(drawn: Mapping[dt.date, Entry] | None, entries: Mapping[dt.date, Entry]) -> bool:
+    """Whether `entries` is still exactly the diary a list was drawn from.
+
+    By identity, not by value: Entry is frozen and every edit makes a new
+    one (see Entry.edited), so the same objects under the same dates is the
+    same diary, and the check never reads an entry's text. A reload builds
+    new objects for every day, so it always counts as a change -- which is
+    right, since another Zecret may have written anything.
+
+    `drawn` is None until a list has been drawn at all.
+    """
+    if drawn is None or drawn.keys() != entries.keys():
+        return False
+    return all(drawn[date] is entry for date, entry in entries.items())
+
+
 def save_error(error: OSError | ZecretConflictError) -> str:
     """What to tell the user about a save that did not happen.
 
@@ -199,6 +220,76 @@ def card(id: str) -> VerticalScroll:
     return VerticalScroll(id=id, can_focus=False)
 
 
+def plain(text: str) -> Content:
+    """`text` exactly as it is, never read as markup.
+
+    Textual reads a plain string handed to a Label, an Option or a
+    notification as markup. That is right for text Zecret writes and
+    wrong for anything it does not: a diary's first line holding `[bold]`
+    lost its brackets and turned bold, and one holding a stray `[/bold]`
+    raised MarkupError and took the app down every time the list was
+    drawn. The same went for an error message quoting a damaged file, a
+    path, or the operating system. Whatever was not typed into this
+    source file goes through here on its way to the screen.
+    """
+    return Content(text)
+
+
+def day_row(text: str) -> Option:
+    """One row of a DayList -- see plain() for why it is not a string."""
+    return Option(plain(text))
+
+
+class DayList(OptionList):
+    """A list of days -- the entry list's, and search's -- that stops at its ends.
+
+    Textual's OptionList wraps around: down on the last option goes to the
+    first. In a list of years of entries that is a jump from 2016 to today
+    for one keypress too many, and the reader does not see it happen --
+    the ListView these lists used to be stopped at the end, and so does
+    this. Up and down are the only keys that wrapped; the screens handle
+    the page keys and the ends themselves (see EntryListScreen).
+    """
+
+    def scroll_to_highlight(self, top: bool = False) -> None:
+        """Bring the highlight into view -- and on the first day, the top.
+
+        Textual scrolls just far enough to show the highlighted row, which
+        on the newest entry leaves the month heading above it, and the
+        blank line above that, out of sight: 'g' went to the top of the
+        diary without ever showing it. Where nothing but headings comes
+        before the highlight, the top of the list is the place to be.
+        """
+        highlighted = self.highlighted
+        if highlighted is not None and all(
+            self.get_option_at_index(index).disabled for index in range(highlighted)
+        ):
+            self.scroll_home(animate=False, immediate=True)
+            return
+        super().scroll_to_highlight(top)
+
+    def action_cursor_up(self) -> None:
+        self._step(-1)
+
+    def action_cursor_down(self) -> None:
+        self._step(1)
+
+    def _step(self, direction: int) -> None:
+        """The next enabled option that way, or stay put at the end.
+
+        Written out rather than borrowed from Textual's own navigation
+        helpers, which live in a private module.
+        """
+        if self.highlighted is None:
+            return
+        index = self.highlighted + direction
+        while 0 <= index < self.option_count:
+            if not self.get_option_at_index(index).disabled:
+                self.highlighted = index
+                return
+            index += direction
+
+
 class ZecretScreen(Screen[None]):
     """A screen with typed access to the running Zecret app."""
 
@@ -226,6 +317,18 @@ class ZecretScreen(Screen[None]):
     def zecret(self) -> ZecretApp:
         """The running app, typed -- `self.app` is only known as App here."""
         return cast("ZecretApp", self.app)
+
+    @property
+    def written_days(self) -> frozenset[dt.date]:
+        """Every day the diary holds an entry for, as of now.
+
+        What the calendars mark. A frozenset of the keys, so what a calendar
+        holds cannot drift from the diary or be changed by it -- and handed
+        to the calendar, never looked up by it: a widget that reached for
+        storage would be the one place outside a screen that does.
+        """
+        diary, _ = self.zecret.unlocked
+        return frozenset(diary.entries)
 
     @property
     def blocks_lock(self) -> bool:
@@ -283,7 +386,8 @@ class FormScreen(ZecretScreen):
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
         line.remove_class("-advice", "-advice-strong")
-        line.update(message)
+        # Plain: an error can quote the operating system, or a path.
+        line.update(plain(message))
 
     def advise_on_password(self, password: str) -> None:
         """Show how strong a password being chosen is, without refusing it.
@@ -320,7 +424,7 @@ class FormScreen(ZecretScreen):
             return
         line.add_class("-advice")
         line.set_class(strength.score > NEEDS_HELP, "-advice-strong")
-        line.update(strength.line())
+        line.update(plain(strength.line()))
 
     def clear_inputs(self) -> None:
         """Empty every text field.

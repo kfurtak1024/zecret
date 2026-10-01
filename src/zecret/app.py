@@ -2,6 +2,7 @@
 
 Screen flow:
     UnlockScreen -> EntryListScreen <-> EditorScreen (one day's entry)
+                                     <-> CalendarScreen -> EditorScreen
                                      -> DatePromptScreen -> EditorScreen
                                      -> SearchScreen
                                      -> SettingsScreen (theme, password)
@@ -47,6 +48,7 @@ from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_THEME, Config
 from zecret.screens.base import UNSAVED_CHANGES, ZecretScreen
 from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.entry_list import EntryListScreen
+from zecret.screens.help import HelpScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
 
@@ -271,6 +273,19 @@ class ZecretApp(App[None]):
     def _on_unlocked(self, _result: None) -> None:
         """Called once UnlockScreen dismisses, i.e. the diary is open."""
         self.push_screen(EntryListScreen())
+
+    def action_help(self) -> None:
+        """Open the help popup, from whichever main view asked.
+
+        Here rather than on a screen because two screens open it -- the
+        entry list and the calendar -- and one action is one place to
+        change. Neither screen could hold it without importing the popup,
+        which imports them both to list their keys.
+
+        Bound on those two screens only, never app-wide: a '?' typed into
+        the editor, the search box or a password field must stay a '?'.
+        """
+        self.push_screen(HelpScreen())
 
     async def action_quit(self) -> None:
         """Quit -- but never silently over something half-written.

@@ -13,6 +13,13 @@ Required coverage:
     - A modal shows its own key. Without a footer of its own it let the
       entry list's bar show through, advertising eight keys that do
       nothing while a question has focus and none of the one that does.
+      The help popup too: it was left without one on the grounds that its
+      box covered the bar, which on a terminal wider than the box it did
+      not.
+    - Every bar reads the same way: this screen's own keys, the way out,
+      then Lock -- followed by Help and Quit on the two main views. And one
+      action has one name: opening a day in the editor is "Edit" on the
+      list and in the calendar alike.
     - The answers to a question are all one width, and every label fits
       the width it is given -- the buttons are sized in app.tcss rather
       than by their own text, so a longer label would be cut in silence.
@@ -45,28 +52,24 @@ from pathlib import Path
 
 import pytest
 from textual.containers import VerticalScroll
-from textual.widgets import Button, Footer, Input, Label, ListView, TextArea
+from textual.widgets import Button, Footer, Input, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
+from zecret.screens.calendar_view import CalendarScreen
+from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.header import DiaryHeader
 from zecret.screens.help import documented_bindings
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
 TODAY = dt.date.today()
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -189,6 +192,19 @@ async def test_reaching_the_diary_before_unlocking_is_a_programming_error(diary_
 TEXT_COLUMN = 4
 
 
+def text_column(app: ZecretApp, text: str) -> int:
+    """The column the line holding `text` starts at on screen, as drawn.
+
+    Read off the screen rather than off a widget's region: a list row is a
+    line inside an OptionList, not a widget with a region of its own.
+    """
+    for strip in app.screen._compositor.render_strips():
+        line = "".join(segment.text for segment in strip)
+        if text in line:
+            return len(line) - len(line.lstrip())
+    raise AssertionError(f"{text!r} is not on the screen")
+
+
 async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
     """The search box used to sit one cell right of the results under it.
     Input pads its inside by two cells and TextArea by one, so bordering
@@ -197,8 +213,7 @@ async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(NARROWEST, 20)) as pilot:
         await unlock(pilot)
-        rows = app.screen.query_one("#entries", ListView).children
-        assert rows[-1].query_one(Label).region.x == TEXT_COLUMN, "an entry row"
+        assert text_column(app, "A body") == TEXT_COLUMN, "an entry row"
 
         await pilot.press("slash")
         await pilot.pause()
@@ -206,8 +221,7 @@ async def test_text_starts_at_the_same_column_on_every_screen(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert app.screen.query_one("#query", Input).content_region.x == TEXT_COLUMN, "the query"
-        results = app.screen.query_one("#results", ListView).children
-        assert results[-1].query_one(Label).region.x == TEXT_COLUMN, "a result row"
+        assert text_column(app, "A body") == TEXT_COLUMN, "a result row"
 
         await pilot.press("escape")
         await pilot.pause()
@@ -440,7 +454,7 @@ async def test_the_footer_is_compact_on_every_screen(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(NARROWEST, 20)) as pilot:
         await unlock(pilot)
-        for key in ("n", "escape", "slash", "escape", "s", "escape", "a", "escape", "d"):
+        for key in ("n", "escape", "slash", "escape", "s", "escape", "a", "escape", "c", "c", "d"):
             await pilot.press(key)
             await pilot.pause()
             await pilot.pause()
@@ -469,6 +483,13 @@ async def test_no_screen_puts_an_empty_stop_on_the_tab_ring(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert not focusable_panels(app), "the which-day modal"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.pause()
+        assert not focusable_panels(app), "the calendar"
 
         await pilot.press("escape")
         await pilot.pause()
@@ -525,6 +546,8 @@ async def test_every_screen_opens_with_something_focused(diary_path):
             ("escape", "back again"),
             ("a", "the which-day modal"),
             ("escape", "back once more"),
+            ("c", "the calendar"),
+            ("escape", "back from the calendar"),
             ("s", "settings"),
         ]:
             await pilot.press(key)
@@ -536,3 +559,39 @@ async def test_every_screen_opens_with_something_focused(diary_path):
         await pilot.pause()
         await pilot.pause()
         assert app.focused is not None, "the password dialog"
+
+
+async def test_help_has_a_bar_of_its_own(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await unlock(pilot)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.pause()
+        bar = footer_text(app)
+        assert "esc Close" in bar, bar
+        assert "n Today" not in bar, f"the list's dead keys show beside the popup: {bar!r}"
+
+
+def advertised(screen: type) -> list[str]:
+    """What a screen's bar says, in order."""
+    return [binding.description for binding in documented_bindings(screen.BINDINGS) if binding.show]
+
+
+def test_every_bar_ends_the_same_way():
+    """Lock is where the eye has learnt to find it: last of this screen's
+    keys, then -- on the two views where the diary is open behind nothing
+    -- Help and Quit."""
+    assert advertised(EntryListScreen)[-3:] == ["Lock", "Help", "Quit"]
+    assert advertised(CalendarScreen)[-3:] == ["Lock", "Help", "Quit"]
+    assert advertised(EditorScreen)[-2:] == ["Back", "Lock"]
+    assert advertised(CalendarScreen)[-4] == "List", "the way out comes just before Lock"
+
+
+def test_opening_a_day_has_one_name():
+    def name(screen: type, key: str) -> str:
+        return next(b.description for b in documented_bindings(screen.BINDINGS) if b.key == key)
+
+    assert (
+        name(EntryListScreen, "enter") == name(CalendarScreen, "e") == name(CalendarScreen, "enter")
+    )

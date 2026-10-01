@@ -10,6 +10,62 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-01
+
+### Added
+
+- **A calendar view: the whole year, with the days you wrote marked.**
+  Press <kbd>c</kbd> on the list. The list shows what you wrote; this shows
+  when — a missed week is a hole in a month, a missed month a hole in the
+  year. The arrow keys go where they point: each moves to the day drawn in
+  that direction, into the month beside or below when it reaches the edge
+  of one, stepping over the blank days around a month. The page keys move
+  a month, and <kbd>[</kbd> and <kbd>]</kbd> jump a year. <kbd>e</kbd> or
+  <kbd>enter</kbd> opens the day under the cursor, written or not, and
+  <kbd>c</kbd> or <kbd>esc</kbd> takes you back to the list, on the day you were looking at or the
+  nearest one you wrote before it. Three months sit across an 80-column
+  terminal, and up to six on a wide one.
+
+### Changed
+
+- **A long diary is quick.** Coming back to the list, opening search
+  and typing into it each took around eight seconds on a diary ten years
+  long, because every row on the list was a separate piece of the screen
+  to build — whether or not it was anywhere near the window. The list and
+  the search results now draw only the rows in view, and the same ten
+  years come back in under half a second. Most of the time they do not
+  need to come back at all: closing the help, leaving settings or reading
+  a day without changing it leaves the list exactly as it was.
+
+- **The key bars read the same way on every screen.** A screen's own keys
+  come first, then the way out, then <kbd>ctrl</kbd>+<kbd>l</kbd> Lock —
+  followed by Help and Quit on the list and the calendar. The editor's
+  <kbd>ctrl</kbd>+<kbd>r</kbd> is now called Cover, as it is everywhere
+  else, and the help popup has a bar of its own instead of letting the
+  list's show around it on a wide terminal.
+
+- **<kbd>a</kbd> is no longer in the key bar.** The calendar took its
+  place there: it answers the same question — which day? — with the whole
+  year to point at. <kbd>a</kbd> still works exactly as before, and is
+  still the quicker road when you know the date; <kbd>?</kbd> lists it.
+
+### Fixed
+
+- **An entry whose first line looks like markup no longer crashes the
+  app.** A first line holding a stray closing tag such as `[/bold]` stopped
+  Zecret every time the list or search was drawn — and the list is drawn
+  straight after unlocking. Text in square brackets that did make sense as
+  markup, such as `[bold]`, was quietly applied: it disappeared from the
+  row and changed how the row looked. Both now show exactly what you
+  wrote. The same went for other text Zecret did not write: re-reading
+  (<kbd>r</kbd>) a damaged diary file could crash while reporting it,
+  instead of saying what was wrong, and a diary path with such a tag in a
+  folder name crashed the screen for creating a new diary as it opened.
+
+- **Clicking a day in the "which day?" calendar picks that day.** The month
+  is drawn centred, and clicks were counted from the left edge instead, so
+  a click landed a day or more to the right of the one you meant.
+
 ## [0.7.1] - 2026-09-30
 
 ### Security
@@ -449,7 +505,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kfurtak1024/zecret/compare/v0.5.1...v0.6.0

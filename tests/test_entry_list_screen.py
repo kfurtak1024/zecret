@@ -10,13 +10,20 @@ Required coverage:
       selection back to a day (open, delete) lands on the right day.
     - 'a' offers another day to write about and opens the editor on it;
       backing out of the prompt changes nothing.
+    - 'c' opens the calendar, and coming back from it lands on the day its
+      cursor was on, or the nearest older one written. Those are tested
+      with the calendar, in test_calendar_screen.py.
     - Delete asks for confirmation first; cancelling changes nothing.
     - That question has two answers and not three: the modal offers to
       save where there is writing to save, and a deletion has nothing
       between going ahead and leaving the day alone.
     - Confirmed delete removes the entry from memory AND from disk, and
       leaves the other entries intact.
-    - The list refreshes from app.diary whenever the screen is resumed.
+    - The list refreshes from app.diary whenever the screen is resumed and
+      the diary has changed -- and only then: closing the help or reading a
+      day without writing does not rebuild a list that can be years long.
+      unchanged() judges that by identity, so an edit, an addition, a
+      deletion and a reload all count, and an untouched diary does not.
     - That refresh keeps the reader where they were: on the day they had
       highlighted, or -- when that day was the one just deleted -- on the
       next older day, which has moved up into its place.
@@ -24,11 +31,25 @@ Required coverage:
       it had no row before ('n' and 'a'). The cursor used to stay on the
       day it was on, which after the rebuild sat next to the new one --
       usually just below it. That holds on every road out of the editor,
-      including "Save and go back", which runs the editor's callback after
-      the list's rebuild rather than before it; and the landing is used
-      once, never saved up for whatever the list is resumed from next.
+      including "Save and go back" and a day chosen with 'a', whose dialog
+      opens the editor before the list has finished resuming; and the
+      landing is used once, never saved up for whatever the list is resumed
+      from next.
       Backing out of a day that was never written leaves the cursor where
       it was.
+    - Page keys move a screenful of *lines*, not rows: a month heading is
+      two lines, and counting rows made page down step over days in a
+      sparse diary without ever showing them.
+    - The cursor stops at the ends of the list: down on the oldest day and
+      up on the newest stay put rather than wrapping around.
+    - Landing on the newest day -- g, home, up, page up -- shows the month
+      heading above it too: the list used to scroll only far enough for the
+      row, and the top of the diary was never on screen.
+    - A row shows the first line exactly as written: text that looks like
+      Textual markup is neither interpreted nor fatal. So does anything else
+      that quotes text Zecret did not write -- a reload reporting a damaged
+      file shows what the file says, rather than crashing on it, and the
+      delete question shows its wording as given.
     - A row carries the entry's whole first line rather than a fixed slice
       of it, and is clipped to the window at render time. This is what lets
       a wide terminal show more of a day without any of it being recomputed
@@ -38,23 +59,24 @@ Required coverage:
 from __future__ import annotations
 
 import datetime as dt
+import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, Label, ListView, MaskedInput
+from textual.widgets import Button, Input, Label, MaskedInput, OptionList
+from textual.widgets._toast import Toast
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.base import EMPTY_BODY, format_day, format_day_short, format_month
+from zecret.screens.base import EMPTY_BODY, format_day, format_day_short, format_month, unchanged
+from zecret.screens.confirm import ConfirmScreen as Question
 from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import (
     EMPTY_MESSAGE,
-    HEADING_CLASS,
     ConfirmScreen,
     EntryListScreen,
 )
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -70,14 +92,9 @@ MARCH = [dt.date(2026, 3, 4), dt.date(2026, 3, 17), dt.date(2026, 3, 28)]
 FEBRUARY = [dt.date(2026, 2, 9), dt.date(2026, 2, 22)]
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -100,21 +117,19 @@ async def unlock(pilot) -> None:
     await pilot.pause()
 
 
+def entries_list(app: ZecretApp) -> OptionList:
+    return app.screen.query_one("#entries", OptionList)
+
+
 def row_labels(app: ZecretApp) -> list[str]:
-    """Every row, month headings included, in display order."""
-    return [
-        str(item.query_one(Label).content)
-        for item in app.screen.query_one("#entries", ListView).children
-    ]
+    """Every row, month headings included, in display order -- without the
+    blank line a heading carries above it."""
+    return [str(option.prompt).strip("\n") for option in entries_list(app).options]
 
 
 def entry_labels(app: ZecretApp) -> list[str]:
-    """Only the rows that are entries."""
-    return [
-        str(item.query_one(Label).content)
-        for item in app.screen.query_one("#entries", ListView).children
-        if not item.has_class(HEADING_CLASS)
-    ]
+    """Only the rows that are entries: headings are the disabled ones."""
+    return [str(option.prompt) for option in entries_list(app).options if not option.disabled]
 
 
 def snippets(app: ZecretApp) -> list[str]:
@@ -225,7 +240,7 @@ async def test_the_highlight_starts_on_an_entry_not_a_heading(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
-        assert app.screen.query_one("#entries", ListView).index == 1
+        assert entries_list(app).highlighted == 1
         assert app.screen.selected_entry.date == MARCH[2]
 
 
@@ -554,7 +569,7 @@ async def test_list_refreshes_when_the_screen_resumes(diary_path):
 
 
 async def test_open_on_an_empty_list_does_nothing(diary_path):
-    """Pressing enter is already swallowed by the focused (empty) ListView,
+    """Pressing enter is already swallowed by the focused (empty) list,
     so the action is invoked directly: its guard is what keeps a stale or
     absent selection from opening the editor on nothing."""
     seed(diary_path)
@@ -574,7 +589,7 @@ async def test_open_on_an_empty_list_does_nothing(diary_path):
 
 async def test_the_open_action_opens_the_highlighted_day(diary_path):
     """The footer advertises enter as Open. The key itself is handled by
-    the ListView, so this covers the action the binding names."""
+    the list itself, so this covers the action the binding names."""
     seed(diary_path, Entry.new(YESTERDAY, "A body"))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -610,7 +625,7 @@ async def test_the_cursor_stays_on_the_day_you_opened(diary_path):
         for _ in range(3):  # down past the March/February heading
             await pilot.press("down")
             await pilot.pause()
-        row, day = app.screen.query_one("#entries", ListView).index, app.screen.selected_entry.date
+        row, day = entries_list(app).highlighted, app.screen.selected_entry.date
         assert day == FEBRUARY[1]
 
         await pilot.press("enter")
@@ -620,7 +635,7 @@ async def test_the_cursor_stays_on_the_day_you_opened(diary_path):
         await pilot.pause()
         await pilot.pause()
 
-        assert app.screen.query_one("#entries", ListView).index == row
+        assert entries_list(app).highlighted == row
         assert app.screen.selected_entry.date == day
 
 
@@ -665,9 +680,10 @@ async def test_writing_another_day_leaves_the_cursor_on_it(diary_path):
 
 
 async def test_saving_from_the_question_on_the_way_out_lands_on_the_day(diary_path):
-    """escape, then "Save and go back". Leaving through the question runs
-    the editor's callback after the list has been rebuilt rather than
-    before it, and landing used to depend on the order."""
+    """escape, then "Save and go back". Leaving through the question used
+    to run the editor's dismiss callback after the list had been rebuilt
+    rather than before it, and landing depended on the order. The list now
+    reads the day on resume, which leaves no order to depend on."""
     seed(diary_path, *(Entry.new(TODAY - dt.timedelta(days=n), f"Day {n}") for n in range(1, 6)))
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -798,7 +814,7 @@ async def test_deleting_the_oldest_day_leaves_the_cursor_at_the_foot(diary_path)
         await pilot.pause()
 
         screen = app.screen
-        assert screen.query_one("#entries", ListView).index == len(screen.rows) - 1
+        assert entries_list(app).highlighted == len(screen.rows) - 1
         assert screen.selected_entry.date == FEBRUARY[1]
 
 
@@ -923,7 +939,7 @@ def long_diary(diary_path: Path, days: int = 90) -> None:
 
 
 def cursor(app: ZecretApp) -> int:
-    return app.screen.query_one("#entries", ListView).index
+    return entries_list(app).highlighted
 
 
 async def test_j_and_k_move_a_day_at_a_time(diary_path):
@@ -1080,13 +1096,220 @@ async def test_rows_are_clipped_by_the_window_rather_than_wrapped(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(60, 20)) as pilot:
         await unlock(pilot)
-        rows = [
-            item.query_one(Label)
-            for item in app.screen.query_one("#entries", ListView).children
-            if not item.has_class(HEADING_CLASS)
+        listing = entries_list(app)
+        assert listing.styles.text_wrap == "nowrap"
+        assert listing.styles.text_overflow == "ellipsis"
+        # The heading's blank line and the heading, then the day on one row
+        # -- trimmed with an ellipsis at the edge of the window, not wrapped
+        # onto a second.
+        lines = [
+            "".join(segment.text for segment in strip).rstrip()
+            for strip in app.screen._compositor.render_strips()
         ]
-        assert rows
-        for label in rows:
-            assert label.styles.text_wrap == "nowrap"
-            assert label.styles.text_overflow == "ellipsis"
-            assert label.size.height == 1, "a day must not become two rows"
+        day = [line for line in lines if "The morning was clear" in line]
+        assert len(day) == 1, "a day must not become two rows"
+        assert day[0].endswith("…")
+
+
+# --- what is written is what is shown --------------------------------------
+
+#: A first line that Textual would read as markup if it were handed over as
+#: a string: tags that would restyle the row and lose their brackets, and a
+#: closing tag nobody opened, which raised MarkupError and took the app down
+#: every time the list was drawn.
+MARKUP_LINE = "Met [bold]Sam[/bold] and [red]Jo[/] -- closing [/i] for no reason"
+
+
+async def test_a_first_line_that_looks_like_markup_is_shown_as_written(diary_path):
+    seed(diary_path, Entry.new(TODAY, MARKUP_LINE))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(120, 20)) as pilot:
+        await unlock(pilot)
+        assert snippets(app) == [MARKUP_LINE]
+        screen = "\n".join(
+            "".join(segment.text for segment in strip)
+            for strip in app.screen._compositor.render_strips()
+        )
+        assert MARKUP_LINE in screen
+
+
+# --- the ends of the list --------------------------------------------------
+
+
+async def test_down_on_the_oldest_day_stays_there(diary_path):
+    """The list Textual offers wraps around; a diary should not jump from
+    its first page back to today for one keypress too many."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("G")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[0]
+        await pilot.press("down", "j")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == FEBRUARY[0]
+
+
+async def test_up_on_the_newest_day_stays_there(diary_path):
+    """Above it is only the month heading, which cannot be landed on."""
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        assert app.screen.selected_entry.date == MARCH[-1]
+        await pilot.press("up", "k")
+        await pilot.pause()
+        assert app.screen.selected_entry.date == MARCH[-1]
+
+
+# --- rebuilding only what changed ------------------------------------------
+
+
+def rebuilds(app: ZecretApp, monkeypatch) -> list[None]:
+    """Count the list's rebuilds from here on."""
+    screen = app.screen
+    counted: list[None] = []
+    original = screen.refresh_entries
+
+    def counting(*args) -> None:
+        counted.append(None)
+        original(*args)
+
+    monkeypatch.setattr(screen, "refresh_entries", counting)
+    return counted
+
+
+async def test_closing_the_help_does_not_rebuild_the_list(diary_path, monkeypatch):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        counted = rebuilds(app, monkeypatch)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen)
+        assert counted == []
+
+
+async def test_reading_a_day_without_writing_does_not_rebuild(diary_path, monkeypatch):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        counted = rebuilds(app, monkeypatch)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert counted == []
+        assert app.screen.selected_entry.date == MARCH[-1]
+
+
+async def test_writing_a_day_does_rebuild(diary_path, monkeypatch):
+    month_entries(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        counted = rebuilds(app, monkeypatch)
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("x", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert counted == [None]
+        # The row now holds the entry as written, not the one drawn before.
+        assert "x" in app.screen.selected_entry.body
+
+
+def test_unchanged_is_judged_by_identity():
+    first = Entry.new(MARCH[0], "One")
+    second = Entry.new(MARCH[1], "Two")
+    drawn = {first.date: first, second.date: second}
+    assert unchanged(drawn, dict(drawn)), "the same objects under the same days"
+    assert not unchanged(None, drawn), "nothing drawn yet"
+    assert not unchanged(drawn, {first.date: first}), "a day deleted"
+    added = Entry.new(MARCH[2], "Three")
+    assert not unchanged(drawn, {**drawn, added.date: added}), "a day added"
+    assert not unchanged(drawn, {**drawn, first.date: first.edited("One")}), (
+        "an edit is a new object even when the text reads the same"
+    )
+
+
+async def test_paging_through_a_sparse_diary_shows_every_day(diary_path):
+    """One entry a month, so every other row is a two-line heading. Paged
+    by rows, a jump went half again further than the screen and some days
+    were never on it at all."""
+    days = [dt.date(2020, 1, 15) + dt.timedelta(days=31 * month) for month in range(40)]
+    seed(
+        diary_path, *(Entry.new(day, f"Day of month {month:02d}") for month, day in enumerate(days))
+    )
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        seen: set[str] = set()
+        for _ in range(12):
+            for strip in app.screen._compositor.render_strips():
+                line = "".join(segment.text for segment in strip)
+                if "Day of month" in line:
+                    seen.add(line.split("Day of month")[1].split()[0])
+            await pilot.press("pagedown")
+            await pilot.pause()
+        assert seen == {f"{month:02d}" for month in range(40)}
+
+
+async def test_a_reload_quoting_markup_from_the_file_does_not_crash(diary_path, notifications):
+    """The reload error quotes the file, and the file is the thing that is
+    damaged: a version field of '[/bold]' reached the notification as
+    markup, and Textual raised MarkupError the moment it drew it."""
+    seed(diary_path, Entry.new(YESTERDAY, "Mine"))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        document = json.loads(diary_path.read_text())
+        document["version"] = "[/bold]"
+        diary_path.write_text(json.dumps(document))
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+        assert any("[/bold]" in message for message in notifications(app)), (
+            "the failure should be reported, quoting the file"
+        )
+        # Drawn the way Textual draws it: a toast built from each live
+        # notification. A headless run mounts none of its own, which is
+        # why this went unseen.
+        for notification in app._notifications:
+            drawn = str(Toast(notification).render())
+            assert drawn == notification.message
+
+
+async def test_a_question_shows_its_wording_as_given(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.push_screen(Question("Keep [/bold] as typed?"))
+        await pilot.pause()
+        label = app.screen.query_one("#confirm-question", Label)
+        assert str(label.render()) == "Keep [/bold] as typed?"
+
+
+async def test_the_newest_entry_is_shown_under_its_heading(diary_path):
+    """'g' and home land on the newest day, and the list scrolled only far
+    enough to show that row -- leaving its month heading off the top, so
+    the top of the diary was never actually on screen."""
+    long_diary(diary_path, days=200)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        # Page up enough times to cover two hundred rows, a screenful each.
+        for keys in (("G", "g"), ("end", "home"), ("G", *["pageup"] * 15)):
+            await pilot.press(*keys)
+            await pilot.pause()
+            assert entries_list(app).scroll_y == 0, f"{keys} left the heading scrolled off"
+            assert app.screen.selected_entry is not None

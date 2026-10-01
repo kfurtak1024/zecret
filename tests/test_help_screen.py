@@ -12,7 +12,9 @@ Required coverage:
     - The logo and version are shown, and the logo gives way rather than
       being drawn half-cut on a narrow terminal.
     - A long section is laid out in two columns side by side, and stacks
-      back into one where the terminal is too narrow to pair them.
+      back into one where the terminal is too narrow to pair them. The row
+      of short sections three abreast is measured the same way: below the
+      width it needs it stacks, rather than wrapping its rows.
     - The whole popup fits the height tools/screenshots.py shoots it at, so
       a layout that grows is caught here rather than by someone noticing a
       cropped picture months later.
@@ -39,6 +41,7 @@ from zecret.models import Entry
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import (
+    DIARY,
     LOGO,
     MIN_LOGO_WIDTH,
     NOTES,
@@ -48,7 +51,6 @@ from zecret.screens.help import (
     documented_bindings,
 )
 from zecret.screens.search import SearchScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -59,17 +61,12 @@ TODAY = dt.date.today()
 #: run from one. It guards the direction that actually goes wrong -- a page
 #: that grows past its picture -- so raise this and ROWS["help"] together if
 #: the help ever genuinely needs more room.
-SHOT_ROWS = 36
+SHOT_ROWS = 39
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -211,9 +208,10 @@ def columns(app: ZecretApp) -> list[Widget]:
 
 
 async def test_a_long_section_is_laid_out_in_two_columns(diary_path):
-    """Eighteen keys in one column is a page you scroll; the same eighteen
+    """Nineteen keys in one column is a page you scroll; the same nineteen
     in two is most of a page you do not. Side by side means same top, and
-    different left -- geometry rather than the style that produced it."""
+    different left -- geometry rather than the style that produced it. An
+    odd count puts the extra row on the left, read first."""
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test(size=(100, 40)) as pilot:
         await unlock(pilot)
@@ -221,8 +219,8 @@ async def test_a_long_section_is_laid_out_in_two_columns(diary_path):
         left, right = columns(app)
         assert left.region.y == right.region.y, "columns should sit side by side"
         assert left.region.x < right.region.x
-        assert len(left.query(".help-key")) == len(right.query(".help-key")), (
-            "eighteen keys should split down the middle"
+        assert 0 <= len(left.query(".help-key")) - len(right.query(".help-key")) <= 1, (
+            "the keys should split down the middle"
         )
 
 
@@ -281,7 +279,7 @@ async def test_every_advertised_key_of_every_screen_is_listed(diary_path):
         # a list is not a Binding -- and this check silently covered only
         # the entry list.
         every_binding = [EntryListScreen.BINDINGS] + [
-            bindings for _title, groups in SECTIONS for bindings in groups
+            bindings for section in SECTIONS for bindings in section.groups
         ]
         assert sum(len(documented_bindings(b)) for b in every_binding) > len(
             documented_bindings(EntryListScreen.BINDINGS)
@@ -303,8 +301,8 @@ async def test_the_page_names_each_section(diary_path):
         await unlock(pilot)
         await open_help(pilot)
         lines = page_lines(app)
-        for title, _bindings in SECTIONS:
-            assert title in lines
+        for section in [DIARY, *SECTIONS]:
+            assert section.title in lines
 
 
 async def test_the_page_carries_the_notes_keys_cannot_express(diary_path):
@@ -385,3 +383,23 @@ async def test_question_mark_in_search_is_typed_not_a_shortcut(diary_path):
         await pilot.pause()
         assert isinstance(app.screen, SearchScreen)
         assert app.screen.query_one("#query", Input).value == "?"
+
+
+def section_row(app: ZecretApp) -> list[Widget]:
+    """The columns of the row of short sections, under the list's keys."""
+    return list(list(app.screen.query(".help-columns"))[-1].query(".help-column"))
+
+
+@pytest.mark.parametrize(("width", "abreast"), [(60, False), (80, True)])
+async def test_the_short_sections_sit_abreast_only_where_they_fit(diary_path, width, abreast):
+    """At 56 to 70 columns the three used to stay side by side, about
+    seventeen columns each, and 'Previous year' wrapped onto two lines."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(width, SHOT_ROWS)) as pilot:
+        await unlock(pilot)
+        await open_help(pilot)
+        tops = {column.region.y for column in section_row(app)}
+        assert (len(tops) == 1) is abreast
+        assert all(label.size.height == 1 for label in app.screen.query(".help-key")), (
+            "no key row may wrap"
+        )

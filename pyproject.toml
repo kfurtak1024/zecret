@@ -1,6 +1,6 @@
 [project]
 name = "zecret"
-version = "0.7.1"
+version = "0.8.0"
 description = "A modern, encrypted terminal diary."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -50,6 +50,7 @@ dev = [
     "pytest-cov>=7.1",
     "hypothesis>=6.167",
     "types-zxcvbn>=4.4",
+    "pytest-xdist>=3.8",
 ]
 
 [build-system]
@@ -109,7 +110,15 @@ testpaths = ["tests"]
 # Neither coverage nor the scale tests are in the default run: a plain
 # `uv run pytest` stays fast for the edit-run loop. CI asks for both
 # explicitly (`--cov -m ""`), so neither can quietly erode on main.
-addopts = ["--strict-markers", "--strict-config", "-m", "not slow"]
+#
+# Run in parallel, one worker per core (pytest-xdist). The screen tests
+# spend most of their time asleep, not working: Textual's Pilot decides an
+# app has settled by sleeping in 20ms steps until it stops using CPU, twice
+# for every key pressed, so a press costs ~100ms of which ~20ms is work.
+# Serially that was three minutes at a quarter of one core; across workers
+# the sleeps overlap and the same suite takes seconds. `-n0` runs in one
+# process again, for a breakpoint or output that is not interleaved.
+addopts = ["--strict-markers", "--strict-config", "-m", "not slow", "-n", "auto"]
 xfail_strict = true
 asyncio_mode = "auto"
 # Pinned explicitly: pytest-asyncio warns when this is left to default.

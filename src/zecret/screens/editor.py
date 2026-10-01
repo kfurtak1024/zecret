@@ -704,14 +704,10 @@ class EditorScreen(FormScreen):
 
     ERROR_ID = "editor-error"
 
+    #: In the order every bar keeps: this screen's own actions, the way
+    #: out, then Lock -- see CLAUDE.md on the key bar.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+s", "save", "Save", priority=True),
-        Binding("escape", "back", "Back", priority=True),
-        # Reachable here, unlike the old shift-L on the entry list, because
-        # a chord means something of its own inside a text field. What it
-        # does with half-written text is the question that kept locking off
-        # this screen; action_save_and_lock answers it.
-        Binding("ctrl+l", "save_and_lock", "Lock", priority=True),
         # Zecret's own idea rather than an editor's, so unlike ctrl+home
         # and ctrl+a it is declared here: the key bar and the help popup
         # are built from a screen's bindings, and this is a key nobody
@@ -721,7 +717,15 @@ class EditorScreen(FormScreen):
         # ctrl+r for redact. Free in every direction that matters: no
         # TextArea binding, no screen binding, and the entry list's own
         # 'r' is a bare letter, which cannot be pressed in here anyway.
-        Binding("ctrl+r", "toggle_mask", "Mask", priority=True),
+        # "Cover" on the bar, as the README and the product page say it;
+        # "mask" is the code's word, not the writer's.
+        Binding("ctrl+r", "toggle_mask", "Cover", priority=True),
+        Binding("escape", "back", "Back", priority=True),
+        # Reachable here, unlike the old shift-L on the entry list, because
+        # a chord means something of its own inside a text field. What it
+        # does with half-written text is the question that kept locking off
+        # this screen; action_save_and_lock answers it.
+        Binding("ctrl+l", "save_and_lock", "Lock", priority=True),
     ]
 
     def __init__(self, date: dt.date) -> None:

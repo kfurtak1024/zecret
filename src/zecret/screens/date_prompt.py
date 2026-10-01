@@ -40,7 +40,7 @@ from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
 from textual.widgets import Label, MaskedInput
 
-from zecret.screens.base import card, today
+from zecret.screens.base import card, plain, today
 from zecret.screens.calendar import LEGEND, MonthCalendar, day_in
 from zecret.screens.header import DiaryFooter
 
@@ -228,4 +228,4 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
         self.dismiss(None)
 
     def set_error(self, message: str) -> None:
-        self.query_one("#date-error", Label).update(message)
+        self.query_one("#date-error", Label).update(plain(message))

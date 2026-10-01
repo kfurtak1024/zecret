@@ -10,7 +10,11 @@ Required coverage:
       day still matches, and starts at the top when it does not -- never on
       whichever day happens to sit at the old row number.
     - Escape returns to the list.
+    - Coming back from a day that was only read does not filter the diary
+      again; coming back from one that was written does.
     - Searching never writes anything to disk.
+    - A result shows the first line exactly as written, even where it looks
+      like Textual markup, and the cursor stops at the ends of the results.
     - A result carries the entry's whole first line and is clipped to the
       window, the same as a row of the diary list -- the two sit one key
       apart and would look mismatched if only one of them grew.
@@ -22,7 +26,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label, ListView, TextArea
+from textual.widgets import Input, Label, OptionList, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
@@ -30,7 +34,6 @@ from zecret.screens.base import format_day
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.search import NO_MATCHES, SearchScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -40,14 +43,9 @@ YESTERDAY = TODAY - dt.timedelta(days=1)
 LAST_WEEK = TODAY - dt.timedelta(days=7)
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -81,18 +79,16 @@ async def type_query(pilot, query: str) -> None:
     await pilot.pause()
 
 
+def results_list(app: ZecretApp) -> OptionList:
+    return app.screen.query_one("#results", OptionList)
+
+
 def result_snippets(app: ZecretApp) -> list[str]:
-    return [
-        str(item.query_one(Label).content).split("   ")[-1]
-        for item in app.screen.query_one("#results", ListView).children
-    ]
+    return [str(option.prompt).split("   ")[-1] for option in results_list(app).options]
 
 
 def result_days(app: ZecretApp) -> list[str]:
-    return [
-        str(item.query_one(Label).content).split("   ")[0]
-        for item in app.screen.query_one("#results", ListView).children
-    ]
+    return [str(option.prompt).split("   ")[0] for option in results_list(app).options]
 
 
 @pytest.fixture
@@ -296,7 +292,7 @@ async def test_the_cursor_stays_on_the_result_you_opened(stocked):
         await pilot.pause()
         await pilot.press("down", "down")  # the oldest of the three
         await pilot.pause()
-        assert app.screen.query_one("#results", ListView).index == 2
+        assert results_list(app).highlighted == 2
 
         await pilot.press("enter")
         await pilot.pause()
@@ -305,7 +301,7 @@ async def test_the_cursor_stays_on_the_result_you_opened(stocked):
         await pilot.pause()
         await pilot.pause()
 
-        assert app.screen.query_one("#results", ListView).index == 2
+        assert results_list(app).highlighted == 2
 
 
 async def test_narrowing_the_query_keeps_the_highlighted_day(stocked):
@@ -323,7 +319,7 @@ async def test_narrowing_the_query_keeps_the_highlighted_day(stocked):
         assert app.screen.highlighted_date == LAST_WEEK
 
         await type_query(pilot, ":")  # yesterday's and last week's, not today's
-        assert app.screen.query_one("#results", ListView).index == 1
+        assert results_list(app).highlighted == 1
         assert app.screen.highlighted_date == LAST_WEEK
 
 
@@ -336,10 +332,10 @@ async def test_a_query_that_drops_the_highlighted_day_starts_at_the_top(stocked)
         await pilot.pause()
         await pilot.press("down", "down")
         await pilot.pause()
-        assert app.screen.query_one("#results", ListView).index == 2
+        assert results_list(app).highlighted == 2
 
         await type_query(pilot, "frost")
-        assert app.screen.query_one("#results", ListView).index == 0
+        assert results_list(app).highlighted == 0
 
 
 async def test_the_highlighted_day_is_none_when_the_cursor_is_off_the_results(stocked):
@@ -350,7 +346,7 @@ async def test_the_highlighted_day_is_none_when_the_cursor_is_off_the_results(st
         await unlock(pilot)
         await open_search(pilot)
         screen = app.screen
-        screen.query_one("#results", ListView).index = None
+        results_list(app).highlighted = None
         assert screen.highlighted_date is None
         screen.results = []
         assert screen.highlighted_date is None
@@ -383,11 +379,82 @@ async def test_results_are_clipped_by_the_window_rather_than_wrapped(diary_path)
     async with app.run_test(size=(60, 20)) as pilot:
         await unlock(pilot)
         await open_search(pilot)
-        rows = [
-            item.query_one(Label) for item in app.screen.query_one("#results", ListView).children
+        results = results_list(app)
+        assert results.styles.text_wrap == "nowrap"
+        assert results.styles.text_overflow == "ellipsis"
+        lines = [
+            "".join(segment.text for segment in strip).rstrip()
+            for strip in app.screen._compositor.render_strips()
         ]
-        assert rows
-        for label in rows:
-            assert label.styles.text_wrap == "nowrap"
-            assert label.styles.text_overflow == "ellipsis"
-            assert label.size.height == 1, "a day must not become two rows"
+        day = [line for line in lines if "The morning was clear" in line]
+        assert len(day) == 1, "a day must not become two rows"
+        assert day[0].endswith("…")
+
+
+# --- what is written is what is shown --------------------------------------
+
+#: A first line that Textual would read as markup if it were handed over as
+#: a string: tags that would restyle the row and lose their brackets, and a
+#: closing tag nobody opened, which raised MarkupError and took the app down
+#: every time the list was drawn.
+MARKUP_LINE = "Met [bold]Sam[/bold] and [red]Jo[/] -- closing [/i] for no reason"
+
+
+async def test_a_result_that_looks_like_markup_is_shown_as_written(diary_path):
+    seed(diary_path, Entry.new(TODAY, MARKUP_LINE))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(120, 20)) as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        app.screen.query_one("#query", Input).value = "closing"
+        await pilot.pause()
+        assert result_snippets(app) == [MARKUP_LINE]
+
+
+async def test_the_results_stop_at_their_ends(stocked):
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        await pilot.press("tab")
+        await pilot.pause()
+        last = len(app.screen.results) - 1
+        for _ in range(last + 2):
+            await pilot.press("down")
+        await pilot.pause()
+        assert results_list(app).highlighted == last
+        for _ in range(last + 2):
+            await pilot.press("up")
+        await pilot.pause()
+        assert results_list(app).highlighted == 0
+
+
+async def test_reading_a_result_without_writing_does_not_refilter(stocked, monkeypatch):
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        screen = app.screen
+        counted: list[None] = []
+        original = screen.refresh_results
+
+        def counting() -> None:
+            counted.append(None)
+            original()
+
+        monkeypatch.setattr(screen, "refresh_results", counting)
+        await pilot.press("tab", "enter")
+        await pilot.pause()
+        assert isinstance(app.screen, EditorScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen is screen
+        assert counted == []
+
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("x", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert counted == [None]

@@ -1,15 +1,19 @@
 """Tests that a long diary stays usable.
 
 Zecret is meant to be kept for years, so the screens that draw a list have
-to cope with years of entries. They did not: both rebuilt their ListView by
-awaiting one append per row, and every append re-laid-out every row already
-mounted. That is quadratic, and it was not slow in a way anyone would
-notice at ten entries -- at ten years it took over a minute, on *every*
-return to the screen, because the rebuild runs on resume.
+to cope with years of entries. They have failed to twice. First both
+rebuilt their ListView by awaiting one append per row, and every append
+re-laid-out every row already mounted: quadratic, and over a minute at ten
+years, on *every* return to the screen, because the rebuild runs on
+resume. Mounting in one pass fixed the curve but not the cost -- a ListView
+is a widget per row, 7,500 of them at ten years, each mounted, styled and
+laid out whether or not it is on screen, and that was still eight seconds.
+Both lists are now OptionLists, one widget that draws only the rows in
+view, and the same ten years take well under a tenth of a second.
 
 Required coverage:
-    - A diary of several years redraws the entry list in about a second,
-      not in tens of seconds.
+    - A diary of ten years redraws the entry list -- built and drawn -- in
+      well under a second, not in the eight seconds a widget per row took.
     - The same for the search results, which rebuild on every keystroke.
     - Moving by a word crosses an unbroken run of characters in linear
       time. The same shape of bug as the two above and it arrived the same
@@ -48,32 +52,33 @@ from __future__ import annotations
 
 import datetime as dt
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from textual.document._document import Selection
+from textual.pilot import Pilot
 from textual.widgets import Input
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.editor import DiaryTextArea
 from zecret.screens.search import SearchScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
 
-#: Four years of writing every day. Past the point where mounting rows one
-#: at a time starts to hurt, and still quick enough to sit in a suite meant
-#: to be run constantly.
-ENTRIES = 1500
+#: Ten years of writing every day: the length of diary Zecret is meant to
+#: be kept to, and the size at which a widget per row cost eight seconds.
+ENTRIES = 3650
 
 #: Seconds, sized for CI rather than for a development machine -- see the
-#: module docstring. Mounting the rows in one pass takes about 1.3s on a
-#: fast machine and about 6s on a GitHub runner; mounting them one at a
-#: time took 8.9s and would take ~41s. Halfway between in the log sense.
-CEILING = 15.0
+#: module docstring, which records a GitHub runner at about 4x slower. An
+#: OptionList builds and draws ten years in about 0.07s here, so ~0.3s
+#: there; a widget per row took about 8s here, so ~32s there. Halfway
+#: between in the log sense is about 3s, and 5.0 leaves the runner room to
+#: have a bad day while still catching the regression six times over.
+CEILING = 5.0
 
 pytestmark = [
     pytest.mark.usefixtures("cheap_kdf"),
@@ -81,11 +86,6 @@ pytestmark = [
     # and is the one test here that is not near-instant.
     pytest.mark.slow,
 ]
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 def seed(path: Path, count: int) -> Path:
@@ -99,15 +99,22 @@ def seed(path: Path, count: int) -> Path:
     return path
 
 
-async def timed(rebuild: Callable[[], Awaitable[None]]) -> float:
-    """Seconds for one run of `rebuild`.
+async def timed(pilot: Pilot[None], rebuild: Callable[[], None]) -> float:
+    """Seconds for one run of `rebuild`, and for the screen to draw it.
 
     Each screen has already rebuilt once by the time this is called -- the
     entry list on unlock, the results on opening search -- so nothing here
     is paying to warm anything up.
+
+    The drawing is on the clock as well as the rebuild. An OptionList lays
+    out its rows when it is next drawn rather than when it is handed them,
+    so timing the call alone would time almost nothing -- and a widget per
+    row put half its cost in layout, which only a draw pays for.
     """
     started = time.perf_counter()
-    await rebuild()
+    rebuild()
+    await pilot.pause()
+    await pilot.pause()
     return time.perf_counter() - started
 
 
@@ -125,13 +132,13 @@ async def rebuild_seconds(path: Path) -> dict[str, float]:
         await pilot.press("enter")
         await pilot.pause()
         await pilot.pause()
-        entry_list = await timed(app.screen.refresh_entries)
+        entry_list = await timed(pilot, app.screen.refresh_entries)
 
         await pilot.press("slash")
         await pilot.pause()
         await pilot.pause()
         assert isinstance(app.screen, SearchScreen)
-        search = await timed(app.screen.refresh_results)
+        search = await timed(pilot, app.screen.refresh_results)
 
     return {"entry list": entry_list, "search": search}
 
@@ -143,8 +150,8 @@ async def test_a_long_diary_still_redraws_quickly(tmp_path: Path):
     assert not too_slow, (
         f"{ENTRIES} entries took over {CEILING:.0f}s to draw: {pretty(too_slow)}. "
         f"This runs on every return to the screen, so that is the wait after "
-        f"every entry read or written. It means rows are being mounted one at "
-        f"a time again -- mount them in one pass. (All screens: "
+        f"every entry read or written. Is a list a widget per row again, or "
+        f"mounting its rows one at a time? (All screens: "
         f"{pretty(seconds)}.)"
     )
 

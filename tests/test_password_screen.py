@@ -47,7 +47,6 @@ from zecret.screens.password import (
     PasswordScreen,
 )
 from zecret.screens.settings import SettingsScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 from zecret.strength import FILLED, HOLLOW, LABELS, rate
 
@@ -58,14 +57,9 @@ TODAY = dt.date.today()
 YESTERDAY = TODAY - dt.timedelta(days=1)
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 def tmp_missing_diary(existing: Path) -> Path:

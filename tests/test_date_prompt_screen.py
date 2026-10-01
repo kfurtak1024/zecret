@@ -18,16 +18,20 @@ Required coverage:
     - Down from the field reaches the calendar, and enter there answers
       the question the same way enter in the field does.
     - The days the caller says are written are the days the grid marks.
+    - A click on a drawn day picks that day. The month is drawn centred in
+      a wider widget, and clicks used to be counted from its left edge.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 
 import pytest
 from textual.app import App
 from textual.widgets import Label, MaskedInput
 
+import zecret
 from zecret.screens.calendar import MonthCalendar
 from zecret.screens.date_prompt import (
     IN_THE_FUTURE,
@@ -379,4 +383,39 @@ async def test_the_written_days_reach_the_calendar():
     app = PromptHarness(dt.date(2019, 4, 10), written)
     async with app.run_test():
         assert grid(app).written == written
-        assert grid(app).style_for(dt.date(2019, 4, 2)) == "month-calendar--written"
+        assert "  2•" in grid(app).render().plain
+
+
+class StyledPromptHarness(PromptHarness):
+    """The same, wearing the app's stylesheet -- which centres the month in
+    a widget wider than it, the one thing a bare harness cannot show."""
+
+    CSS_PATH = str(Path(zecret.__file__).with_name("app.tcss"))
+
+
+def drawn_at(app: App[None], text: str, region) -> tuple[int, int]:
+    """Where `text` is drawn on screen inside `region`."""
+    for y, strip in enumerate(app.screen._compositor.render_strips()):
+        if not region.y <= y < region.bottom:
+            continue
+        line = "".join(segment.text for segment in strip)
+        x = line.find(text, region.x)
+        if x != -1 and x < region.right:
+            return x, y
+    raise AssertionError(f"{text!r} is not drawn in {region}")
+
+
+@pytest.mark.parametrize("day", [5, 13, 31])
+async def test_clicking_a_drawn_day_picks_that_day(day):
+    """Clicks were mapped as if the month started at the widget's left
+    edge, so the 5th picked the 6th or later at every width."""
+    app = StyledPromptHarness(dt.date(2024, 8, 20))
+    async with app.run_test(size=(80, 30)) as pilot:
+        await pilot.pause()
+        grid = app.screen.query_one(MonthCalendar)
+        # A day's number is right-aligned in its cell; aim at its last digit.
+        x, y = drawn_at(app, f"{day:>3}", grid.region)
+        await pilot.click(offset=(x + 2, y))
+        await pilot.pause()
+        assert grid.date == dt.date(2024, 8, day)
+        assert field(app).value == f"2024-08-{day:02d}"

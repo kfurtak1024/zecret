@@ -69,11 +69,6 @@ YESTERDAY = TODAY - dt.timedelta(days=1)
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
 
 
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
-
-
 @pytest.fixture
 def diary_path(tmp_path: Path) -> Path:
     path = tmp_path / "diary.enc"

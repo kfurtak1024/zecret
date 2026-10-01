@@ -11,6 +11,12 @@ And reading back what the app is currently saying, which several suites
 check and none of them should be reaching into Textual's internals to do
 twice.
 
+And no pause after a failed unlock. UnlockScreen waits FAILED_ATTEMPT_DELAY
+before it lets the next attempt in, which is a deliberate brake on someone
+guessing at the keyboard and nothing a test needs to sit through. Every
+suite that drives the unlock screen had its own copy of this; one is
+enough, and a test that wants to see the pause can still set it back.
+
 And keeping Argon2 at test cost. Every test that opens a diary derives a
 key at least twice, and at the real parameters (64 MiB, three passes) that
 is most of the suite's runtime. `cheap_kdf` is opt-in rather than autouse
@@ -29,6 +35,7 @@ import pytest
 import zecret.app
 from zecret.app import ZecretApp
 from zecret.crypto import KdfParams
+from zecret.screens.unlock import UnlockScreen
 
 #: Real Argon2id, at cost factors that keep the suite quick. The code path
 #: is identical; only the work factor changes.
@@ -45,6 +52,12 @@ def isolated_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     path = tmp_path / "zecret-config.json"
     monkeypatch.setattr(zecret.app, "DEFAULT_CONFIG_PATH", path)
     return path
+
+
+@pytest.fixture(autouse=True)
+def instant_failure_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No pause after a failed unlock -- see the module docstring."""
+    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture

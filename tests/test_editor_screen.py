@@ -75,7 +75,7 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, Label, ListView, TextArea
+from textual.widgets import Button, Input, Label, OptionList, TextArea
 
 from zecret.app import SAVE_AND_QUIT, ZecretApp
 from zecret.models import Entry
@@ -89,7 +89,6 @@ from zecret.screens.editor import (
     EditorScreen,
 )
 from zecret.screens.entry_list import EntryListScreen
-from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -107,14 +106,9 @@ LONG_PARAGRAPH = (
 )
 
 
-# Argon2 at test cost, and no pause after a failed unlock: this suite
-# opens diaries constantly (see tests/conftest.py).
+# Argon2 at test cost: this suite opens diaries constantly (see
+# tests/conftest.py, which also takes the pause after a failed unlock away).
 pytestmark = pytest.mark.usefixtures("cheap_kdf")
-
-
-@pytest.fixture(autouse=True)
-def instant_failure_delay(monkeypatch):
-    monkeypatch.setattr(UnlockScreen, "FAILED_ATTEMPT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -157,8 +151,8 @@ async def save_and_leave(pilot) -> None:
 
 def row_labels(app: ZecretApp) -> list[str]:
     return [
-        str(item.query_one(Label).content)
-        for item in app.screen.query_one("#entries", ListView).children
+        str(option.prompt).strip("\n")
+        for option in app.screen.query_one("#entries", OptionList).options
     ]
 
 
