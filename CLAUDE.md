@@ -296,6 +296,15 @@ a new shape breaks something, so the next regeneration still has it.
   three, on the single interpreter named in `.python-version`. There is no
   version matrix: `requires-python` permits newer interpreters, but 3.13 is
   the one the project stands behind on every push.
+- The suite runs in parallel (`-n auto` in `addopts`, via
+  `pytest-xdist`), which is what keeps it at seconds rather than minutes.
+  The cost is not the code under test: Textual's `Pilot` waits for an app
+  to settle by sleeping in 20 ms steps until it stops using CPU, twice per
+  key pressed, so a screen test is mostly asleep, and serially the suite
+  spent two of its three minutes idle. Parallel workers overlap those
+  sleeps. Every test must therefore stand alone — its own `tmp_path`, no
+  shared state, no reliance on order — which they already do. Use `-n0`
+  to debug a test in one process with breakpoints and readable output.
 - CI runs the suite as `pytest --cov`, with the threshold in
   `[tool.coverage.report]`. It is set to where the suite stands, so it only
   ever ratchets up. Coverage is deliberately not in `addopts`: a local
