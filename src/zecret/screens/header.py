@@ -10,9 +10,9 @@ to App.format_title, so the "Zecret — Search" styling matches what Textual
 would produce) and watches the same four reactives Textual's header does:
 screen title and sub-title, falling back to the app's.
 
-DiaryFooter is Textual's Footer in its compact spelling, which is one place
-rather than seven so the bar cannot end up looking different depending on
-which screen you are on. Every screen composes one, the two modals
+DiaryFooter is Textual's Footer in its compact spelling, written once rather
+than on every screen so the bar cannot end up looking different depending
+on which screen you are on. Every screen composes one, the modals
 included: a ModalScreen renders over the screen it was opened from rather
 than replacing it, so one without a footer shows the bar underneath -- whose
 keys are all dead while the modal has focus.
@@ -62,7 +62,7 @@ class DiaryFooter(Footer):
     """The key bar, compact so the entry list's keys fit an 80-column terminal.
 
     A subclass rather than `Footer(compact=True)` written out on every
-    screen: the five of them must agree, and one of them quietly not
+    screen: every one of them must agree, and one of them quietly not
     agreeing is exactly the kind of thing nobody notices.
     """
 

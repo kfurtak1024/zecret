@@ -19,6 +19,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps"
+    # Raise the floor in pyproject.toml along with the lock, not the lock
+    # alone. The lock reaches nobody who installs from PyPI -- pip and pipx
+    # resolve from the floors -- so a patched release that only lands in
+    # uv.lock protects the CI runner and no user. The default, `auto`,
+    # reads a package with a build backend as a library and widens the
+    # range instead, which for a `>=` floor means changing nothing: that
+    # is how cryptography 50.0.2 reached the lock in #27 while the floor
+    # stayed on 50.0.1, and 0.8.1 had to be cut by hand to move it.
+    versioning-strategy: increase
     groups:
       # One PR for routine dev-tool bumps; crypto dependencies stay
       # separate so they get looked at on their own.
@@ -27,8 +36,8 @@ updates:
       # spelled out rather than inferred: a dev tool missing from it does
       # not fail anything, it just arrives as its own pull request, which
       # is how hypothesis came through alone twice before it was noticed.
-      # `pytest*` already covers pytest-asyncio and pytest-cov; the rest
-      # match nothing but themselves.
+      # `pytest*` already covers pytest-asyncio, pytest-cov and
+      # pytest-xdist; the rest match nothing but themselves.
       dev-tools:
         patterns:
           - ruff
@@ -36,3 +45,4 @@ updates:
           - pytest*
           - hypothesis
           - textual-dev
+          - types-zxcvbn

@@ -227,9 +227,11 @@ class SettingsScreen(ZecretScreen):
     def action_back(self) -> None:
         # This screen's escape binding is priority, so it would otherwise
         # win over the dropdown's own -- closing the whole screen when the
-        # user meant to close the list they just opened.
-        theme = self.query_one("#theme", Select)
-        if theme.expanded:
-            theme.expanded = False
-            return
+        # user meant to close the list they just opened. Every dropdown,
+        # not one by name: this used to ask only the theme picker, and
+        # escape on the open lock picker went straight back to the list.
+        for select in self.query(Select):
+            if select.expanded:
+                select.expanded = False
+                return
         self.dismiss()

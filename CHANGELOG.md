@@ -10,6 +10,23 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-07
+
+### Security
+
+- **Zecret now requires `cryptography` 50.0.2 or later**, whose wheels
+  ship OpenSSL 4.0.3. The encryption itself is unchanged, and so is the
+  diary file: nothing to migrate. Upgrading Zecret also upgrades the
+  library that does the encrypting, which an older install could
+  otherwise leave behind on 50.0.1.
+
+### Fixed
+
+- **Escape closes the lock-time list in Settings, not Settings itself.**
+  With the "Locking" dropdown open, <kbd>esc</kbd> went straight back to
+  the diary instead of just closing the list, as it already did for the
+  theme picker. It now closes the list, and a second <kbd>esc</kbd> leaves.
+
 ## [0.8.0] - 2026-10-01
 
 ### Added
@@ -505,7 +522,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/kfurtak1024/zecret/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kfurtak1024/zecret/compare/v0.6.0...v0.7.0

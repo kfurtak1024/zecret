@@ -15,6 +15,8 @@ Required coverage:
       opening the screen leaves it alone. It used to be shown as the
       default, which Select reported as a change -- so looking at
       Settings rewrote a two-minute lock to fifteen, on disk.
+    - Escape on an open dropdown -- either of them -- closes the dropdown
+      and leaves the screen; the next escape goes back to the list.
     - The master password section is a button onto a dialog, and this
       screen holds no password fields and no warning of its own. What the
       dialog does is covered by tests/test_password_screen.py.
@@ -190,21 +192,25 @@ async def test_choosing_by_keyboard_applies_the_theme(diary_path):
         assert app.theme == THEMES[1][1]
 
 
-async def test_escape_closes_the_open_dropdown_rather_than_the_screen(diary_path):
+@pytest.mark.parametrize("select_id", ["theme", "lock-after"])
+async def test_escape_closes_the_open_dropdown_rather_than_the_screen(diary_path, select_id):
+    """Either dropdown. Only the theme picker was asked at first, so escape
+    on the open lock picker closed the whole screen."""
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
         await unlock(pilot)
         await open_settings(pilot)
-        theme_select(app).focus()
+        select = app.screen.query_one(f"#{select_id}", Select)
+        select.focus()
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()
-        assert theme_select(app).expanded is True
+        assert select.expanded is True
 
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, SettingsScreen), "the screen must stay"
-        assert theme_select(app).expanded is False
+        assert select.expanded is False
 
         await pilot.press("escape")
         await pilot.pause()
