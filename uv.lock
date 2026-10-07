@@ -1460,7 +1460,7 @@ wheels = [
 
 [[package]]
 name = "zecret"
-version = "0.8.0"
+version = "0.8.1"
 source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },
@@ -1485,7 +1485,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1" },
-    { name = "cryptography", specifier = ">=50.0.1" },
+    { name = "cryptography", specifier = ">=50.0.2" },
     { name = "textual", specifier = ">=8.2" },
     { name = "zxcvbn", specifier = ">=4.5" },
 ]
