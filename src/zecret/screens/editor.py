@@ -250,27 +250,26 @@ class DiaryTextArea(TextArea):
     asterisks is picked out in a colour of its own, and in bold, as it is
     typed.
 
-    **The mask is drawn, never written.** It is a style laid over the text
-    on its way to the screen and nothing else: the document is untouched,
-    which is what keeps `body_text` honest, `modified` correct, and the
-    bars out of the diary file. Masking by rewriting the text would file
-    an entry full of blocks, and it is the one mistake here that cannot be
-    taken back.
+    **The mask is drawn, never written.** It is laid over the text on its
+    way to the screen and nothing else: the document is untouched, which is
+    what keeps `body_text` honest, `modified` correct, and the bars out of
+    the diary file. Masking by rewriting the text would file an entry full
+    of blocks, and it is the one mistake here that cannot be taken back.
 
-    It is styling rather than substitution for a second reason too. Swapping
-    each character for a block would work only until someone wrote in a
-    script that is two cells wide -- a block is one cell, so the line's
-    width would stop matching what the widget wrapped and where it thinks
-    the cursor is. Colouring the characters that are already there leaves
-    every measurement alone.
+    On the way to the screen it does swap characters, one for one: each
+    covered character one cell wide is drawn as a bar of the same width, so
+    the line keeps its length and every measurement -- the wrapping, the
+    cursor, the selection -- still lands where it should. A character two
+    cells wide cannot be swapped for a one-cell bar without shortening the
+    line, so those keep their own glyph and are painted out in ink the
+    colour of their background instead. See get_line.
 
-    **Emphasis is drawn, never written**, for the first of those reasons
-    and not the second: it only ever colours, so it is a style laid on the
-    line and cannot change a measurement even in principle. The asterisks
-    stay on the screen where they were typed. Hiding them would be the
-    substitution the mask cannot do -- one character fewer on the line
-    than in the document, and the cursor a cell out for the rest of the
-    paragraph -- and it would also be a lie about what is in the file.
+    **Emphasis is drawn, never written**, and unlike the mask it swaps
+    nothing: it only ever colours, so it cannot change a measurement even
+    in principle. The asterisks stay on the screen where they were typed.
+    Hiding them would draw one character fewer than the document holds,
+    putting the cursor a cell out for the rest of the paragraph -- and it
+    would also be a lie about what is in the file.
     """
 
     COMPONENT_CLASSES: ClassVar[set[str]] = {

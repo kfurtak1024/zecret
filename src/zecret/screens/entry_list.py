@@ -24,7 +24,7 @@ Responsibilities:
       that day had no row until now. After the calendar, it is the day
       the calendar's cursor was on, or the nearest older one written.
 
-'n' and 'g' both land on a date rather than on a new entry: the editor
+'n' and 'a' both land on a date rather than on a new entry: the editor
 opens whatever that day holds, so writing more about today just continues
 today's entry instead of starting a second one.
 
