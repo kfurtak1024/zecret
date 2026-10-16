@@ -37,9 +37,6 @@ file matters as much as that does.
 - **Deleting a day says so**, naming the day, as saving and locking do.
 - **A new day stops being called "new" in the editor's title as soon as
   it is saved**, rather than the next time it is opened.
-- **The password fields and the settings dropdowns are framed like every
-  other field**, in the same rounded border and the theme's accent colour
-  while you are in them, rather than Textual's own blue.
 - **Two Zecrets on one diary can no longer lose an entry while one of them
   is unlocking.** If the other one saved during the second or so it takes
   to open the diary, the one being unlocked took that save as its starting

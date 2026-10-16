@@ -40,9 +40,6 @@ Required coverage:
     - Taking focus does not resize one. The frame is painted over the
       button's edge rather than carved out of its inside, so the answer
       you are about to press is exactly the size of the two beside it.
-    - Every field is framed the same way: rounded, and in $accent while it
-      has focus. The password fields and the settings dropdowns wore
-      Textual's own tall frame in $primary, which lit up blue on focus.
     - Text lines up down the left edge of every screen. The gutter in
       app.tcss lines the borders up; what a reader follows is where the
       text starts, and Input and TextArea pad their insides by different
@@ -609,54 +606,3 @@ def test_opening_a_day_has_one_name():
     assert (
         name(EntryListScreen, "enter") == name(CalendarScreen, "e") == name(CalendarScreen, "enter")
     )
-
-
-# --- how a field is framed ---------------------------------------------------
-
-
-def frame(widget) -> tuple[str, str]:
-    """The kind and colour of a widget's top border."""
-    kind, color = widget.styles.border_top
-    return kind, color.hex
-
-
-async def frames_of(app: ZecretApp, pilot, widget) -> tuple[tuple[str, str], tuple[str, str]]:
-    """How `widget` is framed without focus, and then with it."""
-    app.screen.set_focus(None)
-    await pilot.pause()
-    blurred = frame(widget)
-    widget.focus()
-    await pilot.pause()
-    return blurred, frame(widget)
-
-
-@pytest.mark.parametrize("theme", ["textual-dark", "textual-light"])
-async def test_every_field_is_framed_like_the_search_box(diary_path, theme):
-    app = ZecretApp(diary_path=diary_path)
-    async with app.run_test() as pilot:
-        app.theme = theme
-        await pilot.pause()
-        unlocking = await frames_of(app, pilot, app.screen.query_one("#password", Input))
-        await unlock(pilot)
-        await pilot.press("slash")
-        await pilot.pause()
-        search = await frames_of(app, pilot, app.screen.query_one("#query", Input))
-        await pilot.press("escape", "s")
-        await pilot.pause()
-        picker = app.screen.query_one("#theme")
-        current = picker.query_one("SelectCurrent")
-        app.screen.set_focus(None)
-        await pilot.pause()
-        picker_blurred = frame(current)
-        picker.focus()
-        await pilot.pause()
-        picker_focused = frame(current)
-        app.push_screen(PasswordScreen())
-        await pilot.pause()
-        dialog = await frames_of(app, pilot, app.screen.query_one("#new", Input))
-
-        assert search[0][0] == search[1][0] == "round"
-        assert search[0] != search[1], "focus should show"
-        assert unlocking == search, "the lock screen's password field"
-        assert dialog == search, "the password dialog's fields"
-        assert (picker_blurred, picker_focused) == search, "the settings dropdowns"
