@@ -126,7 +126,10 @@ class DiaryFile:
 
     path: Path
     kdf_params: KdfParams
-    entries: dict[dt.date, Entry]
+    # Out of the repr, as Entry.body is: a diary's repr would otherwise be
+    # every date it holds, which the file reveals anyway but a traceback
+    # has no business repeating.
+    entries: dict[dt.date, Entry] = field(repr=False)
 
     # Ciphertexts as they currently exist on disk, and a fingerprint of the
     # key they were produced with. Private: callers work with `entries`.

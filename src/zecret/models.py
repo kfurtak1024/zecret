@@ -36,7 +36,10 @@ class Entry:
     """
 
     date: dt.date
-    body: str
+    # Out of the repr: a repr is what a traceback, a log line or a debugger
+    # prints, and the body is the one thing in Zecret that must never be
+    # printed by accident. See ZecretApp._fatal_error.
+    body: str = field(repr=False)
     created_at: dt.datetime
     # None is a construction-time placeholder that __post_init__ replaces,
     # so no Entry anyone holds ever has it. Annotated as the datetime it

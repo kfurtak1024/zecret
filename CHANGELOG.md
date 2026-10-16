@@ -10,6 +10,15 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Security
+
+- **A crash no longer prints your password or your writing to the
+  terminal.** If Zecret ever stopped on an unexpected error, the report it
+  left behind listed the values it was working with -- which could include
+  the master password being typed, or part of the day being saved -- and
+  that report stays in the terminal's scrollback. It still says where the
+  error happened, which is what a bug report needs, and nothing more.
+
 ## [0.8.2] - 2026-10-16
 
 ### Added
