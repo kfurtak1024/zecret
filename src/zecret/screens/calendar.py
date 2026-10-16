@@ -30,9 +30,9 @@ Three things neither will do:
   of refusing, so no such key is ever dead: paging into next month lands
   on today. A move across the year's grid does refuse, and so does a click
   in either calendar -- clamping there would send the cursor to a cell
-  nobody pointed at. A date typed into the field above the month is the
-  field's to refuse; the grid shows today until the typing names a day
-  that has happened.
+  nobody pointed at. The one exception is a date typed into the field
+  above the month: that is the field's to refuse, and the grid shows the
+  day typed rather than one beside it -- see MonthCalendar.show.
 - Change the month it shows on its own. The month is wherever the cursor
   is, so the grid only ever moves because someone moved it.
 - Own the date. The field above it does; this posts what it is on and lets
@@ -387,12 +387,14 @@ class MonthCalendar(WalkableCalendar):
         someone was still halfway through typing, under their cursor.
 
         Everything else about it is an ordinary move, and it is drawn the
-        same way; what is skipped is only the telling. That includes the
-        clamp: a future date typed into the field puts the cursor on
-        today, and the field keeps what was typed for the screen to
-        refuse.
+        same way; what is skipped is only the telling.
+
+        Not clamped, unlike every other move. A future date typed into the
+        field is the field's to refuse, and the cursor shows it so that
+        the day highlighted and the day refused are the same day: clamped
+        to today, the grid highlighted a day it could choose while enter
+        on it read the field and refused the date typed there.
         """
-        date = reachable(date)
         if date == self.date:
             return
         self.set_reactive(MonthCalendar.date, date)

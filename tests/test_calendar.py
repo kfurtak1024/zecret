@@ -25,8 +25,9 @@ Required coverage:
     - A click lands the cursor on the day under it, and a click on the
       headings, on the blank around a month or on a day not yet come does
       nothing.
-    - show() and the starting date clamp to today too, so a future date
-      typed into the field above never puts the cursor on a future day.
+    - The starting date clamps to today too. show() does not: a future
+      date typed into the field above is shown where it is, so the day
+      highlighted is the day the field will refuse.
 
     YearCalendar, over and above what the two share:
     - It draws the twelve months of the year the cursor is in, each named
@@ -405,12 +406,15 @@ async def test_clicking_a_day_not_yet_come_moves_nothing(monkeypatch):
         assert app.calendar.date == dt.date(2020, 8, 10)
 
 
-async def test_show_clamps_a_future_date_to_today():
+async def test_show_puts_the_cursor_on_a_typed_future_date():
+    """Clamped to today, the grid highlighted a day it could choose while
+    enter read the field and refused the day typed there."""
+    future = TOMORROW + dt.timedelta(days=40)
     app = CalendarHarness(YESTERDAY)
     async with app.run_test() as pilot:
-        app.calendar.show(TOMORROW + dt.timedelta(days=40))
+        app.calendar.show(future)
         await pilot.pause()
-        assert app.calendar.date == TODAY
+        assert app.calendar.date == future
         assert app.changes == [], "show() still says nothing"
 
 

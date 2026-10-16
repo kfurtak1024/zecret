@@ -36,8 +36,7 @@ file matters as much as that does.
   match" and clear the password you had just typed.
 - **Clicking a day that has not happened yet in the which-day calendar
   does nothing**, as it already did in the calendar view, instead of
-  jumping to today. Typing a future date no longer puts the calendar's
-  cursor on it either.
+  jumping to today.
 - **Search keeps up as you type in a long diary.** Each keystroke used to
   re-read every entry from scratch.
 - **A deletion that fails to save no longer causes a later save to

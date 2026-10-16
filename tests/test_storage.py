@@ -21,12 +21,16 @@ Required coverage:
     - create_new() narrows a directory it creates to the owner alone, and
       leaves the mode of one that was already there untouched: a diary
       created in ~ used to chmod the home directory to 0700. ~/.zecret is
-      Zecret's own, and is narrowed whoever made it.
+      Zecret's own, and is narrowed whoever made it and however the path
+      spells it -- unless it is a symlink, whose target is someone else's.
+    - A diary created but not stat-able afterwards is still a created
+      diary: create_new() succeeds rather than reporting a failure over
+      a file it leaves behind.
     - create_new() refuses a path that gained a diary while it was busy
       deriving the key, rather than writing over it, and leaves nothing
       behind if the write fails.
-    - A failed deletion undone with add_entry() keeps that day's
-      ciphertext: the next save of another day must not re-encrypt it.
+    - A deletion undone by saving() keeps that day's ciphertext: the next
+      save of another day must not re-encrypt it.
     - A save by another session while this one is unlocking -- after the
       file is read, before the key is derived -- is a conflict on this
       session's next save, not adopted as its baseline. The stamp a save
@@ -37,9 +41,9 @@ Required coverage:
       fails.
     - saving() saves what its block changed, and when the block or the
       save fails puts the entries and KDF params back as they were and
-      lets the error through -- the undo every saving screen relies on. A
-      block that changed no entries leaves the dict untouched, since
-      change_password() runs it off the event loop.
+      lets the error through -- the undo every saving screen relies on.
+      change_password() runs off the event loop and does not go through
+      it, so a failed change leaves the entries dict untouched.
     - change_password() + unlock() with the NEW password succeeds, and
       unlock() with the OLD password now fails: it saves by itself. A
       change_password() whose save fails leaves the old password working,
@@ -569,6 +573,52 @@ def test_create_new_narrows_zecret_s_own_directory_whoever_made_it(tmp_path, mon
     assert stat.S_IMODE(own.stat().st_mode) == storage.DIR_MODE
 
 
+def test_zecret_s_own_directory_is_recognised_however_it_is_spelt(tmp_path, monkeypatch):
+    own = tmp_path / ".zecret"
+    own.mkdir()
+    own.chmod(0o755)
+    monkeypatch.setattr(storage, "DEFAULT_DIARY_PATH", own / "diary.enc")
+    monkeypatch.chdir(tmp_path)
+
+    DiaryFile.create_new(Path(".zecret") / ".." / ".zecret" / "diary.enc", PASSWORD)
+
+    assert stat.S_IMODE(own.stat().st_mode) == storage.DIR_MODE
+
+
+def test_a_symlinked_zecret_directory_is_left_alone(tmp_path, monkeypatch):
+    """Someone pointed ~/.zecret at a folder of their own; chmod would
+    follow the link and narrow that folder."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+    own = tmp_path / ".zecret"
+    own.symlink_to(shared)
+    monkeypatch.setattr(storage, "DEFAULT_DIARY_PATH", own / "diary.enc")
+
+    DiaryFile.create_new(own / "diary.enc", PASSWORD)
+
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o755
+    assert (shared / "diary.enc").exists()
+
+
+def test_a_created_diary_that_cannot_be_stat_ed_is_still_created(diary_path, monkeypatch):
+    """The stamp is taken after the file is complete. A stat failing there
+    used to fail create_new() over a diary it then left on disk, so the
+    next launch asked for a password the user had abandoned."""
+
+    def no_stat(status):
+        raise OSError("stat refused")
+
+    monkeypatch.setattr(storage, "_stamp_of", no_stat)
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+    monkeypatch.undo()
+
+    assert diary_path.exists()
+    diary.add_entry(Entry.new(DAYS[0], "Saved after all"))
+    diary.save(key)
+    assert DiaryFile.unlock(diary_path, PASSWORD)[0].entry_for(DAYS[0]) is not None
+
+
 def test_a_save_leaves_the_stamp_the_path_shows(diary_path):
     """Taken after the file is closed: some filesystems set the mtime on
     close, and a stamp from before it made every later save a conflict."""
@@ -580,19 +630,17 @@ def test_a_save_leaves_the_stamp_the_path_shows(diary_path):
 
 
 def test_an_undone_deletion_keeps_the_day_s_ciphertext(diary_path, monkeypatch):
-    """How the entry list rolls back a deletion that failed to save: put
-    the same entry back with add_entry(). delete_entry() used to drop the
-    cached record as well, so the restored day had no ciphertext to reuse
-    and the next save of some other day re-encrypted it."""
+    """The entry list's road: a deletion inside saving() that fails to
+    save. The screen used to put the entry back by hand with add_entry(),
+    which restored it without its cached record, so the next save of some
+    other day re-encrypted it."""
     diary, key, entries = populated(diary_path)
     before = ciphertexts_by_date(diary_path)
 
-    diary.delete_entry(DAYS[0])
-    monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("boom")))
-    with pytest.raises(OSError):
-        diary.save(key)
+    fail_writes(monkeypatch)
+    with pytest.raises(OSError), diary.saving(key):
+        diary.delete_entry(DAYS[0])
     monkeypatch.undo()
-    diary.add_entry(entries[0])
 
     diary.update_entry(entries[2].edited("A later edit to another day"))
     diary.save(key)
@@ -983,7 +1031,7 @@ def test_saving_undoes_a_block_that_raises_and_saves_nothing(diary_path):
     assert diary_path.read_bytes() == on_disk
 
 
-def test_saving_leaves_entries_alone_when_the_block_changed_none(diary_path, monkeypatch):
+def test_a_failed_change_password_leaves_the_entries_dict_alone(diary_path, monkeypatch):
     """change_password() fails inside a worker thread; emptying and
     refilling the dict there would show the event loop an empty diary."""
 
