@@ -384,9 +384,15 @@ class SlowRekey:
 
     def __init__(self, monkeypatch, *, fail: bool = False) -> None:
         self.release = threading.Event()
+        # Set once the re-key itself is under way. The dialog is `working`
+        # from before it checks the current password, which is Argon2id
+        # too, so waiting on `working` alone could land in that check
+        # instead -- which on a slower CI runner it did.
+        self.entered = threading.Event()
         real = DiaryFile.change_password
 
         def slow(diary, new_password):
+            self.entered.set()
             self.release.wait(timeout=10)
             if fail:
                 raise OSError(28, "No space left on device")
@@ -406,7 +412,7 @@ class SlowRekey:
         # and this one is not handled until the re-key is let go.
         confirm = app.screen.query_one("#confirm", Input)
         confirm.post_message(Input.Submitted(confirm, confirm.value))
-        await settle(lambda: app.is_working())
+        await settle(self.entered.is_set)
         assert app.screen.working, "the re-key should be under way"
 
     async def finish(self, app: ZecretApp, pilot) -> None:
