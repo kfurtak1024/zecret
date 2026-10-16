@@ -52,6 +52,9 @@ class SearchScreen(ZecretScreen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Back", priority=True),
+        # The same chord as everywhere the diary is open -- see
+        # ZecretApp.action_lock.
+        Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def __init__(self) -> None:

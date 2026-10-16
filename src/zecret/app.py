@@ -47,6 +47,7 @@ from textual.widget import AwaitMount
 from zecret.config import DEFAULT_CONFIG_PATH, DEFAULT_THEME, Config
 from zecret.screens.base import UNSAVED_CHANGES, ZecretScreen
 from zecret.screens.confirm import Choice, ConfirmScreen
+from zecret.screens.editor import SAVED_AND_LOCKED
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import HelpScreen
 from zecret.screens.unlock import UnlockScreen
@@ -109,6 +110,10 @@ ACTIVITY = (
 LOCKED_BY_TIMEOUT = "Locked after a spell of quiet."
 LOCKED_BY_HAND = "Locked."
 
+#: Said when ctrl+l lands while the password is being changed, which it
+#: waits for.
+LOCK_WHEN_DONE = "Locking once the new password is saved."
+
 #: The answer to the unsaved-changes question that quits without losing
 #: anything. The editor's own wording for the same button says "go back",
 #: since that is where escape was heading; this one says where ctrl+q was.
@@ -170,6 +175,9 @@ class ZecretApp(App[None]):
         # config.py, because a diary that opened unreadable would be a
         # puzzle before it was a protection.
         self.masked = False
+        # A ctrl+l that arrived while a screen was working, waiting for it
+        # to finish -- see action_lock.
+        self.lock_pending = False
 
     def on_mount(self) -> None:
         """Apply the saved theme, then push UnlockScreen, which prompts to
@@ -349,6 +357,35 @@ class ZecretApp(App[None]):
         ]
         return all(saved)
 
+    def action_lock(self) -> None:
+        """ctrl+l from a screen that is not the editor: lock, saving first.
+
+        Bound on every screen the open diary reaches -- search, settings
+        and every popup -- because whether someone stepping away can find
+        the lock key is a security property, and search lays the whole
+        diary out in plain sight. (The list and the calendar have their
+        own; the editor has its own that saves the day it holds.)
+
+        Saves rather than asks, for the reason the editor's does: a lock
+        is pressed on the way out of the room. That matters here because a
+        popup can be sitting over an editor with writing in it -- the
+        question about unsaved changes, most likely. A save that fails
+        keeps the diary open: the editor has said why, and locking would
+        throw away what the save was keeping.
+
+        While the password is being changed it waits instead, and the
+        dialog locks once the change is over -- see PasswordScreen.rekey for
+        what locking part way through it did. A second or two, and said.
+        """
+        if self.is_working():
+            self.lock_pending = True
+            self.notify(LOCK_WHEN_DONE)
+            return
+        if not self.locking_would_lose_work():
+            self.lock()
+        elif self.save_unsaved_work():
+            self.lock(SAVED_AND_LOCKED)
+
     def lock_if_idle(self) -> None:
         """Lock the diary if it has been left alone long enough.
 
@@ -363,7 +400,9 @@ class ZecretApp(App[None]):
         has not set yet, and every test dies in App.__init__.
         """
         minutes = self.config.lock_after_minutes
-        if minutes <= 0 or not self.is_unlocked:
+        if minutes <= 0 or not self.is_unlocked or self.is_working():
+            # Working: the password is being changed. The next tick will
+            # find it done.
             return
         if self.locking_would_lose_work():
             # Half-written entry on the screen. Treat waiting on the writer
@@ -373,6 +412,12 @@ class ZecretApp(App[None]):
             return
         if self.last_activity.elapsed() >= minutes * 60:
             self.lock(LOCKED_BY_TIMEOUT)
+
+    def is_working(self) -> bool:
+        """Whether a screen on the stack must finish before a lock can land."""
+        return any(
+            isinstance(screen, ZecretScreen) and screen.working for screen in self.screen_stack
+        )
 
     def locking_would_lose_work(self) -> bool:
         """Whether any screen on the stack is holding something unsaved.
@@ -393,6 +438,7 @@ class ZecretApp(App[None]):
         """
         if not self.is_unlocked:
             return
+        self.lock_pending = False
         while len(self.screen_stack) > 1:
             self.pop_screen()
         self.diary = None

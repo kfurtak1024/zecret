@@ -24,6 +24,22 @@ file matters as much as that does.
 
 ### Fixed
 
+- **<kbd>ctrl</kbd>+<kbd>l</kbd> locks from every screen**, not just the
+  list, the calendar and the editor. Search, which lays the whole diary
+  out, and settings, help and every popup could only wait for the idle
+  timer. From a popup over a day you are writing it saves the day first,
+  as the editor does.
+- **Locking while the master password is being changed waits for the
+  change to finish**, then tells you whether it went through. Before,
+  the change carried on underneath the lock screen and left the new key
+  in memory behind it. <kbd>esc</kbd> waits too, rather than closing the
+  dialog part way through.
+- **Deleting a day says so**, naming the day, as saving and locking do.
+- **A new day stops being called "new" in the editor's title as soon as
+  it is saved**, rather than the next time it is opened.
+- **The password fields and the settings dropdowns are framed like every
+  other field**, in the same rounded border and the theme's accent colour
+  while you are in them, rather than Textual's own blue.
 - **Two Zecrets on one diary can no longer lose an entry while one of them
   is unlocking.** If the other one saved during the second or so it takes
   to open the diary, the one being unlocked took that save as its starting

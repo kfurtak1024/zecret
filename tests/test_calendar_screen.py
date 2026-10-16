@@ -16,7 +16,8 @@ Required coverage:
     - 'd' deletes the entry under the cursor after the list's own question
       (naming the day, focus on Cancel): from memory and from disk, with
       its mark taken off and the year's count lowered, and the list
-      landing on the nearest older day on the way back. Cancelling keeps
+      landing on the nearest older day on the way back, and a word to say
+      it went. Cancelling keeps
       it. On a day with nothing written it asks nothing and says so, and a
       deletion that fails to save leaves the day marked.
     - '[' and ']' move a year, and the header names the year on show and
@@ -271,7 +272,7 @@ async def test_d_asks_before_deleting_the_day_under_the_cursor(diary_path):
         assert set(app.diary.entries) == set(WRITTEN), "nothing deleted before the answer"
 
 
-async def test_a_confirmed_delete_unmarks_the_day_and_reaches_the_file(diary_path):
+async def test_a_confirmed_delete_unmarks_the_day_and_reaches_the_file(diary_path, notifications):
     seed(diary_path, *WRITTEN)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -289,6 +290,7 @@ async def test_a_confirmed_delete_unmarks_the_day_and_reaches_the_file(diary_pat
         assert "17•" not in year(app).months[2].render().plain
         assert "2 entries" in header_text(app)
         assert year(app).date == WRITTEN[1], "the cursor stays on the day"
+        assert f"Deleted the entry for {format_day(WRITTEN[1])}." in notifications(app)
 
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert set(reopened.entries) == {WRITTEN[0], WRITTEN[2]}

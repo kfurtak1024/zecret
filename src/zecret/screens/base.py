@@ -341,6 +341,14 @@ class ZecretScreen(Screen[None]):
         diary, _ = self.zecret.unlocked
         return frozenset(diary.entries)
 
+    #: Whether this screen is part way through something that must finish
+    #: before the diary can lock -- re-encrypting it under a new password,
+    #: which is the one thing that does. Unlike blocks_lock this is not
+    #: unsaved work to ask about: it is seconds long, and a lock asked for
+    #: meanwhile waits for it rather than being refused (see
+    #: ZecretApp.action_lock).
+    working = False
+
     @property
     def blocks_lock(self) -> bool:
         """Whether locking now would throw away something not yet saved.
@@ -367,12 +375,17 @@ class ZecretScreen(Screen[None]):
         return True
 
     def delete_day(self, date: dt.date) -> None:
-        """Remove the day's entry and save at once, or say why it was not.
+        """Remove the day's entry and save at once, and say which happened.
 
         The file still holds the entry if the save fails, and saving() puts
         it back in memory too, so the deletion is not shown as having
         stuck. Whatever the screen draws from the diary is its own to
         redraw afterwards, either way.
+
+        A deletion that worked is said too, as a save, a lock and a change
+        of password are: otherwise the only sign is a row closing up, or in
+        the calendar one small mark going out, and the day named is the
+        check that it was the one meant.
         """
         diary, key = self.zecret.unlocked
         try:
@@ -380,6 +393,8 @@ class ZecretScreen(Screen[None]):
                 diary.delete_entry(date)
         except (OSError, ZecretConflictError) as error:
             self.notify(save_error(error), severity="error", markup=False)
+            return
+        self.notify(f"Deleted the entry for {format_day(date)}.", markup=False)
 
 
 class FormScreen(ZecretScreen):

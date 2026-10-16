@@ -408,6 +408,15 @@ patch number, not a retry. This is why `check` and `verify` run first.
   ask and nothing to promise, so it waits instead. Quitting takes the
   third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
   about who can read this.
+  `ctrl+l` is bound on **every** screen once the diary is open -- search,
+  settings, help and each popup bind `app.lock` (`ZecretApp.action_lock`),
+  which saves whatever an editor underneath is holding before it locks,
+  as the editor's own does. The one thing a lock waits for is a screen
+  that is `working` (`ZecretScreen.working`): the password dialog while
+  it re-encrypts. Locking part way through let the re-key finish anyway
+  and hand its new key to an app that had just forgotten the old one, so
+  a lock asked for then sets `lock_pending`, says it is waiting, and the
+  dialog locks when it is done; the idle timer skips the tick.
 - **Idleness is measured on two clocks, and the longer wait wins.**
   `Instant` in `app.py` holds a reading of each. `time.monotonic()` is
   `CLOCK_MONOTONIC`, which does *not* advance while the machine is
@@ -770,8 +779,8 @@ patch number, not a retry. This is why `check` and `verify` run first.
   wider terminal the list's dead keys showed either side of it. It has
   its own bar now, and there is no exception.
 - **Every bar reads the same way.** This screen's own actions first, then
-  the way out, then `^l Lock`, `? Help` and `q Quit` wherever the diary is
-  open -- so Lock is always in the same place relative to the end of the
+  the way out, then `^l Lock` on every screen once the diary is open, and
+  `? Help` and `q Quit` on the two main views -- so Lock is always in the same place relative to the end of the
   bar, and the help popup, which lists keys in declaration order, reads
   the same way. Naming follows three rules: a full screen's way out is
   **Back**, a popup's is **Cancel** (it dismisses a question) or **Close**

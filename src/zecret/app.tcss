@@ -74,11 +74,30 @@ PasswordScreen {
 
 #unlock-box Input,
 #password-box Input,
-#settings-box Input,
 /* The gap under the theme picker is what separates the two sections of
    the settings screen; they need no rule of their own. */
 #settings-box Select {
     margin-bottom: 1;
+}
+
+/* Every field framed the way the search box, the date field and the page
+   you write on are: rounded, and $accent while you are in it. Textual's
+   own Input and Select frame themselves in a tall $border instead, which
+   in the dark themes is $primary -- so the password fields and the
+   dropdowns lit up blue on focus, the one place in the app where what you
+   were working in was not framed in $accent. A Select draws its frame on
+   the SelectCurrent inside it, which is why the dropdowns need a selector
+   of their own. */
+#unlock-box Input,
+#password-box Input,
+#settings-box Select > SelectCurrent {
+    border: round $border-blurred;
+}
+
+#unlock-box Input:focus,
+#password-box Input:focus,
+#settings-box Select:focus > SelectCurrent {
+    border: round $accent;
 }
 
 /* The password dialog, at the width the confirm modal uses rather than
@@ -846,6 +865,10 @@ YearCalendar:focus:light > MonthGrid > .month-calendar--cursor {
 #help-box:light,
 #date-box:light,
 #query:focus:light,
+#date-box MaskedInput:focus:light,
+#unlock-box Input:focus:light,
+#password-box Input:focus:light,
+#settings-box Select:focus:light > SelectCurrent,
 #editor-box #body:focus:light {
     border: round $border;
 }

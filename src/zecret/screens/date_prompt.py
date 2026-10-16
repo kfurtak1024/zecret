@@ -112,6 +112,9 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", show=True),
+        # The same chord as everywhere the diary is open -- see
+        # ZecretApp.action_lock.
+        Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def __init__(

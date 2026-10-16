@@ -37,6 +37,7 @@ all -- see the note in base.py, and DatePromptScreen, which is one.
 from __future__ import annotations
 
 import asyncio
+from enum import Enum, auto
 from typing import ClassVar
 
 from textual.app import ComposeResult
@@ -53,6 +54,26 @@ WRONG_CURRENT = "That is not your current password."
 EMPTY_NEW = "Choose a new password."
 MISMATCH = "The new passwords do not match."
 CHANGED = "Master password changed."
+NOT_CHANGED = "Your password was not changed."
+
+
+class Outcome(Enum):
+    """How a change of password ended: in a new password, or in none."""
+
+    CHANGED = auto()
+    #: The current password was wrong. Said on the error row.
+    REFUSED = auto()
+    #: The re-keyed diary could not be saved. Said on the error row, and
+    #: in a notification by whoever is left to say it.
+    FAILED = auto()
+
+
+#: What a lock that waited for the change says, by how the change ended.
+LOCKED_AFTER = {
+    Outcome.CHANGED: "Master password changed, and locked.",
+    Outcome.REFUSED: "Locked. Your password was not changed.",
+    Outcome.FAILED: "Locked. Your password was not changed.",
+}
 
 
 class PasswordScreen(ModalScreen[None], FormScreen):
@@ -62,6 +83,9 @@ class PasswordScreen(ModalScreen[None], FormScreen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", show=True),
+        # The same chord as everywhere the diary is open -- see
+        # ZecretApp.action_lock.
+        Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -116,7 +140,6 @@ class PasswordScreen(ModalScreen[None], FormScreen):
 
     async def change_password(self) -> None:
         current, new, confirm = (self.value_of(f) for f in ("current", "new", "confirm"))
-        diary, key = self.zecret.unlocked
 
         # Every failure here clears the fields, as on the unlock screen: a
         # rejected attempt should not leave a password sitting in a widget
@@ -131,13 +154,56 @@ class PasswordScreen(ModalScreen[None], FormScreen):
             self.clear_inputs()
             return
 
-        # Argon2id, off the event loop -- once to check the old password and
-        # again inside change_password() to derive the new key, which it
-        # then saves under.
+        self.working = True
+        inputs = list(self.query(Input))
+        for widget in inputs:
+            widget.disabled = True
+        try:
+            outcome = await self.rekey(current, new)
+        finally:
+            self.working = False
+            for widget in inputs:
+                widget.disabled = False
+        if not self.zecret.is_unlocked:
+            # Locked anyway, by a road that did not wait. Say what became of
+            # the password over the lock screen, which now wants the new one.
+            if outcome is Outcome.CHANGED:
+                self.notify(CHANGED)
+            return
+        if self.zecret.lock_pending:
+            # ctrl+l was pressed while this ran, and has waited for it. One
+            # message for both, since locking clears whatever was said.
+            self.zecret.lock_pending = False
+            self.zecret.lock(LOCKED_AFTER[outcome])
+            return
+        if outcome is Outcome.CHANGED:
+            # Said before leaving and outliving the dialog: a notification
+            # belongs to the app, so this one is still there to be read
+            # over the settings screen underneath.
+            self.notify(CHANGED)
+            self.dismiss()
+            return
+        if outcome is Outcome.FAILED:
+            self.notify(NOT_CHANGED, severity="error")
+        self.query_one("#current", Input).focus()
+
+    async def rekey(self, current: str, new: str) -> Outcome:
+        """Check the current password, then re-key the diary under the new one.
+
+        Argon2id, off the event loop -- once to check the old password and
+        again inside change_password() to derive the new key, which it then
+        saves under. Run with self.working set, which holds ctrl+l and the
+        idle timer off until this returns. A lock that landed part way
+        through used to let this carry on regardless and hand the new key
+        to an app that had just forgotten its old one -- a key left in
+        memory behind the lock screen. The check before handing it over
+        stays, for any lock that does not go through action_lock.
+        """
+        diary, key = self.zecret.unlocked
         if not await asyncio.to_thread(diary.verify_password, current, key):
             self.set_error(WRONG_CURRENT)
             self.clear_inputs()
-            return
+            return Outcome.REFUSED
 
         self.set_error("")
         try:
@@ -146,16 +212,12 @@ class PasswordScreen(ModalScreen[None], FormScreen):
             # change_password() has put the old KDF params back, so memory
             # and disk agree again; app.key is still the old key.
             self.set_error(save_error(error))
-            self.notify("Your password was not changed.", severity="error")
-            return
+            return Outcome.FAILED
 
-        self.zecret.key = new_key
+        if self.zecret.is_unlocked:
+            self.zecret.key = new_key
         self.clear_inputs()
-        # Said before leaving and outliving the dialog: a notification
-        # belongs to the app, so this one is still there to be read over
-        # the settings screen underneath.
-        self.notify(CHANGED)
-        self.dismiss()
+        return Outcome.CHANGED
 
     def action_cancel(self) -> None:
         """Escape closes the dialog, changing nothing.
@@ -163,5 +225,9 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         The fields go with it -- the screen is discarded on dismissal --
         so a password typed here and thought better of does not sit in a
         widget behind the settings form.
+
+        Not while the diary is being re-encrypted: closing the dialog then
+        would not stop the change, only the telling of it -- see rekey.
         """
-        self.dismiss()
+        if not self.working:
+            self.dismiss()

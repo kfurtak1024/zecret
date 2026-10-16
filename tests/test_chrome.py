@@ -17,8 +17,9 @@ Required coverage:
       box covered the bar, which on a terminal wider than the box it did
       not.
     - Every bar reads the same way: this screen's own keys, the way out,
-      then Lock -- followed by Help and Quit on the two main views. And one
-      action has one name: opening a day in the editor is "Edit" on the
+      then Lock -- followed by Help and Quit on the two main views. Lock is
+      on every bar once the diary is open, search, settings and the popups
+      included. And one action has one name: opening a day in the editor is "Edit" on the
       list and in the calendar alike.
     - The answers to a question are all one width, and every label fits
       the width it is given -- the buttons are sized in app.tcss rather
@@ -39,6 +40,9 @@ Required coverage:
     - Taking focus does not resize one. The frame is painted over the
       button's edge rather than carved out of its inside, so the answer
       you are about to press is exactly the size of the two beside it.
+    - Every field is framed the same way: rounded, and in $accent while it
+      has focus. The password fields and the settings dropdowns wore
+      Textual's own tall frame in $primary, which lit up blue on focus.
     - Text lines up down the left edge of every screen. The gutter in
       app.tcss lines the borders up; what a reader follows is where the
       text starts, and Input and TextArea pad their insides by different
@@ -57,10 +61,15 @@ from textual.widgets import Button, Footer, Input, TextArea
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.calendar_view import CalendarScreen
+from zecret.screens.confirm import ConfirmScreen
+from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.header import DiaryHeader
-from zecret.screens.help import documented_bindings
+from zecret.screens.help import HelpScreen, documented_bindings
+from zecret.screens.password import PasswordScreen
+from zecret.screens.search import SearchScreen
+from zecret.screens.settings import SettingsScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -586,6 +595,11 @@ def test_every_bar_ends_the_same_way():
     assert advertised(CalendarScreen)[-3:] == ["Lock", "Help", "Quit"]
     assert advertised(EditorScreen)[-2:] == ["Back", "Lock"]
     assert advertised(CalendarScreen)[-4] == "List", "the way out comes just before Lock"
+    assert advertised(SearchScreen)[-2:] == ["Back", "Lock"]
+    assert advertised(SettingsScreen)[-2:] == ["Back", "Lock"]
+    assert advertised(HelpScreen)[-2:] == ["Close", "Lock"]
+    for popup in (ConfirmScreen, DatePromptScreen, PasswordScreen):
+        assert advertised(popup)[-2:] == ["Cancel", "Lock"], popup.__name__
 
 
 def test_opening_a_day_has_one_name():
@@ -595,3 +609,54 @@ def test_opening_a_day_has_one_name():
     assert (
         name(EntryListScreen, "enter") == name(CalendarScreen, "e") == name(CalendarScreen, "enter")
     )
+
+
+# --- how a field is framed ---------------------------------------------------
+
+
+def frame(widget) -> tuple[str, str]:
+    """The kind and colour of a widget's top border."""
+    kind, color = widget.styles.border_top
+    return kind, color.hex
+
+
+async def frames_of(app: ZecretApp, pilot, widget) -> tuple[tuple[str, str], tuple[str, str]]:
+    """How `widget` is framed without focus, and then with it."""
+    app.screen.set_focus(None)
+    await pilot.pause()
+    blurred = frame(widget)
+    widget.focus()
+    await pilot.pause()
+    return blurred, frame(widget)
+
+
+@pytest.mark.parametrize("theme", ["textual-dark", "textual-light"])
+async def test_every_field_is_framed_like_the_search_box(diary_path, theme):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        app.theme = theme
+        await pilot.pause()
+        unlocking = await frames_of(app, pilot, app.screen.query_one("#password", Input))
+        await unlock(pilot)
+        await pilot.press("slash")
+        await pilot.pause()
+        search = await frames_of(app, pilot, app.screen.query_one("#query", Input))
+        await pilot.press("escape", "s")
+        await pilot.pause()
+        picker = app.screen.query_one("#theme")
+        current = picker.query_one("SelectCurrent")
+        app.screen.set_focus(None)
+        await pilot.pause()
+        picker_blurred = frame(current)
+        picker.focus()
+        await pilot.pause()
+        picker_focused = frame(current)
+        app.push_screen(PasswordScreen())
+        await pilot.pause()
+        dialog = await frames_of(app, pilot, app.screen.query_one("#new", Input))
+
+        assert search[0][0] == search[1][0] == "round"
+        assert search[0] != search[1], "focus should show"
+        assert unlocking == search, "the lock screen's password field"
+        assert dialog == search, "the password dialog's fields"
+        assert (picker_blurred, picker_focused) == search, "the settings dropdowns"

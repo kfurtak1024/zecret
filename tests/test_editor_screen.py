@@ -4,6 +4,8 @@ Required coverage:
     - 'n' from the list opens today: empty if the day is unwritten,
       prefilled if it is not -- never a second entry for the same day.
     - Enter opens the selected day prefilled.
+    - The header names the day, and calls it new until its first save --
+      not until it is next opened.
     - Saving a new entry persists it to disk under its date and shows it
       in the list once you go back.
     - Saving does not leave: the text, the cursor and the screen all stay
@@ -210,6 +212,21 @@ async def test_the_header_names_the_day_being_written(diary_path):
         await pilot.press("enter")
         await pilot.pause()
         assert app.screen.sub_title == format_day_long(LAST_WEEK)
+
+
+async def test_a_new_day_stops_being_called_new_once_saved(diary_path):
+    """The header said "— new" until the day was opened again."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        assert app.screen.sub_title == f"{format_day_long(TODAY)} — new"
+        app.screen.query_one("#body", TextArea).text = "First words."
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.screen.sub_title == format_day_long(TODAY)
 
 
 async def test_the_text_is_focused_so_writing_can_start_immediately(diary_path):

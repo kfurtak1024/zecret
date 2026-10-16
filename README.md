@@ -253,7 +253,7 @@ so what you save is what you wrote.
 | <kbd>e</kbd> | calendar | Write the day under the cursor (<kbd>enter</kbd> too) |
 | <kbd>[</kbd> / <kbd>]</kbd> | calendar | The same day a year earlier / later |
 | <kbd>c</kbd> | calendar | Back to the list |
-| <kbd>ctrl</kbd>+<kbd>l</kbd> | entry list, calendar, editor | Lock the diary without quitting (saves the day you are writing) |
+| <kbd>ctrl</kbd>+<kbd>l</kbd> | everywhere once unlocked | Lock the diary without quitting (saves the day you are writing) |
 | <kbd>?</kbd> | entry list, calendar | Help — every key, on one page |
 | <kbd>q</kbd> | entry list, calendar | Quit |
 | <kbd>ctrl</kbd>+<kbd>s</kbd> | editor | Save, and carry on writing |

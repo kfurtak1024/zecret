@@ -11,6 +11,17 @@ Required coverage:
       of the room neither loses the writing nor leaves a question on the
       screen with the diary open behind it. An untouched editor just locks;
       one that cannot save stays put with the reason.
+    - ctrl+l locks from every screen the open diary reaches -- search,
+      settings, help and every popup -- and every one of them says so in
+      its key bar. Search lays the diary out in plain sight, and could
+      once only be left to the idle timer. From a popup over a half-written
+      day it saves the day first, as the editor's own does, and stays put
+      if that save fails.
+    - A lock asked for while the password dialog is re-encrypting waits
+      for it, then says how it ended: the change carried on in its thread
+      when the dialog was torn down, so a lock part way through changed the
+      password on disk and said only "Locked.". Escape and the idle timer
+      wait for it too.
     - Unlocking again works, and comes back to the entry list.
     - The idle timer locks once the wait has passed, and does not before.
     - **A suspended machine counts as being away.** CLOCK_MONOTONIC does
@@ -44,7 +55,9 @@ would be no more convincing and considerably less welcome.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import threading
 import time
 from pathlib import Path
 
@@ -53,11 +66,17 @@ from textual import events
 from textual.widgets import Input, TextArea
 
 import zecret.app
-from zecret.app import Instant, ZecretApp
+from zecret.app import LOCK_WHEN_DONE, Instant, ZecretApp
 from zecret.models import Entry
+from zecret.screens.calendar_view import CalendarScreen
+from zecret.screens.confirm import ConfirmScreen
+from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
+from zecret.screens.help import HelpScreen
+from zecret.screens.password import PasswordScreen
 from zecret.screens.search import SearchScreen
+from zecret.screens.settings import SettingsScreen
 from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
@@ -232,6 +251,268 @@ async def test_a_save_that_fails_locks_nothing(diary_path, monkeypatch):
 
 
 # --- locking by hand -------------------------------------------------------
+
+#: Every screen the open diary reaches. The lock screen is the one left out,
+#: having nothing to lock.
+UNLOCKED_SCREENS = [
+    EntryListScreen,
+    CalendarScreen,
+    EditorScreen,
+    SearchScreen,
+    SettingsScreen,
+    PasswordScreen,
+    HelpScreen,
+    DatePromptScreen,
+    ConfirmScreen,
+]
+
+
+@pytest.mark.parametrize("screen", UNLOCKED_SCREENS, ids=lambda screen: screen.__name__)
+def test_every_open_screen_advertises_the_lock(screen):
+    """Finding the key is the security property, so it is on every bar."""
+    assert any(binding.key == "ctrl+l" and binding.show for binding in screen.BINDINGS), (
+        f"{screen.__name__} has no ctrl+l in its key bar"
+    )
+
+
+#: How to reach each screen from the list, by key where there is one.
+REACHED_BY = {
+    "search": (SearchScreen, ["slash"]),
+    "settings": (SettingsScreen, ["s"]),
+    "help": (HelpScreen, ["question_mark"]),
+    "another day": (DatePromptScreen, ["a"]),
+    "delete question": (ConfirmScreen, ["d"]),
+}
+
+
+@pytest.mark.parametrize("where", REACHED_BY)
+async def test_ctrl_l_locks_from_every_screen(diary_path, where):
+    expected, keys = REACHED_BY[where]
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        for key in keys:
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+        assert isinstance(app.screen, expected)
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, UnlockScreen)
+        assert app.diary is None
+        assert app.key is None
+        assert len(app.screen_stack) == 2, "nothing left above the lock screen"
+
+
+async def test_ctrl_l_locks_from_the_password_dialog(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("s")
+        await pilot.pause()
+        app.push_screen(PasswordScreen())
+        await pilot.pause()
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, UnlockScreen)
+        assert not app.is_unlocked
+
+
+async def test_ctrl_l_from_the_unsaved_question_saves_and_locks(diary_path):
+    """The question about unsaved writing is a popup over the editor, and a
+    lock pressed there is still someone leaving the room."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "Keep this."
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, UnlockScreen)
+        assert not app.is_unlocked
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entries[TODAY].body == "Keep this."
+
+
+async def test_a_failed_save_under_a_popup_locks_nothing(diary_path, monkeypatch):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#body", TextArea).text = "Do not lose this."
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(DiaryFile, "save", boom)
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert app.is_unlocked, "must not have locked"
+        editors = [screen for screen in app.screen_stack if isinstance(screen, EditorScreen)]
+        assert editors[0].query_one("#body", TextArea).text == "Do not lose this."
+
+
+class SlowRekey:
+    """A re-key held part way through until the test lets it go.
+
+    It runs in a thread for as long as Argon2id and a save take, which is
+    the window a lock can land in.
+    """
+
+    def __init__(self, monkeypatch, *, fail: bool = False) -> None:
+        self.release = threading.Event()
+        real = DiaryFile.change_password
+
+        def slow(diary, new_password):
+            self.release.wait(timeout=10)
+            if fail:
+                raise OSError(28, "No space left on device")
+            return real(diary, new_password)
+
+        monkeypatch.setattr(DiaryFile, "change_password", slow)
+
+    async def start(self, app: ZecretApp, pilot) -> None:
+        """Open the dialog over settings, fill it in, and submit it."""
+        await pilot.press("s")
+        await pilot.pause()
+        app.push_screen(PasswordScreen())
+        await pilot.pause()
+        for field, value in (("current", PASSWORD), ("new", "new one"), ("confirm", "new one")):
+            app.screen.query_one(f"#{field}", Input).value = value
+        # Posted rather than pressed: Pilot waits for a key to be handled,
+        # and this one is not handled until the re-key is let go.
+        confirm = app.screen.query_one("#confirm", Input)
+        confirm.post_message(Input.Submitted(confirm, confirm.value))
+        await settle(lambda: app.is_working())
+        assert app.screen.working, "the re-key should be under way"
+
+    async def finish(self, app: ZecretApp, pilot) -> None:
+        self.release.set()
+        await settle(lambda: not app.is_working())
+        await pilot.pause()
+        await pilot.pause()
+
+
+async def settle(condition) -> None:
+    """Wait, without Pilot, for something a busy screen will get round to.
+
+    Pilot's pauses wait for the screen to finish what it is handling, which
+    while the re-key is held is forever -- or until the hold times out.
+    """
+    for _ in range(100):
+        if condition():
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("never happened")
+
+
+async def test_a_lock_during_the_re_key_waits_for_it(diary_path, monkeypatch, notifications):
+    """Locking part way through used to tear the dialog down while the
+    thread went on to save: the password changed on disk, the only word
+    was "Locked.", and the old password -- the one anyone would try -- was
+    refused."""
+    rekey = SlowRekey(monkeypatch)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await rekey.start(app, pilot)
+
+        # The action ctrl+l is bound to here (see the bar test above),
+        # called rather than pressed for the reason start() posts.
+        app.action_lock()
+        await asyncio.sleep(0.05)
+        assert app.is_unlocked, "not until the change is over"
+        assert LOCK_WHEN_DONE in notifications(app)
+
+        await rekey.finish(app, pilot)
+        assert isinstance(app.screen, UnlockScreen)
+        assert app.key is None
+        assert notifications(app) == ["Master password changed, and locked."]
+
+    DiaryFile.unlock(diary_path, "new one")
+
+
+async def test_a_lock_that_does_not_wait_leaves_no_key_behind(
+    diary_path, monkeypatch, notifications
+):
+    """Every lock Zecret makes goes through action_lock or the idle check,
+    and both wait. This is the dialog's own guard, for one that does not:
+    the re-key used to finish regardless and hand its new key to an app
+    that had just forgotten the old one."""
+    rekey = SlowRekey(monkeypatch)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await rekey.start(app, pilot)
+        app.lock()
+        await rekey.finish(app, pilot)
+        assert isinstance(app.screen, UnlockScreen)
+        assert app.key is None, "the new key must not outlive the lock"
+        assert "Master password changed." in notifications(app)
+
+    DiaryFile.unlock(diary_path, "new one")
+
+
+async def test_a_lock_after_a_failed_re_key_says_nothing_changed(
+    diary_path, monkeypatch, notifications
+):
+    rekey = SlowRekey(monkeypatch, fail=True)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await rekey.start(app, pilot)
+        app.action_lock()
+        await rekey.finish(app, pilot)
+        assert isinstance(app.screen, UnlockScreen)
+        assert notifications(app) == ["Locked. Your password was not changed."]
+
+    DiaryFile.unlock(diary_path, PASSWORD)
+
+
+async def test_escape_and_the_idle_timer_wait_for_the_re_key(diary_path, monkeypatch):
+    rekey = SlowRekey(monkeypatch)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+        await rekey.start(app, pilot)
+
+        app.screen.action_cancel()
+        await asyncio.sleep(0.05)
+        assert isinstance(app.screen, PasswordScreen), "escape must not cut it short"
+        go_quiet(app, 60)
+        app.lock_if_idle()
+        await asyncio.sleep(0.05)
+        assert app.is_unlocked, "nor may the timer"
+
+        await rekey.finish(app, pilot)
+        assert isinstance(app.screen, SettingsScreen), "and then it closes as usual"
+        assert app.is_unlocked
+        go_quiet(app, 60)
+        app.lock_if_idle()
+        await pilot.pause()
+        assert not app.is_unlocked, "the next tick locks"
+
+    DiaryFile.unlock(diary_path, "new one")
 
 
 async def test_ctrl_l_locks_the_diary(diary_path):

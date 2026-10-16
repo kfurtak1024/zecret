@@ -759,12 +759,21 @@ class EditorScreen(FormScreen):
         yield DiaryFooter()
 
     def on_mount(self) -> None:
-        day = format_day_long(self.date)
-        self.sub_title = f"{day} — new" if self.creating else day
+        self.show_title()
         # The mask belongs to the session, not to the day: someone writing
         # in a carriage covers the screen once, not once per entry.
         self.body.masked = self.zecret.masked
         self.body.focus()
+
+    def show_title(self) -> None:
+        """Name the day in the header, and say if it is not written yet.
+
+        Asked again after every save, because the first one is what makes
+        a new day written: the header went on calling it new until the
+        day was opened again.
+        """
+        day = format_day_long(self.date)
+        self.sub_title = f"{day} — new" if self.creating else day
 
     # --- current state -----------------------------------------------------
 
@@ -862,6 +871,7 @@ class EditorScreen(FormScreen):
 
         # Now the edit is the day's entry, so leaving is no longer "unsaved".
         self.entry = entry
+        self.show_title()
         return True
 
     def action_toggle_mask(self) -> None:
