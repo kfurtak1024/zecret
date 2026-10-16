@@ -10,7 +10,9 @@ Required coverage:
     - Creating a diary writes the file and leaves app.diary/app.key set.
     - Mismatched or empty passwords are refused without creating a file.
     - Enter in the password field moves on to the confirmation while that
-      is empty, rather than failing as a mismatch and clearing both.
+      is empty, rather than failing as a mismatch and clearing both. The
+      confirmation's placeholder says Enter is how the form finishes,
+      since there is no button to, and fits its field unclipped at 80x24.
     - The correct password unlocks and exposes the decrypted entries.
     - A wrong password shows an inline error, leaves app.diary as None, and
       does not leak whether the file was wrong-password vs. corrupted.
@@ -41,7 +43,7 @@ from textual.widgets import Input, Label
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
-from zecret.screens.unlock import UNLOCK_FAILED, UnlockScreen
+from zecret.screens.unlock import CONFIRM_HINT, UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
 from zecret.strength import FILLED, HOLLOW
 
@@ -160,6 +162,16 @@ async def test_ctrl_q_quits_from_the_lock_screen(diary_path):
 
 
 # --- creating a diary ------------------------------------------------------
+
+
+async def test_the_confirmation_says_enter_finishes_the_form(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        field = app.screen.query_one("#confirm", Input)
+        assert field.placeholder == CONFIRM_HINT
+        assert "Enter" in CONFIRM_HINT
+        assert field.content_region.width >= len(CONFIRM_HINT), "cut off"
 
 
 async def test_create_writes_the_file_and_unlocks_the_session(diary_path):

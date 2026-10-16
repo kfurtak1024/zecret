@@ -42,6 +42,9 @@ file matters as much as that does.
   for a couple of seconds in silence. A change that could not be saved
   now empties the fields, as every other refusal already did, and any
   refusal puts you back in the first field to start again.
+- **The password forms say how they finish.** The last field, when
+  creating a diary and when changing its password, now reads "…then
+  press Enter", since neither form has a button to say it.
 - **Deleting a day says so**, naming the day, as saving and locking do.
 - **A new day stops being called "new" in the editor's title as soon as
   it is saved**, rather than the next time it is opened.

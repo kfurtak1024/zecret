@@ -54,6 +54,10 @@ WRONG_CURRENT = "That is not your current password."
 EMPTY_NEW = "Choose a new password."
 MISMATCH = "The new passwords do not match."
 CHANGED = "Master password changed."
+
+#: The last field's placeholder, which is also how the form says it is
+#: submitted -- see compose.
+CONFIRM_HINT = "Confirm new password, then press Enter"
 NOT_CHANGED = "Your password was not changed."
 
 #: Said on the error row while the fields are greyed out, so a second or
@@ -115,7 +119,11 @@ class PasswordScreen(ModalScreen[None], FormScreen):
             yield Label(NO_RECOVERY, classes="caution")
             yield Input(placeholder="Current password", password=True, id="current")
             yield Input(placeholder="New password", password=True, id="new")
-            yield Input(placeholder="Confirm new password", password=True, id="confirm")
+            # The one place the dialog says how it finishes. It has no
+            # button, because a button's three rows are what would push the
+            # warning above off a 24-row terminal -- and Enter is the
+            # answer, but nothing else on the screen says so.
+            yield Input(placeholder=CONFIRM_HINT, password=True, id="confirm")
             yield Label("", id="password-error")
         # The screen underneath keeps rendering its own bar, and every key
         # on it is dead while this dialog has focus. See CLAUDE.md.

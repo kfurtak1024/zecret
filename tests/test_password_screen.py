@@ -15,6 +15,9 @@ Required coverage:
     - app.key is updated, so the session keeps working afterwards.
     - A wrong current password is refused and changes nothing.
     - An empty or mismatched new password is refused.
+    - The confirmation's placeholder says Enter is how the change is made,
+      since the dialog has no button, and fits its field unclipped at
+      80x24.
     - Enter in a filled field moves on to the next empty one rather than
       submitting the change half-typed and clearing every field -- an
       empty field before it included, for a form filled out of order.
@@ -45,6 +48,7 @@ from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
 from zecret.screens.password import (
     CHANGED,
+    CONFIRM_HINT,
     EMPTY_NEW,
     MISMATCH,
     WRONG_CURRENT,
@@ -232,6 +236,17 @@ async def test_change_uses_a_fresh_salt(diary_path):
 
 
 # --- refusals --------------------------------------------------------------
+
+
+async def test_the_confirmation_says_enter_makes_the_change(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        field = app.screen.query_one("#confirm", Input)
+        assert field.placeholder == CONFIRM_HINT
+        assert "Enter" in CONFIRM_HINT
+        assert field.content_region.width >= len(CONFIRM_HINT), "cut off"
 
 
 async def test_wrong_current_password_is_refused(diary_path):

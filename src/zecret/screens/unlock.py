@@ -44,6 +44,9 @@ from zecret.storage import DiaryFile
 # real, intact diary.
 UNLOCK_FAILED = "Incorrect password."
 
+#: The confirmation field's placeholder when creating a diary.
+CONFIRM_HINT = "Confirm password, then press Enter"
+
 
 class UnlockScreen(FormScreen):
     """Prompts for the master password and unlocks (or creates) the diary."""
@@ -97,7 +100,9 @@ class UnlockScreen(FormScreen):
                 yield Label("Unlock your diary", id="unlock-title")
             yield Input(placeholder="Master password", password=True, id="password")
             if self.creating:
-                yield Input(placeholder="Confirm password", password=True, id="confirm")
+                # Says how the form finishes, as the password dialog's does:
+                # neither has a button to say it for them.
+                yield Input(placeholder=CONFIRM_HINT, password=True, id="confirm")
             yield Label("", id="unlock-error")
         yield DiaryFooter()
 
