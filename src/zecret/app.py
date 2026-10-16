@@ -41,6 +41,7 @@ from typing import Literal, NamedTuple, Self, overload
 
 from textual import events
 from textual.app import App
+from textual.await_complete import AwaitComplete
 from textual.screen import Screen, ScreenResultCallbackType, ScreenResultType
 from textual.widget import AwaitMount
 
@@ -182,6 +183,9 @@ class ZecretApp(App[None]):
         # waiting for it to finish -- see action_lock and action_quit.
         self.lock_pending = False
         self.quit_pending = False
+        # When a screen was last popped, which decides what a notification
+        # has already been carried across -- see pop_screen.
+        self.last_pop: float | None = None
 
     def on_mount(self) -> None:
         """Apply the saved theme, then push UnlockScreen, which prompts to
@@ -281,6 +285,30 @@ class ZecretApp(App[None]):
         if wait_for_dismiss:  # pragma: no cover
             return super().push_screen(screen, callback, True, mode=mode)
         return super().push_screen(screen, callback, False, mode=mode)
+
+    def pop_screen(self) -> AwaitComplete:
+        """Pop a screen, carrying what was just said across -- once.
+
+        Popping keeps the notifications, which is how "Saved." reaches the
+        list the editor returns to. But Textual draws every live one afresh
+        on whichever screen comes into view, so a message carried across
+        one pop was carried across the next as well: "Master password
+        changed." came up over the settings screen the dialog closed onto,
+        and again over the list when settings was left a moment later.
+
+        So a notification crosses one pop and no more: whatever was raised
+        before the last pop has been carried already, and goes now. Judged
+        by when it was raised rather than by whether it was there at that
+        pop, because notify() only posts a message -- the dialog's "changed"
+        is raised a moment before it dismisses, and is not among the app's
+        notifications yet when that pop happens.
+        """
+        if self.last_pop is not None:
+            for notification in list(self._notifications):
+                if notification.raised_at < self.last_pop:
+                    self._unnotify(notification, refresh=False)
+        self.last_pop = time.time()
+        return super().pop_screen()
 
     def _on_unlocked(self, _result: None) -> None:
         """Called once UnlockScreen dismisses, i.e. the diary is open."""

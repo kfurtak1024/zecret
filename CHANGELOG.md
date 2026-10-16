@@ -46,6 +46,10 @@ file matters as much as that does.
   creating a diary and when changing its password, now reads "…then
   press Enter", since neither form has a button to say it.
 - **Deleting a day says so**, naming the day, as saving and locking do.
+- **A message is shown once.** "Master password changed." came up again
+  over the list when you left settings, as though something else had
+  happened. A message now follows you onto the screen you land on, and no
+  further.
 - **A new day stops being called "new" in the editor's title as soon as
   it is saved**, rather than the next time it is opened.
 - **Two Zecrets on one diary can no longer lose an entry while one of them

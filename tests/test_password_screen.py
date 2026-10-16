@@ -13,6 +13,9 @@ Required coverage:
       diary: the new password opens it, the old one no longer does, and
       the file gets a fresh salt.
     - app.key is updated, so the session keeps working afterwards.
+    - The change is said over the settings screen the dialog closes onto,
+      and not again over the list when settings is left: a notification
+      crosses one pop and no more.
     - A wrong current password is refused and changes nothing.
     - An empty or mismatched new password is refused.
     - The confirmation's placeholder says Enter is how the change is made,
@@ -192,6 +195,24 @@ async def test_the_change_is_said_over_the_screen_it_returns_to(diary_path, noti
         await open_dialog(pilot)
         await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
         assert CHANGED in notifications(app)
+
+
+async def test_the_change_is_said_once_and_not_again_on_leaving_settings(diary_path, notifications):
+    """It is carried across the dialog closing, which is the point -- and
+    used to be carried across settings closing too, coming up a second time
+    over the list as if something else had just happened."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
+        assert isinstance(app.screen, SettingsScreen)
+        assert CHANGED in notifications(app)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert notifications(app) == [], "already said, over the screen it closed onto"
 
 
 async def test_change_updates_the_session_key(diary_path):

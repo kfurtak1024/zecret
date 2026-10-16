@@ -748,7 +748,13 @@ patch number, not a retry. This is why `check` and `verify` run first.
   and that asymmetry is the rule: **pushing** is starting something new,
   so what was said about the last thing is finished; **popping** is the
   end of the thing being spoken about, which is how "Saved." reaches the
-  list the editor returns to. Anything that pushes a screen and then
+  list the editor returns to. But only **one** pop:
+  `ZecretApp.pop_screen` drops whatever was raised before the previous
+  pop, so a message is carried onto the screen you land on and no
+  further — "Master password changed." used to come up over settings and
+  then again over the list. It goes by `raised_at`, because `notify()`
+  only posts a message and a toast raised just before `dismiss()` is not
+  stored yet when that pop happens. Anything that pushes a screen and then
   notifies must do it in that order — see `lock()`.
 - **A card is built with `card()`, which keeps it off the tab ring.**
   Textual makes a scrollable container focusable so it can be scrolled
