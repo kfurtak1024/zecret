@@ -36,9 +36,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal, NamedTuple, Self, overload
 
+import rich
+from rich.traceback import Traceback
 from textual import events
 from textual.app import App
 from textual.await_complete import AwaitComplete
@@ -302,13 +305,46 @@ class ZecretApp(App[None]):
         pop, because notify() only posts a message -- the dialog's "changed"
         is raised a moment before it dismisses, and is not among the app's
         notifications yet when that pop happens.
+
+        Two of Textual's internals, because it has no public way to drop
+        one notification: clear_notifications() takes the one being carried
+        too, and re-raising that one races the Notify message still on its
+        way, which would show it twice. Guarded, because this is tidying
+        and a screen change is not: should a Textual release rename them,
+        a message is carried one pop too far again rather than every pop
+        raising. The tests that count what is said fail then, which is
+        where it should be noticed -- not on someone's diary.
         """
         if self.last_pop is not None:
-            for notification in list(self._notifications):
-                if notification.raised_at < self.last_pop:
-                    self._unnotify(notification, refresh=False)
+            with suppress(AttributeError):
+                for notification in list(self._notifications):
+                    if notification.raised_at < self.last_pop:
+                        self._unnotify(notification, refresh=False)
         self.last_pop = time.time()
         return super().pop_screen()
+
+    def _fatal_error(self) -> None:
+        """Leave a crash's traceback behind -- without the local variables.
+
+        Textual prints an unhandled exception with show_locals=True, after
+        the app has left the alternate screen, so it stays in the
+        terminal's scrollback. In this app the locals are the secrets: the
+        password being unlocked with, the day's text being saved, the key.
+        A bug anywhere -- in Zecret or in Textual -- printed up to eighty
+        characters of each, to a terminal that may be logging. Requirement
+        4 is that no plaintext touches disk, and a scrollback file is disk.
+
+        The frames and the line numbers are still there, which is what a
+        bug report needs; the values are what nobody should be shown.
+
+        An override of a private method, which is the one internal this
+        needs: Textual offers no public setting for how a crash is drawn.
+        What it does with the traceback goes through the public panic().
+        If Textual ever renames this method, the override stops being
+        called and the locals come back -- tests/test_crash.py fails then.
+        """
+        self.bell()
+        self.panic(Traceback(show_locals=False, width=None, suppress=[rich]))
 
     def _on_unlocked(self, _result: None) -> None:
         """Called once UnlockScreen dismisses, i.e. the diary is open."""

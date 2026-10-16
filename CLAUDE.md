@@ -47,7 +47,13 @@ update this file to match.
 
 Dependency floors track current releases rather than the oldest version
 that happens to work; `cryptography` in particular should not be allowed to
-drift onto an unpatched release. Dev-only tools live in the PEP 735
+drift onto an unpatched release. Textual alone has a ceiling as well,
+below its next major: `ZecretApp` overrides `_fatal_error` and reaches
+`_notifications` / `_unnotify` in `pop_screen`, because Textual offers no
+public way to do either, and the editor depends on the order TextArea
+paints in. Don't add a third internal where a public hook will do --
+`notify_style_update()` is how the mask clears TextArea's line cache.
+Dev-only tools live in the PEP 735
 `[dependency-groups]` table, which `uv sync` installs by default — so a
 bare checkout can run `uv run pytest` with no extra flags.
 
@@ -194,7 +200,11 @@ Do not weaken any of these for convenience:
    version bump and a migration.
 4. **No plaintext ever touches disk.** No temp files containing decrypted
    entry content, no debug logging of entry text or password, no writing
-   plaintext for "crash recovery" purposes.
+   plaintext for "crash recovery" purposes. A crash counts: Textual
+   prints an unhandled exception with every frame's locals, into the
+   scrollback, so `ZecretApp._fatal_error` prints it without them, and
+   `Entry.body` and `DiaryFile.entries` are kept out of their reprs.
+   `tests/test_crash.py` fails if either comes back.
 5. **Atomic writes only.** `DiaryFile.save()` must write to a temp file in
    the same directory, `fsync()`, then `os.replace()` over the real path.
    Never write directly to the live diary file in place. Creating a diary

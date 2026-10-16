@@ -376,12 +376,16 @@ class DiaryTextArea(TextArea):
         wrapping -- the indent width, the line numbers, a document swapped
         in under the widget -- goes through TextArea's own rewrap at the
         same width this recorded, so it stays true without being told.
+
+        TextArea's cache of rendered lines needs nothing from here: it is
+        keyed on the widget's size, and the width cannot change without
+        the size changing, so no line drawn for the old wrapping is ever
+        served for the new one.
         """
         width = self.wrap_width
         if width != self._wrapped_at:
             self._wrapped_at = width
             self.wrapped_document.wrap(width, tab_width=self.indent_width)
-            self._line_cache.clear()
         return super().render_lines(crop)
 
     def edit(self, edit: Edit) -> EditResult:
@@ -528,8 +532,10 @@ class DiaryTextArea(TextArea):
         knows can change how a line looks -- the scroll, the selection,
         the theme. It cannot know about this one, so switching the mask
         alone would leave every line on screen exactly as it was drawn a
-        moment ago. Clearing the cache is what TextArea itself does when
-        the theme or the document changes underneath it.
+        moment ago. notify_style_update() is the public hook TextArea
+        clears that cache in, and the mask is a change of style -- the
+        `-masked` class below -- so it is the honest one to call, rather
+        than reaching into the private cache itself.
 
         Two of TextArea's own styles are painted *after* get_line has had
         its say, and each would hand back what the mask had just covered:
@@ -546,7 +552,7 @@ class DiaryTextArea(TextArea):
           supposed to be covered. The `-masked` class is what lets
           app.tcss give the selection a bar of its own instead.
         """
-        self._line_cache.clear()
+        self.notify_style_update()
         self.set_class(masked, "-masked")
         self.refresh()
 
