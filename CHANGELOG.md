@@ -19,6 +19,12 @@ file matters as much as that does.
   that report stays in the terminal's scrollback. It still says where the
   error happened, which is what a bug report needs, and nothing more.
 
+### Changed
+
+- **Zecret now stays on Textual 8.x.** It relies on a few details of
+  Textual that a new major version is free to change, so an install will
+  not pick up Textual 9 until Zecret has been tried against it.
+
 ## [0.8.2] - 2026-10-16
 
 ### Added

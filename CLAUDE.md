@@ -47,7 +47,13 @@ update this file to match.
 
 Dependency floors track current releases rather than the oldest version
 that happens to work; `cryptography` in particular should not be allowed to
-drift onto an unpatched release. Dev-only tools live in the PEP 735
+drift onto an unpatched release. Textual alone has a ceiling as well,
+below its next major: `ZecretApp` overrides `_fatal_error` and reaches
+`_notifications` / `_unnotify` in `pop_screen`, because Textual offers no
+public way to do either, and the editor depends on the order TextArea
+paints in. Don't add a third internal where a public hook will do --
+`notify_style_update()` is how the mask clears TextArea's line cache.
+Dev-only tools live in the PEP 735
 `[dependency-groups]` table, which `uv sync` installs by default — so a
 bare checkout can run `uv run pytest` with no extra flags.
 
