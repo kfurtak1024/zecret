@@ -6,7 +6,9 @@ cover routing and the security-relevant behavior rather than appearance.
 
 Required coverage:
     - A missing diary presents the create flow; an existing one presents
-      the unlock flow.
+      the unlock flow. A diary that appears while a password is being
+      chosen for a new one is never written over: the screen becomes the
+      unlock screen for it, says why, and opens it with its own password.
     - Creating a diary writes the file and leaves app.diary/app.key set.
     - Mismatched or empty passwords are refused without creating a file.
     - Enter in the password field moves on to the confirmation while that
@@ -43,7 +45,7 @@ from textual.widgets import Input, Label
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
-from zecret.screens.unlock import CONFIRM_HINT, UNLOCK_FAILED, UnlockScreen
+from zecret.screens.unlock import CONFIRM_HINT, DIARY_APPEARED, UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
 from zecret.strength import FILLED, HOLLOW
 
@@ -351,9 +353,35 @@ async def test_a_diary_appearing_before_create_is_reported_not_overwritten(diary
 
         await submit(pilot, PASSWORD, confirm=PASSWORD)
         assert app.diary is None
-        assert "already exists" in error_text(app)
+        assert error_text(app) == DIARY_APPEARED
 
     assert diary_path.read_bytes() == before, "the existing diary must be untouched"
+
+
+async def test_a_diary_appearing_before_create_turns_it_into_unlock(diary_path):
+    """It used to stay the create screen, and every retry was refused the
+    same way: the only way on was to quit."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        existing_diary(diary_path)
+        await submit(pilot, "a new one I chose", confirm="a new one I chose")
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, UnlockScreen)
+        assert screen.creating is False
+        assert not screen.query("#confirm"), "nothing left to confirm"
+        assert not screen.query(".caution"), "and no warning about choosing one"
+        assert str(screen.query_one("#unlock-title", Label).content) == "Unlock your diary"
+        assert screen.sub_title == "Locked"
+        assert screen.query_one("#password", Input).value == "", "the chosen password goes"
+        assert screen.focused is screen.query_one("#password", Input)
+        line = screen.query_one("#unlock-error", Label)
+        assert line.content_region.width >= len(DIARY_APPEARED), "cut off"
+
+        await submit(pilot, PASSWORD)
+        assert app.is_unlocked, "and the diary that is there opens with its own password"
 
 
 async def test_a_diary_vanishing_before_unlock_is_reported(diary_path):

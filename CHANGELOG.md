@@ -46,6 +46,12 @@ file matters as much as that does.
   creating a diary and when changing its password, now reads "…then
   press Enter", since neither form has a button to say it.
 - **Deleting a day says so**, naming the day, as saving and locking do.
+- **The create screen no longer gets stuck when a diary appears while you
+  are choosing a password for one** -- created by another Zecret in the
+  meantime. It already refused to write over that diary, but kept asking
+  for a new password, refused every retry the same way, and left quitting
+  as the only way on. It now turns into the unlock screen for the diary
+  that is there, and says why.
 - **A message is shown once.** "Master password changed." came up again
   over the list when you left settings, as though something else had
   happened. A message now follows you onto the screen you land on, and no
