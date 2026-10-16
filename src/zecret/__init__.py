@@ -1,5 +1,7 @@
 """Zecret: a modern, encrypted terminal diary."""
 
+from __future__ import annotations
+
 from importlib.metadata import PackageNotFoundError, version
 
 try:

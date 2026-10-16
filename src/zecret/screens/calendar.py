@@ -28,8 +28,11 @@ Three things neither will do:
   cursor that could sit on one would be offering something the screen
   behind it is going to turn down. A move in time clamps to today instead
   of refusing, so no such key is ever dead: paging into next month lands
-  on today. A move across the year's grid does refuse -- clamping there
-  would send the cursor to a cell nobody pointed at.
+  on today. A move across the year's grid does refuse, and so does a click
+  in either calendar -- clamping there would send the cursor to a cell
+  nobody pointed at. A date typed into the field above the month is the
+  field's to refuse; the grid shows today until the typing names a day
+  that has happened.
 - Change the month it shows on its own. The month is wherever the cursor
   is, so the grid only ever moves because someone moved it.
 - Own the date. The field above it does; this posts what it is on and lets
@@ -363,7 +366,7 @@ class MonthCalendar(WalkableCalendar):
             # set_reactive rather than assignment: this runs before the
             # widget is mounted, and a watcher firing then would post a
             # DateChanged nobody is listening for yet.
-            self.set_reactive(MonthCalendar.date, date)
+            self.set_reactive(MonthCalendar.date, reachable(date))
 
     # --- what it draws -----------------------------------------------------
 
@@ -384,8 +387,12 @@ class MonthCalendar(WalkableCalendar):
         someone was still halfway through typing, under their cursor.
 
         Everything else about it is an ordinary move, and it is drawn the
-        same way; what is skipped is only the telling.
+        same way; what is skipped is only the telling. That includes the
+        clamp: a future date typed into the field puts the cursor on
+        today, and the field keeps what was typed for the screen to
+        refuse.
         """
+        date = reachable(date)
         if date == self.date:
             return
         self.set_reactive(MonthCalendar.date, date)
@@ -403,12 +410,15 @@ class MonthCalendar(WalkableCalendar):
         a row of the entry list does: a list row is a thing you asked for,
         and a calendar cell is one of forty-two an unsteady hand can land
         on. Enter is what chooses, from either the grid or the field.
+
+        A day not yet come is refused, as the year refuses it: clamping
+        moved the cursor to today, a day nobody clicked.
         """
         offset = event.get_content_offset(self)
         if offset is None:
             return
         date = self.date_at(offset.x - self.grid_left, offset.y)
-        if date is not None:
+        if date is not None and date <= today():
             self.focus()
             self.move_to(date)
 

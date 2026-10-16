@@ -116,8 +116,11 @@ class UnlockScreen(FormScreen):
         if self.creating and event.input.id == "password":
             self.advise_on_password(event.value)
 
-    async def on_input_submitted(self, _event: Input.Submitted) -> None:
-        """Enter in either field submits the form."""
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter submits the form, or moves on to the confirmation while it
+        is still empty (see FormScreen.advance)."""
+        if self.advance(event.input):
+            return
         await self.attempt()
 
     async def attempt(self) -> None:

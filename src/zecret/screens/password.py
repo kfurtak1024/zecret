@@ -14,10 +14,11 @@ which screens may not call. Without that check, anyone at an unattended
 unlocked terminal could re-key the diary without knowing the old password,
 and there is no recovery mechanism by design.
 
-If the save fails after re-keying, the new KDF params are rolled back. They
-would otherwise be left describing a key that never reached disk, and the
-next save under the old key would write new params over old ciphertext,
-leaving the file unopenable by either password.
+If the save fails after re-keying, DiaryFile.change_password() rolls the
+new KDF params back itself. They would otherwise be left describing a key
+that never reached disk, and the next save under the old key would write
+new params over old ciphertext, leaving the file unopenable by either
+password.
 
 On the class: ModalScreen comes first and FormScreen second, and the order
 is load-bearing both ways round. FormScreen is what a screen with fields
@@ -99,14 +100,18 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         if event.input.id == "new":
             self.advise_on_password(event.value)
 
-    async def on_input_submitted(self, _event: Input.Submitted) -> None:
-        """Enter in any of the three fields submits the change.
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter submits the change once every field after this one is
+        filled, and until then moves on to the next empty one (see
+        FormScreen.advance).
 
         The same as the unlock screen, and the reason this dialog carries
         no buttons of its own: a question with two or three answers needs
         them (see ConfirmScreen), and a form has one answer -- what you
         typed -- with escape for the way out.
         """
+        if self.advance(event.input):
+            return
         await self.change_password()
 
     async def change_password(self) -> None:
@@ -127,21 +132,19 @@ class PasswordScreen(ModalScreen[None], FormScreen):
             return
 
         # Argon2id, off the event loop -- once to check the old password and
-        # again inside change_password() to derive the new key.
+        # again inside change_password() to derive the new key, which it
+        # then saves under.
         if not await asyncio.to_thread(diary.verify_password, current, key):
             self.set_error(WRONG_CURRENT)
             self.clear_inputs()
             return
 
         self.set_error("")
-        previous_params = diary.kdf_params
-        new_key = await asyncio.to_thread(diary.change_password, new)
         try:
-            await asyncio.to_thread(diary.save, new_key)
+            new_key = await asyncio.to_thread(diary.change_password, new)
         except (OSError, ZecretConflictError) as error:
-            # Undo the re-key so memory and disk agree again; app.key is
-            # deliberately still the old key at this point.
-            diary.kdf_params = previous_params
+            # change_password() has put the old KDF params back, so memory
+            # and disk agree again; app.key is still the old key.
             self.set_error(save_error(error))
             self.notify("Your password was not changed.", severity="error")
             return

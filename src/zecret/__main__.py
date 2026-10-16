@@ -45,15 +45,40 @@ all counts as unset rather than as the current directory.
 """
 
 
-def _from_env(name: str) -> Path | None:
+def _from_env(name: str) -> str | None:
     """The path environment variable `name` asks for, or None if it is silent.
 
     Unset and empty mean the same thing here -- nothing. `Path("")` is
     `Path(".")`, so treating them differently would read `ZECRET_DIARY_PATH=`
     as a request to open a diary named after the current directory.
+
+    Handed back as the string it is, for argparse to convert: a string
+    default goes through the argument's `type` the same as a typed value,
+    so a path that cannot be made sense of is the same usage error from
+    either place rather than a traceback from this one.
     """
-    value = os.environ.get(name)
-    return Path(value) if value else None
+    return os.environ.get(name) or None
+
+
+def _user_path(value: str) -> Path:
+    """`value` as a path, with a leading `~` meaning the home directory.
+
+    A shell expands `~` only where it is unquoted and starts a word, so
+    `export ZECRET_DIARY_PATH="~/diary.enc"` and `--path=~/diary.enc` both
+    arrive with the tilde intact. Taken literally that is a directory named
+    `~` under the current one, and Zecret offered to create a new, empty
+    diary there -- to someone whose real one was exactly where they said.
+
+    Raises:
+        argparse.ArgumentTypeError: if the home directory it names cannot
+            be found -- `~nobody/`, or no HOME and no password entry.
+            expanduser() raises RuntimeError for that, which argparse
+            would let through as a traceback.
+    """
+    try:
+        return Path(value).expanduser()
+    except RuntimeError as error:
+        raise argparse.ArgumentTypeError(f"{value}: {error}") from error
 
 
 def main() -> None:
@@ -77,13 +102,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--path",
-        type=Path,
+        type=_user_path,
         default=_from_env("ZECRET_DIARY_PATH") or DEFAULT_DIARY_PATH,
         help="Path to the encrypted diary file (default: ~/.zecret/diary.enc).",
     )
     parser.add_argument(
         "--config",
-        type=Path,
+        type=_user_path,
         # Falls through as None rather than naming DEFAULT_CONFIG_PATH here.
         # ZecretApp resolves that default when it is constructed, which is
         # what lets the tests redirect it; spelling it out at this end would

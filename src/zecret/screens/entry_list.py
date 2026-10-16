@@ -560,12 +560,12 @@ class EntryListScreen(ZecretScreen):
     def delete_entry(self, entry: Entry) -> None:
         """Remove the day's entry and persist immediately."""
         diary, key = self.zecret.unlocked
-        diary.delete_entry(entry.date)
         try:
-            diary.save(key)
+            # The file still holds the entry if this fails, and saving()
+            # puts it back in memory too, so the deletion is not shown as
+            # having stuck.
+            with diary.saving(key):
+                diary.delete_entry(entry.date)
         except (OSError, ZecretConflictError) as error:
-            # The file still holds the entry, so put it back in memory too
-            # rather than let the user believe the deletion stuck.
-            diary.add_entry(entry)
             self.notify(save_error(error), severity="error", markup=False)
         self.refresh_entries()

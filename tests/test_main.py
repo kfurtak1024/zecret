@@ -5,6 +5,9 @@ Required coverage:
     - --config wins over ZECRET_CONFIG_PATH, which wins over the default.
     - The two are independent: neither flag implies anything about the other.
     - An empty environment variable counts as unset, not as `.`.
+    - A leading `~` means the home directory in either variable and either
+      flag, since a quoted or `--flag=~/...` tilde reaches us unexpanded.
+      A `~user` that names nobody is a usage error, not a traceback.
     - The app is constructed with those paths and then run.
     - --version prints the installed version and launches nothing.
     - --help names both environment variables, which is the only place a
@@ -176,3 +179,72 @@ def test_an_empty_env_var_counts_as_unset(launched, monkeypatch, variable, read)
     monkeypatch.setattr("sys.argv", ["zecret"])
     entry_point.main()
     assert read(launched) != Path(".")
+
+
+@pytest.mark.parametrize(
+    ("variable", "read"),
+    [
+        ("ZECRET_DIARY_PATH", lambda launch: launch.diary_paths[0]),
+        ("ZECRET_CONFIG_PATH", lambda launch: launch.config_paths[0]),
+    ],
+)
+def test_a_tilde_in_an_env_var_is_the_home_directory(
+    launched, monkeypatch, tmp_path, variable, read
+):
+    """`export ZECRET_DIARY_PATH="~/diary.enc"` keeps the tilde, quoted.
+    Read literally it named ./~/diary.enc, and Zecret offered to create a
+    new diary there for someone whose real one was where they said."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(variable, "~/somewhere/file")
+    monkeypatch.setattr("sys.argv", ["zecret"])
+    entry_point.main()
+    assert read(launched) == tmp_path / "somewhere" / "file"
+
+
+@pytest.mark.parametrize(
+    ("flag", "read"),
+    [
+        ("--path", lambda launch: launch.diary_paths[0]),
+        ("--config", lambda launch: launch.config_paths[0]),
+    ],
+)
+def test_a_tilde_in_a_flag_is_the_home_directory(launched, monkeypatch, tmp_path, flag, read):
+    """`--path=~/diary.enc` is one word to the shell, so bash leaves its
+    tilde alone."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["zecret", f"{flag}=~/somewhere/file"])
+    entry_point.main()
+    assert read(launched) == tmp_path / "somewhere" / "file"
+
+
+NOBODY = "~zecret-no-such-user-here/diary.enc"
+
+
+def test_an_unknown_user_in_an_env_var_is_a_usage_error(launched, monkeypatch, capsys):
+    """expanduser() raises RuntimeError for it, and that reached the user
+    as a traceback before the parser had said a word."""
+    monkeypatch.setenv("ZECRET_DIARY_PATH", NOBODY)
+    monkeypatch.setattr("sys.argv", ["zecret"])
+    with pytest.raises(SystemExit) as exit_code:
+        entry_point.main()
+    assert exit_code.value.code == 2
+    error = capsys.readouterr().err
+    assert "error:" in error and "Traceback" not in error
+    assert launched.runs == 0
+
+
+def test_an_unknown_user_in_a_flag_is_a_usage_error(launched, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["zecret", f"--config={NOBODY}"])
+    with pytest.raises(SystemExit) as exit_code:
+        entry_point.main()
+    assert exit_code.value.code == 2
+    assert launched.runs == 0
+
+
+def test_version_still_answers_with_an_unusable_env_var(launched, monkeypatch, capsys):
+    monkeypatch.setenv("ZECRET_DIARY_PATH", NOBODY)
+    monkeypatch.setattr("sys.argv", ["zecret", "--version"])
+    with pytest.raises(SystemExit) as exit_code:
+        entry_point.main()
+    assert exit_code.value.code == 0
+    assert capsys.readouterr().out.strip() == f"zecret {__version__}"

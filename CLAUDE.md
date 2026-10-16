@@ -107,7 +107,9 @@ Keep this layering strict:
   only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
   needs something crypto-shaped, storage grows the method: this is why
   `DiaryFile.verify_password()` exists, for the password dialog's re-check
-  of the current password.
+  of the current password, and why `change_password()` saves the re-keyed
+  diary itself rather than leaving the screen to save it and undo the
+  re-key if that fails.
 - Presentation belongs to the screens, and stays there. The entry list
   groups days under a month heading; `DiaryFile.entries` is an unordered
   mapping and knows nothing about it. Sorting, grouping and wording are the
@@ -211,8 +213,11 @@ Do not weaken any of these for convenience:
    the same file would otherwise write its copy over the first's entries
    with no error at all. `save()` compares the file's mtime and size
    against what they were when it last read or wrote it, and raises
-   `ZecretConflictError` instead. Every screen that saves rolls its
-   in-memory change back and says so. The same failure reaches creating a
+   `ZecretConflictError` instead. Every screen that saves makes its
+   change inside `DiaryFile.saving(key)`, which puts the in-memory diary
+   back when the save fails, and says so. Don't hand-write that undo in a
+   screen: it needs storage's insides to get right, and the copy that put
+   a deletion back got it wrong. The same failure reaches creating a
    diary by a different road — two Zecrets started with no diary, both
    passing the "is one there?" check, both going on to write — and the
    mtime check cannot see it, since neither has a stamp to compare

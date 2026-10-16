@@ -10,6 +10,38 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two Zecrets on one diary can no longer lose an entry while one of them
+  is unlocking.** If the other one saved during the second or so it takes
+  to open the diary, the one being unlocked took that save as its starting
+  point without having read it, and its next save quietly wrote over the
+  new entry. That save is now refused with the usual "changed since it was
+  opened" message, as it is at any other time.
+- **Creating a diary no longer changes the permissions of the folder it is
+  in.** `zecret --path ~/diary.enc` used to make your home folder private
+  to you, and a diary created in a shared or synced folder did the same to
+  that folder. Only a folder Zecret creates for the diary is made private
+  now. The diary file itself is private, as before.
+- **A `~` in `ZECRET_DIARY_PATH`, `ZECRET_CONFIG_PATH`, or in
+  `--path=~/...` means your home folder.** When the shell left it
+  unexpanded (in quotes, or after `=`), Zecret looked for a folder named
+  `~` in the current directory, found no diary there, and offered to
+  create a new one.
+- **<kbd>Enter</kbd> in a password field moves on to the next one** while
+  that one is still empty, when creating a diary or changing its
+  password. It used to submit straight away, fail with "Passwords do not
+  match" and clear the password you had just typed.
+- **Clicking a day that has not happened yet in the which-day calendar
+  does nothing**, as it already did in the calendar view, instead of
+  jumping to today. Typing a future date no longer puts the calendar's
+  cursor on it either.
+- **Search keeps up as you type in a long diary.** Each keystroke used to
+  re-read every entry from scratch.
+- **A deletion that fails to save no longer causes a later save to
+  re-encrypt that day.** The diary still read correctly either way; the
+  day was simply rewritten when it did not need to be.
+
 ## [0.8.1] - 2026-10-07
 
 ### Security

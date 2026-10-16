@@ -9,6 +9,8 @@ Required coverage:
       the unlock flow.
     - Creating a diary writes the file and leaves app.diary/app.key set.
     - Mismatched or empty passwords are refused without creating a file.
+    - Enter in the password field moves on to the confirmation while that
+      is empty, rather than failing as a mismatch and clearing both.
     - The correct password unlocks and exposes the decrypted entries.
     - A wrong password shows an inline error, leaves app.diary as None, and
       does not leak whether the file was wrong-password vs. corrupted.
@@ -186,6 +188,25 @@ async def test_create_refuses_mismatched_passwords(diary_path):
         assert not diary_path.exists(), "no diary may be written on mismatch"
         assert app.diary is None
         assert "match" in error_text(app).lower()
+
+
+async def test_enter_moves_on_to_an_empty_confirmation(diary_path):
+    """Enter is "next" in most forms. Submitting from the first field
+    compared the password with an empty confirmation, failed, and cleared
+    the password just typed."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, PASSWORD)
+        assert app.focused is app.screen.query_one("#confirm", Input)
+        assert app.screen.query_one("#password", Input).value == PASSWORD
+        # The strength reading may be there; a mismatch must not be.
+        assert "match" not in error_text(app).lower()
+        assert not diary_path.exists()
+
+        await pilot.press(*PASSWORD, "enter")
+        await pilot.pause()
+        assert diary_path.exists()
+        assert app.diary is not None
 
 
 async def test_create_refuses_an_empty_password(diary_path):

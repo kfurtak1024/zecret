@@ -23,7 +23,10 @@ Required coverage:
       show() posts nothing, which is what lets the field above drive the
       grid while it is being typed into.
     - A click lands the cursor on the day under it, and a click on the
-      headings or on the blank around a month does nothing.
+      headings, on the blank around a month or on a day not yet come does
+      nothing.
+    - show() and the starting date clamp to today too, so a future date
+      typed into the field above never puts the cursor on a future day.
 
     YearCalendar, over and above what the two share:
     - It draws the twelve months of the year the cursor is in, each named
@@ -388,6 +391,33 @@ async def test_clicking_a_day_does_not_choose_it():
         await pilot.click("#cal", offset=(0, 3))
         await pilot.pause()
         assert app.picked == []
+
+
+async def test_clicking_a_day_not_yet_come_moves_nothing(monkeypatch):
+    """Refused, as the year refuses it, rather than clamped to today --
+    which put the cursor on a day nobody clicked."""
+    monkeypatch.setattr("zecret.screens.calendar.today", lambda: AUGUST)
+    app = CalendarHarness(dt.date(2020, 8, 10))
+    async with app.run_test() as pilot:
+        # The 24th: first column of the fourth full week, after AUGUST.
+        await pilot.click("#cal", offset=(0, 6))
+        await pilot.pause()
+        assert app.calendar.date == dt.date(2020, 8, 10)
+
+
+async def test_show_clamps_a_future_date_to_today():
+    app = CalendarHarness(YESTERDAY)
+    async with app.run_test() as pilot:
+        app.calendar.show(TOMORROW + dt.timedelta(days=40))
+        await pilot.pause()
+        assert app.calendar.date == TODAY
+        assert app.changes == [], "show() still says nothing"
+
+
+async def test_a_future_starting_date_starts_on_today():
+    app = CalendarHarness(TOMORROW)
+    async with app.run_test():
+        assert app.calendar.date == TODAY
 
 
 async def test_clicking_the_headings_moves_nothing():

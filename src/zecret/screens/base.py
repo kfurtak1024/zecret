@@ -434,3 +434,29 @@ class FormScreen(ZecretScreen):
         """
         for widget in self.query(Input):
             widget.value = ""
+
+    def advance(self, submitted: Input) -> bool:
+        """On to a field still empty, if Enter came early; say if so.
+
+        For a form whose answer is spread over several fields. Enter is
+        what most forms take as "next", and here it submitted the whole
+        form from the first field: the confirmation was empty, so the
+        attempt failed as a mismatch, and failing clears every field --
+        the password just typed with it. Now Enter in a filled field
+        moves to the next empty one, and submits only once there is none.
+
+        The next after this one, then the first before it: a field
+        skipped by clicking past it is as empty as one not reached yet,
+        and submitting over it would clear everything typed after it. An
+        empty field itself submits as before, so the error says what is
+        missing rather than Enter doing nothing.
+        """
+        if not submitted.value:
+            return False
+        fields = list(self.query(Input))
+        at = fields.index(submitted)
+        for field in fields[at + 1 :] + fields[:at]:
+            if not field.value:
+                field.focus()
+                return True
+        return False

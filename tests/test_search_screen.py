@@ -13,6 +13,8 @@ Required coverage:
     - Coming back from a day that was only read does not filter the diary
       again; coming back from one that was written does.
     - Searching never writes anything to disk.
+    - A keystroke does not fold the diary again: the text is folded once
+      per diary, and coming back from a written day picks up the new text.
     - A result shows the first line exactly as written, even where it looks
       like Textual markup, and the cursor stops at the ends of the results.
     - A result carries the entry's whole first line and is clipped to the
@@ -30,6 +32,7 @@ from textual.widgets import Input, Label, OptionList, TextArea
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
+from zecret.screens import search
 from zecret.screens.base import format_day
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
@@ -427,6 +430,42 @@ async def test_the_results_stop_at_their_ends(stocked):
             await pilot.press("up")
         await pilot.pause()
         assert results_list(app).highlighted == 0
+
+
+async def test_typing_does_not_fold_the_diary_again(stocked, monkeypatch):
+    """Folding every body on every keystroke copied the whole decrypted
+    diary per letter typed; ten years of it was a visible lag."""
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        folds: list[None] = []
+        original = search.searchable
+
+        def counting(entries):
+            folds.append(None)
+            return original(entries)
+
+        monkeypatch.setattr(search, "searchable", counting)
+        for query in ("r", "ri", "riv"):
+            await type_query(pilot, query)
+        assert result_snippets(app) == ["Book notes: a chapter about RIVERS."]
+        assert folds == []
+
+
+async def test_a_written_day_is_searched_by_its_new_text(stocked):
+    app = ZecretApp(diary_path=stocked)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_search(pilot)
+        await type_query(pilot, "frost")
+        await pilot.press("tab", "enter")
+        await pilot.pause()
+        await pilot.press("ctrl+end", *" Then hail.", "ctrl+s", "escape")
+        await pilot.pause()
+        await pilot.pause()
+        await type_query(pilot, "hail")
+        assert result_days(app) == [format_day(TODAY)]
 
 
 async def test_reading_a_result_without_writing_does_not_refilter(stocked, monkeypatch):

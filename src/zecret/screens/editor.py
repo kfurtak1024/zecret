@@ -4,9 +4,9 @@ Opened on a date, never on an entry: a day holds at most one entry, so the
 date is the whole question and the screen looks up whether that day has
 been written yet.
     - Unwritten day: on save, build Entry.new(date, body), call
-      app.diary.add_entry(...), then app.diary.save(app.key).
+      app.diary.add_entry(...) inside app.diary.saving(app.key).
     - Written day: on save, build entry.edited(body), call
-      app.diary.update_entry(...), then app.diary.save(app.key).
+      app.diary.update_entry(...) inside app.diary.saving(app.key).
 
 Every save persists immediately (writes the full diary file atomically) —
 there is no separate "unsaved draft" state to manage across screens.
@@ -844,23 +844,16 @@ class EditorScreen(FormScreen):
 
         diary, key = self.zecret.unlocked
         existing = self.entry
-        if existing is None:
-            entry = Entry.new(self.date, body)
-            diary.add_entry(entry)
-        else:
-            entry = existing.edited(body)
-            diary.update_entry(entry)
-
+        entry = Entry.new(self.date, body) if existing is None else existing.edited(body)
         try:
-            diary.save(key)
+            # saving() puts the in-memory diary back if this fails, so
+            # pressing save again is a clean second attempt.
+            with diary.saving(key):
+                if existing is None:
+                    diary.add_entry(entry)
+                else:
+                    diary.update_entry(entry)
         except (OSError, ZecretConflictError) as error:
-            # Put the in-memory diary back as it was, so it still matches
-            # the file and pressing save again is a clean second attempt --
-            # otherwise the retry would hit "an entry already exists".
-            if existing is None:
-                diary.delete_entry(self.date)
-            else:
-                diary.update_entry(existing)
             # Stay put: popping now would throw away text that never
             # reached disk.
             self.set_error(save_error(error))

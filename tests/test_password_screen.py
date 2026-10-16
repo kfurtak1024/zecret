@@ -15,6 +15,9 @@ Required coverage:
     - app.key is updated, so the session keeps working afterwards.
     - A wrong current password is refused and changes nothing.
     - An empty or mismatched new password is refused.
+    - Enter in a filled field moves on to the next empty one rather than
+      submitting the change half-typed and clearing every field -- an
+      empty field before it included, for a form filled out of order.
     - Every refusal empties the fields, so an unattended terminal never
       holds a typed password in a widget.
     - A save that fails does not leave the diary half re-keyed.
@@ -253,6 +256,46 @@ async def test_mismatched_new_passwords_are_refused(diary_path):
         await submit_change(pilot, PASSWORD, NEW_PASSWORD, "something else")
         assert error_of(app.screen) == MISMATCH
     DiaryFile.unlock(diary_path, PASSWORD)
+
+
+async def test_enter_moves_on_to_the_next_empty_field(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        screen = app.screen
+        await pilot.press(*PASSWORD, "enter")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#new", Input)
+        assert screen.query_one("#current", Input).value == PASSWORD
+        assert not error_of(screen)
+
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#confirm", Input)
+
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        await pilot.pause()
+    DiaryFile.unlock(diary_path, NEW_PASSWORD)
+
+
+async def test_enter_goes_back_to_a_field_skipped_over(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        screen = app.screen
+        screen.query_one("#new", Input).focus()
+        await pilot.pause()
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#current", Input)
+        assert screen.query_one("#new", Input).value == NEW_PASSWORD
+        assert screen.query_one("#confirm", Input).value == NEW_PASSWORD
+        assert error_of(screen) != WRONG_CURRENT, "nothing may have been submitted"
 
 
 async def test_empty_new_password_is_refused(diary_path):
