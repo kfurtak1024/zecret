@@ -39,6 +39,8 @@ import time
 from pathlib import Path
 from typing import Literal, NamedTuple, Self, overload
 
+import rich
+from rich.traceback import Traceback
 from textual import events
 from textual.app import App
 from textual.await_complete import AwaitComplete
@@ -309,6 +311,29 @@ class ZecretApp(App[None]):
                     self._unnotify(notification, refresh=False)
         self.last_pop = time.time()
         return super().pop_screen()
+
+    def _fatal_error(self) -> None:
+        """Leave a crash's traceback behind -- without the local variables.
+
+        Textual prints an unhandled exception with show_locals=True, after
+        the app has left the alternate screen, so it stays in the
+        terminal's scrollback. In this app the locals are the secrets: the
+        password being unlocked with, the day's text being saved, the key.
+        A bug anywhere -- in Zecret or in Textual -- printed up to eighty
+        characters of each, to a terminal that may be logging. Requirement
+        4 is that no plaintext touches disk, and a scrollback file is disk.
+
+        The frames and the line numbers are still there, which is what a
+        bug report needs; the values are what nobody should be shown.
+
+        An override of a private method, which is the one internal this
+        needs: Textual offers no public setting for how a crash is drawn.
+        What it does with the traceback goes through the public panic().
+        If Textual ever renames this method, the override stops being
+        called and the locals come back -- tests/test_crash.py fails then.
+        """
+        self.bell()
+        self.panic(Traceback(show_locals=False, width=None, suppress=[rich]))
 
     def _on_unlocked(self, _result: None) -> None:
         """Called once UnlockScreen dismisses, i.e. the diary is open."""

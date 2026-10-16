@@ -194,7 +194,11 @@ Do not weaken any of these for convenience:
    version bump and a migration.
 4. **No plaintext ever touches disk.** No temp files containing decrypted
    entry content, no debug logging of entry text or password, no writing
-   plaintext for "crash recovery" purposes.
+   plaintext for "crash recovery" purposes. A crash counts: Textual
+   prints an unhandled exception with every frame's locals, into the
+   scrollback, so `ZecretApp._fatal_error` prints it without them, and
+   `Entry.body` and `DiaryFile.entries` are kept out of their reprs.
+   `tests/test_crash.py` fails if either comes back.
 5. **Atomic writes only.** `DiaryFile.save()` must write to a temp file in
    the same directory, `fsync()`, then `os.replace()` over the real path.
    Never write directly to the live diary file in place. Creating a diary
