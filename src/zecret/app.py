@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal, NamedTuple, Self, overload
 
@@ -304,11 +305,21 @@ class ZecretApp(App[None]):
         pop, because notify() only posts a message -- the dialog's "changed"
         is raised a moment before it dismisses, and is not among the app's
         notifications yet when that pop happens.
+
+        Two of Textual's internals, because it has no public way to drop
+        one notification: clear_notifications() takes the one being carried
+        too, and re-raising that one races the Notify message still on its
+        way, which would show it twice. Guarded, because this is tidying
+        and a screen change is not: should a Textual release rename them,
+        a message is carried one pop too far again rather than every pop
+        raising. The tests that count what is said fail then, which is
+        where it should be noticed -- not on someone's diary.
         """
         if self.last_pop is not None:
-            for notification in list(self._notifications):
-                if notification.raised_at < self.last_pop:
-                    self._unnotify(notification, refresh=False)
+            with suppress(AttributeError):
+                for notification in list(self._notifications):
+                    if notification.raised_at < self.last_pop:
+                        self._unnotify(notification, refresh=False)
         self.last_pop = time.time()
         return super().pop_screen()
 

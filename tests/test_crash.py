@@ -9,6 +9,8 @@ Required coverage:
       raised in, which is what a bug report needs.
     - No local variable's value reaches it -- a password or an entry's text
       held by the frame that raised.
+    - A screen change survives a Textual that has renamed the internals
+      ZecretApp.pop_screen tidies notifications with.
     - An Entry's repr carries no body, and a DiaryFile's no entries: a repr
       is what anything printing an object by accident shows.
 """
@@ -18,6 +20,8 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from textual.app import App
+from textual.screen import Screen
 
 from zecret.app import ZecretApp
 from zecret.crypto import KdfParams
@@ -65,3 +69,22 @@ def test_a_diary_s_repr_leaves_out_its_entries(tmp_path):
     )
     assert SECRET_BODY not in repr(diary)
     assert "2026, 10, 16" not in repr(diary)
+
+
+async def test_a_screen_change_outlives_a_renamed_textual_internal(tmp_path, monkeypatch):
+    monkeypatch.delattr(App, "_unnotify")
+    app = ZecretApp(diary_path=tmp_path / "diary.enc")
+    async with app.run_test() as pilot:
+        app.push_screen(Screen())
+        app.push_screen(Screen())
+        await pilot.pause()
+        # Carried across the first pop, and due to be dropped at the second
+        # -- which is the step that reaches for the missing internal.
+        app.notify("Said before the pops.")
+        await pilot.pause()
+        app.pop_screen()
+        await pilot.pause()
+        app.pop_screen()
+        await pilot.pause()
+        assert app.is_running
+        assert len(app.screen_stack) == 2, "both pops went through"

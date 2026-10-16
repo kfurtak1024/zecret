@@ -24,7 +24,11 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "textual>=8.2",
+    # Capped below the next major: app.py leans on a few of Textual's
+    # internals, and the editor on the order it paints in -- both of which
+    # a major release is free to change. An application can afford a ceiling a
+    # library could not; Dependabot proposes the next one, and CI tries it.
+    "textual>=8.2,<9",
     "cryptography>=50.0.2",
     "argon2-cffi>=25.1",
     "zxcvbn>=4.5",

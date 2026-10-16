@@ -1486,7 +1486,7 @@ dev = [
 requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1" },
     { name = "cryptography", specifier = ">=50.0.2" },
-    { name = "textual", specifier = ">=8.2" },
+    { name = "textual", specifier = ">=8.2,<9" },
     { name = "zxcvbn", specifier = ">=4.5" },
 ]
 
