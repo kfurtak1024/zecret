@@ -13,6 +13,12 @@ Required coverage:
       moved it has not yet been heard about by the screen -- 'right' and
       'enter' in one burst used to open the day just left, and 'c' after
       it landed the list on the wrong day.
+    - 'd' deletes the entry under the cursor after the list's own question
+      (naming the day, focus on Cancel): from memory and from disk, with
+      its mark taken off and the year's count lowered, and the list
+      landing on the nearest older day on the way back. Cancelling keeps
+      it. On a day with nothing written it asks nothing and says so, and a
+      deletion that fails to save leaves the day marked.
     - '[' and ']' move a year, and the header names the year on show and
       how many of its days are written.
     - The arrows walk the year as this screen lays it out: with six months
@@ -29,9 +35,10 @@ Required coverage:
       rearranging itself as the view opened. Resizing rearranges it again.
     - ctrl+l locks from here -- and from a day opened here -- '?' opens
       help, 'q' quits.
+    - The legend under the year explains the mark and today's underline.
     - The whole year fits the size tools/screenshots.py shoots it at.
-    - Its key bar advertises editing, going back and locking, and fits 80
-      columns.
+    - Its key bar advertises editing, deleting, going back and locking, and
+      fits 80 columns.
 """
 
 from __future__ import annotations
@@ -40,11 +47,12 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label
+from textual.widgets import Button, Input, Label
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.calendar import MONTH_WIDTH, YearCalendar
+from zecret.screens.base import format_day
+from zecret.screens.calendar import MONTH_WIDTH, CalendarLegend, YearCalendar
 from zecret.screens.calendar_view import (
     CHROME,
     MONTH_GAP,
@@ -52,6 +60,7 @@ from zecret.screens.calendar_view import (
     months_across,
     needs,
 )
+from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import HelpScreen, documented_bindings
@@ -243,6 +252,130 @@ async def test_writing_from_the_calendar_reaches_the_list(diary_path):
         assert app.screen.selected_entry.date == missed
 
 
+# --- deleting --------------------------------------------------------------
+
+
+async def test_d_asks_before_deleting_the_day_under_the_cursor(diary_path):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(WRITTEN[1])
+        await press(pilot, "d")
+        assert isinstance(app.screen, ConfirmScreen)
+        question = str(app.screen.query_one("#confirm-question", Label).content)
+        assert format_day(WRITTEN[1]) in question
+        assert not app.screen.query("#confirm-save"), "a deletion has no third answer"
+        assert app.screen.focused is app.screen.query_one("#confirm-no", Button)
+        assert set(app.diary.entries) == set(WRITTEN), "nothing deleted before the answer"
+
+
+async def test_a_confirmed_delete_unmarks_the_day_and_reaches_the_file(diary_path):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(WRITTEN[1])
+        await press(pilot, "d")
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, CalendarScreen)
+        assert set(app.diary.entries) == {WRITTEN[0], WRITTEN[2]}
+        assert WRITTEN[1] not in year(app).written
+        assert "17•" not in year(app).months[2].render().plain
+        assert "2 entries" in header_text(app)
+        assert year(app).date == WRITTEN[1], "the cursor stays on the day"
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert set(reopened.entries) == {WRITTEN[0], WRITTEN[2]}
+
+
+async def test_after_a_delete_the_list_lands_on_the_nearest_older_day(diary_path):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(WRITTEN[1])
+        await press(pilot, "d")
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await press(pilot, "c")
+        assert isinstance(app.screen, EntryListScreen)
+        assert app.screen.selected_entry.date == WRITTEN[0]
+        assert WRITTEN[1] not in [entry.date for entry in app.screen.rows if entry]
+
+
+async def test_cancelling_the_delete_keeps_the_day(diary_path):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(WRITTEN[1])
+        await press(pilot, "d", "escape")
+        assert isinstance(app.screen, CalendarScreen)
+        assert set(app.diary.entries) == set(WRITTEN)
+        assert WRITTEN[1] in year(app).written
+
+
+async def test_d_on_an_unwritten_day_asks_nothing_and_says_so(diary_path, notifications):
+    seed(diary_path, *WRITTEN)
+    missed = dt.date(2024, 3, 10)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(missed)
+        await press(pilot, "d")
+        assert isinstance(app.screen, CalendarScreen), "no question about nothing"
+        assert notifications(app) == [f"Nothing written on {format_day(missed)}."]
+        assert set(app.diary.entries) == set(WRITTEN)
+
+
+async def test_d_right_after_a_move_deletes_the_new_day(diary_path):
+    """As with 'e': the widget's day, not the screen's late copy of it."""
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(WRITTEN[1] - dt.timedelta(days=1))
+        await pilot.pause()
+        await pilot.press("right", "d")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+        question = str(app.screen.query_one("#confirm-question", Label).content)
+        assert format_day(WRITTEN[1]) in question
+
+
+async def test_a_failed_delete_leaves_the_day_marked(diary_path, monkeypatch, notifications):
+    seed(diary_path, *WRITTEN)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        year(app).move_to(WRITTEN[1])
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(type(app.diary), "save", boom)
+        await press(pilot, "d")
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert set(app.diary.entries) == set(WRITTEN)
+        assert WRITTEN[1] in year(app).written
+        assert "Could not save: No space left on device." in notifications(app)
+
+
 # --- years -----------------------------------------------------------------
 
 
@@ -415,9 +548,20 @@ async def test_the_key_bar_advertises_its_keys_in_eighty_columns(diary_path):
             for binding in documented_bindings(CalendarScreen.BINDINGS)
             if binding.show
         ]
-        assert {"e Edit", "c List", "^l Lock"} <= set(advertised)
+        assert {"e Edit", "d Delete", "c List", "^l Lock"} <= set(advertised)
         missing = [entry for entry in advertised if entry not in bar]
         assert not missing, f"the footer at 80 columns does not fully show: {missing}"
+
+
+async def test_the_year_carries_the_legend(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await press(pilot, "c")
+        legend = app.screen.query_one("#year-legend", CalendarLegend)
+        assert legend.render().plain.endswith(f"{TODAY.day} today")
+        assert legend.region.height >= 2, "a line of padding above, and the line itself"
 
 
 #: The size tools/screenshots.py shoots the calendar at. Written out rather

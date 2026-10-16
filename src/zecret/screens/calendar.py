@@ -79,8 +79,12 @@ DAYS = 7
 WRITTEN = "•"
 
 #: Said under the grid, because the mark means nothing to someone meeting
-#: it for the first time.
+#: it for the first time. CalendarLegend draws it, beside a sample of how
+#: today is marked.
 LEGEND = f"{WRITTEN} a day you have written"
+
+#: Between the two halves of the legend.
+LEGEND_GAP = "   "
 
 
 def day_in(year: int, month: int, day: int) -> dt.date:
@@ -321,6 +325,33 @@ class WalkableCalendar(Widget, can_focus=True):
     def action_end_of_month(self) -> None:
         last = calendar.monthrange(self.date.year, self.date.month)[1]
         self.move_to(self.date.replace(day=last))
+
+
+class CalendarLegend(Widget):
+    """What the marks on a calendar mean: the written days, and today.
+
+    Today is explained by showing it -- its own date, drawn the way the
+    grid draws it -- rather than by naming the style, since "underlined"
+    tells a reader less than an underlined number does. The style is read
+    from the same component class the grids paint today with, so the one
+    rule in app.tcss styles both and the legend cannot describe a mark the
+    grid no longer makes.
+    """
+
+    COMPONENT_CLASSES: ClassVar[set[str]] = {"month-calendar--today"}
+
+    DEFAULT_CSS = """
+    CalendarLegend {
+        height: auto;
+    }
+    """
+
+    def render(self) -> RenderResult:
+        landmark = self.get_component_rich_style("month-calendar--today", partial=True)
+        text = Text(LEGEND + LEGEND_GAP)
+        text.append(str(today().day), landmark)
+        text.append(" today")
+        return text
 
 
 class MonthCalendar(WalkableCalendar):

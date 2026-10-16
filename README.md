@@ -146,6 +146,7 @@ month beside, or down into the month below, stepping over the blank days
 around a month — the page keys move a month, and
 <kbd>[</kbd>/<kbd>]</kbd> jump a year either way. Press <kbd>e</kbd> (or
 <kbd>enter</kbd>) on any day up to today to write it or carry on with it,
+<kbd>d</kbd> to delete a written one (it asks first, as the list does),
 and <kbd>c</kbd> or <kbd>esc</kbd> to go back to the list, which picks up
 where the calendar left off. It fits three months across an 80-column
 terminal and spreads out to six on a wide one.
@@ -245,7 +246,7 @@ so what you save is what you wrote.
 | <kbd>c</kbd> | entry list | The calendar: the whole year, written days marked |
 | <kbd>a</kbd> | entry list | Write about another day (asks which) |
 | <kbd>enter</kbd> | entry list | Open the selected day |
-| <kbd>d</kbd> | entry list | Delete the selected day's entry (asks first) |
+| <kbd>d</kbd> | entry list, calendar | Delete the selected day's entry (asks first) |
 | <kbd>r</kbd> | entry list | Re-read the file, picking up another Zecret's writing |
 | <kbd>/</kbd> | entry list | Search |
 | <kbd>s</kbd> | entry list | Settings: theme, locking, master password |

@@ -70,10 +70,9 @@ from zecret.screens.base import (
     count_entries,
     day_row,
     day_summary,
-    format_day,
+    delete_question,
     format_month,
     plain,
-    save_error,
     today,
     unchanged,
 )
@@ -84,7 +83,7 @@ from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
-from zecret.storage import DiaryFile, ZecretConflictError
+from zecret.storage import DiaryFile
 
 EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
 
@@ -450,8 +449,7 @@ class EntryListScreen(ZecretScreen):
         entry = self.selected_entry
         if entry is None:
             return
-        question = f"Delete the entry for {format_day(entry.date)}? This cannot be undone."
-        self.app.push_screen(ConfirmScreen(question), self.confirm_delete(entry))
+        self.app.push_screen(ConfirmScreen(delete_question(entry.date)), self.confirm_delete(entry))
 
     # --- getting around ----------------------------------------------------
 
@@ -559,13 +557,5 @@ class EntryListScreen(ZecretScreen):
 
     def delete_entry(self, entry: Entry) -> None:
         """Remove the day's entry and persist immediately."""
-        diary, key = self.zecret.unlocked
-        try:
-            # The file still holds the entry if this fails, and saving()
-            # puts it back in memory too, so the deletion is not shown as
-            # having stuck.
-            with diary.saving(key):
-                diary.delete_entry(entry.date)
-        except (OSError, ZecretConflictError) as error:
-            self.notify(save_error(error), severity="error", markup=False)
+        self.delete_day(entry.date)
         self.refresh_entries()

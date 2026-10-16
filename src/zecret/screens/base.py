@@ -20,6 +20,12 @@ And DayList, the list both the entry list and search show days in.
 And the wording for a save that did not happen, which is the same wherever
 a save is attempted -- three screens attempt one, and none of them should
 be deciding for itself how to describe a diary that changed underneath it.
+
+And deleting a day, which the entry list and the calendar both offer: the
+question asked first (delete_question) and the deletion itself
+(ZecretScreen.delete_day), so the two ask the same thing and fail the same
+way. Each screen pushes the question itself -- confirm.py imports this
+module, so this one cannot import the modal back.
 """
 
 from __future__ import annotations
@@ -195,6 +201,11 @@ def save_error(error: OSError | ZecretConflictError) -> str:
     return f"Could not save: {error.strerror or error}."
 
 
+def delete_question(date: dt.date) -> str:
+    """What to ask before a day's entry is deleted, wherever it is asked."""
+    return f"Delete the entry for {format_day(date)}? This cannot be undone."
+
+
 def card(id: str) -> VerticalScroll:
     """The scrolling panel a screen's content sits in, out of the tab order.
 
@@ -354,6 +365,21 @@ class ZecretScreen(Screen[None]):
         it succeeded is the truth for it.
         """
         return True
+
+    def delete_day(self, date: dt.date) -> None:
+        """Remove the day's entry and save at once, or say why it was not.
+
+        The file still holds the entry if the save fails, and saving() puts
+        it back in memory too, so the deletion is not shown as having
+        stuck. Whatever the screen draws from the diary is its own to
+        redraw afterwards, either way.
+        """
+        diary, key = self.zecret.unlocked
+        try:
+            with diary.saving(key):
+                diary.delete_entry(date)
+        except (OSError, ZecretConflictError) as error:
+            self.notify(save_error(error), severity="error", markup=False)
 
 
 class FormScreen(ZecretScreen):

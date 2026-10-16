@@ -17,7 +17,8 @@ Required coverage:
       showing.
     - Down from the field reaches the calendar, and enter there answers
       the question the same way enter in the field does.
-    - The days the caller says are written are the days the grid marks.
+    - The days the caller says are written are the days the grid marks,
+      and the legend under it explains the mark and today's underline.
     - A click on a drawn day picks that day. The month is drawn centred in
       a wider widget, and clicks used to be counted from its left edge.
 """
@@ -32,7 +33,7 @@ from textual.app import App
 from textual.widgets import Label, MaskedInput
 
 import zecret
-from zecret.screens.calendar import MonthCalendar
+from zecret.screens.calendar import CalendarLegend, MonthCalendar
 from zecret.screens.date_prompt import (
     IN_THE_FUTURE,
     NOT_A_DATE,
@@ -384,6 +385,14 @@ async def test_the_written_days_reach_the_calendar():
     async with app.run_test():
         assert grid(app).written == written
         assert "  2•" in grid(app).render().plain
+
+
+async def test_the_modal_carries_the_legend():
+    app = PromptHarness()
+    async with app.run_test():
+        legend = app.screen.query_one("#date-legend", CalendarLegend).render().plain
+        assert "• a day you have written" in legend
+        assert legend.endswith(f"{TODAY.day} today")
 
 
 class StyledPromptHarness(PromptHarness):

@@ -12,6 +12,16 @@ file matters as much as that does.
 
 ## [0.8.2] - 2026-10-16
 
+### Added
+
+- **<kbd>d</kbd> deletes a day from the calendar view**, as it does in the
+  list. It asks first, the same question the list asks, and the day's mark
+  goes as soon as you say yes. On a day with nothing written it just tells
+  you so.
+- **The calendars say how today is marked.** The legend under the year,
+  and under the month in the which-day question, now shows today's date
+  underlined the way the grid draws it, beside what the bullet means.
+
 ### Fixed
 
 - **Two Zecrets on one diary can no longer lose an entry while one of them

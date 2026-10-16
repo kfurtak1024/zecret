@@ -190,11 +190,14 @@ a:hover { text-decoration-thickness: 2px; }
 .term .dim { color: var(--term-muted); }
 .term .key { color: var(--term-accent); font-weight: 700; }
 /* The month grid: a day already written, and where the cursor is. The app
-   draws a third thing -- today, laid over whichever of those applies -- but
-   the drawn month is fixed at the sample's August 2026 and the calendar is
-   the real date, so no cell here can ever be today. Nothing to style. */
+   draws a third thing -- today, underlined over whichever of those applies
+   -- and the legend under each calendar shows it. The drawings take today
+   to be 16 October 2026, the day the screenshots were shot on: outside
+   every month drawn here, so no cell is today, and late enough that none of
+   them is greyed out as not yet come. Only the legends show it. */
 .term .mark { color: var(--term-accent); font-weight: 700; }
 .term .cur { background: var(--term-accent); color: #14161b; font-weight: 700; }
+.term .today { text-decoration: underline; }
 .term .bar { display: block; margin-top: 0.9rem; padding-top: 0.55rem; border-top: 1px solid #262a33; }
 /* The app's own title line, which it draws inside the terminal rather than
    in the window chrome -- the mirror of the key bar at the other end. */
@@ -444,7 +447,8 @@ footer p.right { margin-left: auto; }
       week is a hole in a month and a missed month is a hole in the year.
       Walk to a gap with the arrow keys &mdash; each one moves to the day
       drawn that way, into the month beside or below &mdash; jump a year
-      with <kbd>[</kbd> and <kbd>]</kbd>, and press <kbd>e</kbd> to write it.
+      with <kbd>[</kbd> and <kbd>]</kbd>, and press <kbd>e</kbd> to write it
+      &mdash; or <kbd>d</kbd> to delete a day you would rather not have kept.
     </p>
 
     <!-- A slice of the calendar view at 80 columns -- the summer band of
@@ -467,8 +471,8 @@ footer p.right { margin-left: auto; }
   27 28 <span class="mark">29•</span>30 31         24 25 26 27 28 29 30   28 29 30
                          31
 
-<span class="dim">                       • a day you have written</span>
-<span class="bar"><span class="key">e</span> Edit <span class="key">[</span> Previous year <span class="key">]</span> Next year <span class="key">c</span> List <span class="key">^l</span> Lock <span class="key">?</span> Help <span class="key">q</span> Quit</span>
+<span class="dim">                  • a day you have written   <span class="today">16</span> today</span>
+<span class="bar"><span class="key">e</span> Edit <span class="key">d</span> Delete <span class="key">[</span> Previous year <span class="key">]</span> Next year <span class="key">c</span> List <span class="key">^l</span> Lock <span class="key">?</span> Help <span class="key">q</span> Quit</span>
 </pre>
     </div>
   </div>
@@ -505,7 +509,7 @@ footer p.right { margin-left: auto; }
    24  25  26  27  28  29  30
    31
 
-  <span class="dim">• a day you have written</span>
+  <span class="dim">• a day you have written   <span class="today">16</span> today</span>
 <span class="bar"><span class="key">esc</span> Cancel</span>
 </pre>
     </div>
@@ -641,7 +645,7 @@ footer p.right { margin-left: auto; }
         <tr><td><kbd>e</kbd></td><td>calendar</td><td class="what">Write the day under the cursor</td></tr>
         <tr><td><kbd>[</kbd></td><td>calendar</td><td class="what">The same day a year earlier</td></tr>
         <tr><td><kbd>]</kbd></td><td>calendar</td><td class="what">The same day a year later</td></tr>
-        <tr><td><kbd>d</kbd></td><td>entry list</td><td class="what">Delete the selected day's entry</td></tr>
+        <tr><td><kbd>d</kbd></td><td>entry list, calendar</td><td class="what">Delete the selected day's entry</td></tr>
         <tr><td><kbd>r</kbd></td><td>entry list</td><td class="what">Re-read the file, picking up another Zecret's writing</td></tr>
         <tr><td><kbd>/</kbd></td><td>entry list</td><td class="what">Search</td></tr>
         <tr><td><kbd>s</kbd></td><td>entry list</td><td class="what">Settings: theme, locking, and the way to change your master password</td></tr>

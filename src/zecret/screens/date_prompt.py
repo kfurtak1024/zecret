@@ -41,7 +41,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, MaskedInput
 
 from zecret.screens.base import card, plain, today
-from zecret.screens.calendar import LEGEND, MonthCalendar, day_in
+from zecret.screens.calendar import CalendarLegend, MonthCalendar, day_in
 from zecret.screens.header import DiaryFooter
 
 PROMPT = "Which day?"
@@ -146,7 +146,7 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
             )
             yield Label(HINT, id="date-hint")
             yield MonthCalendar(self.default, self.written, id="date-calendar")
-            yield Label(LEGEND, id="date-legend")
+            yield CalendarLegend(id="date-legend")
             yield Label("", id="date-error")
         # The screen underneath keeps rendering its own bar, and every
         # key on it is dead while this question has focus -- so without

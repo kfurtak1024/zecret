@@ -68,7 +68,9 @@ src/zecret/
 │                 # fields and an error line, card() for the scrolling
 │                 # panel they sit in, the date/snippet formatting every
 │                 # screen shares, the warning about a forgotten
-│                 # password, and the wording for a refused save),
+│                 # password, the wording for a refused save, and
+│                 # deleting a day, which the list and the calendar
+│                 # both offer),
 │                 # header.py (both bars -- the title above and the keys
 │                 # below, which every screen wears including the modals),
 │                 # confirm.py (yes/no modal), date_prompt.py (which-day
@@ -576,7 +578,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   their walking through a base class, `WalkableCalendar`, draw a month
   through the same module functions (`draw_month`, `day_role`), and wear
   the same `month-calendar--*`
-  component classes, so one set of rules in `app.tcss` paints both. How
+  component classes, so one set of rules in `app.tcss` paints both. The
+  `CalendarLegend` under each wears the today class as well, and draws
+  today's own date in it, so the legend's sample of how today is marked is
+  the grid's rule and cannot drift from it. How
   many months sit across is the stylesheet's call, from a `-months-N`
   class `CalendarScreen.fit_months` sets from the terminal's width, not the
   widget's — nothing measures the terminal, and three months fit 80
@@ -843,7 +848,8 @@ patch number, not a retry. This is why `check` and `verify` run first.
   their own: one action for two screens, and neither of them can import
   the popup, which imports them both to list their keys. The calendar's
   column on the page leaves out rows the list's section has already given
-  (`Section.shares_diary_keys`).
+  (`Section.shares_diary_keys`) -- which is why the calendar's `d` is named
+  **Delete**, as the list's is, and so does not appear twice.
 - **The help popup spends width to buy height.** A section longer than
   `COLUMN_THRESHOLD` is split down the middle into two columns, read down
   and then across, and `fit_columns()` stacks them again where the terminal

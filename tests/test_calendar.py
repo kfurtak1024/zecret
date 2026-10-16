@@ -25,6 +25,9 @@ Required coverage:
     - A click lands the cursor on the day under it, and a click on the
       headings, on the blank around a month or on a day not yet come does
       nothing.
+    - The legend under a calendar says what the mark means, and shows
+      today as today's own date drawn the way the grid draws it: underlined,
+      from the same stylesheet rule, so the two cannot disagree.
     - The starting date clamps to today too. show() does not: a future
       date typed into the field above is shown where it is, so the day
       highlighted is the day the field will refuse.
@@ -67,8 +70,10 @@ from textual.app import App, ComposeResult
 import zecret
 from zecret.screens.calendar import (
     DAYS,
+    LEGEND,
     MONTH_WIDTH,
     WEEKS,
+    CalendarLegend,
     MonthCalendar,
     MonthGrid,
     WalkableCalendar,
@@ -779,3 +784,45 @@ async def test_clicking_a_day_not_yet_come_does_nothing():
         await pilot.pause()
         assert app.year.date == YESTERDAY
         assert app.changes == []
+
+
+# --- the legend ------------------------------------------------------------
+
+
+class LegendHarness(App[None]):
+    """A month and its legend, wearing the app's stylesheet -- the underline
+    is a rule in app.tcss, and a bare app has nothing to underline with."""
+
+    CSS_PATH = str(Path(zecret.__file__).with_name("app.tcss"))
+
+    def compose(self) -> ComposeResult:
+        yield MonthCalendar(YESTERDAY, frozenset(), id="cal")
+        yield CalendarLegend()
+
+
+def underlined(text) -> list[str]:
+    """The parts of a rich Text drawn underlined."""
+    return [
+        text.plain[span.start : span.end]
+        for span in text.spans
+        if getattr(span.style, "underline", False)
+    ]
+
+
+async def test_the_legend_explains_the_mark_and_shows_today():
+    app = LegendHarness()
+    async with app.run_test():
+        legend = app.query_one(CalendarLegend).render()
+        assert legend.plain.startswith(LEGEND)
+        assert legend.plain.endswith(f"{TODAY.day} today")
+
+
+async def test_the_legend_underlines_today_as_the_grid_does():
+    """Read from the stylesheet on both sides, not assumed."""
+    app = LegendHarness()
+    async with app.run_test():
+        legend = app.query_one(CalendarLegend).render()
+        assert underlined(legend) == [str(TODAY.day)], "only the sample, and all of it"
+        month = app.query_one(MonthCalendar).render()
+        # The grid's cell for today is the digits and the mark beside them.
+        assert any(part.strip() == str(TODAY.day) for part in underlined(month))
