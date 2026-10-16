@@ -19,7 +19,8 @@ Required coverage:
       submitting the change half-typed and clearing every field -- an
       empty field before it included, for a form filled out of order.
     - Every refusal empties the fields, so an unattended terminal never
-      holds a typed password in a widget.
+      holds a typed password in a widget -- a save that failed included --
+      and puts the cursor back in the first field, where retyping starts.
     - A save that fails does not leave the diary half re-keyed.
     - The new password is rated as it is typed, and is then accepted
       whatever the rating. The reading sits on the error row rather than a
@@ -318,6 +319,26 @@ async def test_wrong_current_password_clears_the_fields(diary_path):
 
 
 @pytest.mark.parametrize(
+    "current,new,confirm",
+    [
+        (PASSWORD, "", ""),
+        (PASSWORD, "a new password", "a different one"),
+        ("not my password", "a new password", "a new password"),
+    ],
+    ids=["empty", "mismatch", "wrong-current"],
+)
+async def test_a_refusal_starts_again_from_the_first_field(diary_path, current, new, confirm):
+    """Left where Enter was pressed, the cursor sat in an empty Confirm
+    under two fields just emptied above it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        await submit_change(pilot, current, new, confirm)
+        assert app.screen.focused is app.screen.query_one("#current", Input)
+
+
+@pytest.mark.parametrize(
     "new,confirm",
     [("", ""), ("a new password", "a different one")],
     ids=["empty", "mismatch"],
@@ -355,6 +376,10 @@ async def test_a_failed_save_leaves_the_diary_openable(diary_path, monkeypatch):
         await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
         assert isinstance(app.screen, PasswordScreen)
         assert "No space left" in error_of(app.screen)
+        assert [field.value for field in app.screen.query(Input)] == ["", "", ""], (
+            "a failed save is a refusal too, and must not leave passwords behind"
+        )
+        assert app.screen.focused is app.screen.query_one("#current", Input)
 
         # Params rolled back, session key untouched.
         monkeypatch.undo()

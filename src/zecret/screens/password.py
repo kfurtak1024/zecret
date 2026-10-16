@@ -56,6 +56,11 @@ MISMATCH = "The new passwords do not match."
 CHANGED = "Master password changed."
 NOT_CHANGED = "Your password was not changed."
 
+#: Said on the error row while the fields are greyed out, so a second or
+#: two of Argon2id does not look like a dialog that has stopped answering.
+CHECKING = "Checking your current password…"
+REKEYING = "Re-encrypting the diary under the new password…"
+
 
 class Outcome(Enum):
     """How a change of password ended: in a new password, or in none."""
@@ -67,6 +72,14 @@ class Outcome(Enum):
     #: in a notification by whoever is left to say it.
     FAILED = auto()
 
+
+#: What a quit that waited for the change leaves in the terminal. Printed
+#: after the app has gone, so it names itself.
+QUIT_AFTER = {
+    Outcome.CHANGED: "Zecret: master password changed.",
+    Outcome.REFUSED: "Zecret: your password was not changed.",
+    Outcome.FAILED: "Zecret: your password was not changed.",
+}
 
 #: What a lock that waited for the change says, by how the change ended.
 LOCKED_AFTER = {
@@ -145,13 +158,14 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         # rejected attempt should not leave a password sitting in a widget
         # on an unattended terminal. It costs retyping a password you got
         # wrong anyway.
+        # And puts the cursor back at the top, which is where retyping
+        # starts: left in the field Enter was pressed in, it sat in an
+        # empty Confirm under two empty fields above it.
         if not new:
-            self.set_error(EMPTY_NEW)
-            self.clear_inputs()
+            self.refuse(EMPTY_NEW)
             return
         if new != confirm:
-            self.set_error(MISMATCH)
-            self.clear_inputs()
+            self.refuse(MISMATCH)
             return
 
         self.working = True
@@ -164,6 +178,12 @@ class PasswordScreen(ModalScreen[None], FormScreen):
             self.working = False
             for widget in inputs:
                 widget.disabled = False
+        if self.zecret.quit_pending:
+            # ctrl+q was pressed while this ran, and has waited for it. The
+            # app is going, so the outcome is said where it will still be
+            # read: in the terminal it leaves behind.
+            self.zecret.exit(message=QUIT_AFTER[outcome])
+            return
         if not self.zecret.is_unlocked:
             # Locked anyway, by a road that did not wait. Say what became of
             # the password over the lock screen, which now wants the new one.
@@ -200,24 +220,46 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         stays, for any lock that does not go through action_lock.
         """
         diary, key = self.zecret.unlocked
+        self.set_status(CHECKING)
         if not await asyncio.to_thread(diary.verify_password, current, key):
             self.set_error(WRONG_CURRENT)
             self.clear_inputs()
             return Outcome.REFUSED
 
-        self.set_error("")
+        self.set_status(REKEYING)
         try:
             new_key = await asyncio.to_thread(diary.change_password, new)
         except (OSError, ZecretConflictError) as error:
             # change_password() has put the old KDF params back, so memory
-            # and disk agree again; app.key is still the old key.
+            # and disk agree again; app.key is still the old key. The fields
+            # are emptied as after every other refusal: a password must not
+            # sit in a widget, and retrying a conflict needs a reload first
+            # anyway.
             self.set_error(save_error(error))
+            self.clear_inputs()
             return Outcome.FAILED
 
         if self.zecret.is_unlocked:
             self.zecret.key = new_key
         self.clear_inputs()
         return Outcome.CHANGED
+
+    def refuse(self, message: str) -> None:
+        """Say why, empty the fields, and start again from the first one."""
+        self.set_error(message)
+        self.clear_inputs()
+        self.query_one("#current", Input).focus()
+
+    def set_status(self, message: str) -> None:
+        """Say what the dialog is busy with, on the row errors use.
+
+        Its own class rather than an error's colour: nothing has gone wrong.
+        set_error() takes the row back from it.
+        """
+        line = self.query_one(f"#{self.ERROR_ID}", Label)
+        line.remove_class("-advice", "-advice-strong")
+        line.add_class("-status")
+        line.update(message)
 
     def action_cancel(self) -> None:
         """Escape closes the dialog, changing nothing.

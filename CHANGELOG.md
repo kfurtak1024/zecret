@@ -29,11 +29,19 @@ file matters as much as that does.
   out, and settings, help and every popup could only wait for the idle
   timer. From a popup over a day you are writing it saves the day first,
   as the editor does.
-- **Locking while the master password is being changed waits for the
-  change to finish**, then tells you whether it went through. Before,
-  the change carried on underneath the lock screen and left the new key
-  in memory behind it. <kbd>esc</kbd> waits too, rather than closing the
-  dialog part way through.
+- **Locking or quitting while the master password is being changed waits
+  for the change to finish**, then tells you whether it went through --
+  on the lock screen, or in the terminal you are left in. Before, quitting
+  with <kbd>ctrl</kbd>+<kbd>q</kbd> left the change to finish after Zecret
+  had gone, without a word, so the old password was refused at the next
+  start; and locking left the new key in memory behind the lock screen.
+  <kbd>esc</kbd> waits too, rather than closing the dialog part way
+  through.
+- **The change-password dialog says what it is doing** while it checks
+  your current password and re-encrypts the diary, instead of greying out
+  for a couple of seconds in silence. A change that could not be saved
+  now empties the fields, as every other refusal already did, and any
+  refusal puts you back in the first field to start again.
 - **Deleting a day says so**, naming the day, as saving and locking do.
 - **A new day stops being called "new" in the editor's title as soon as
   it is saved**, rather than the next time it is opened.

@@ -416,7 +416,11 @@ patch number, not a retry. This is why `check` and `verify` run first.
   it re-encrypts. Locking part way through let the re-key finish anyway
   and hand its new key to an app that had just forgotten the old one, so
   a lock asked for then sets `lock_pending`, says it is waiting, and the
-  dialog locks when it is done; the idle timer skips the tick.
+  dialog locks when it is done; the idle timer skips the tick. `ctrl+q`
+  waits the same way (`quit_pending`) and leaves the outcome in the
+  terminal through `App.exit(message=...)`: quitting part way through let
+  the re-key save after the app had gone, with nothing said, and the old
+  password was refused at the next start.
 - **Idleness is measured on two clocks, and the longer wait wins.**
   `Instant` in `app.py` holds a reading of each. `time.monotonic()` is
   `CLOCK_MONOTONIC`, which does *not* advance while the machine is

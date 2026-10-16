@@ -114,6 +114,9 @@ LOCKED_BY_HAND = "Locked."
 #: waits for.
 LOCK_WHEN_DONE = "Locking once the new password is saved."
 
+#: And when ctrl+q does, which waits for the same reason.
+QUIT_WHEN_DONE = "Quitting once the new password is saved."
+
 #: The answer to the unsaved-changes question that quits without losing
 #: anything. The editor's own wording for the same button says "go back",
 #: since that is where escape was heading; this one says where ctrl+q was.
@@ -175,9 +178,10 @@ class ZecretApp(App[None]):
         # config.py, because a diary that opened unreadable would be a
         # puzzle before it was a protection.
         self.masked = False
-        # A ctrl+l that arrived while a screen was working, waiting for it
-        # to finish -- see action_lock.
+        # A ctrl+l or a ctrl+q that arrived while a screen was working,
+        # waiting for it to finish -- see action_lock and action_quit.
         self.lock_pending = False
+        self.quit_pending = False
 
     def on_mount(self) -> None:
         """Apply the saved theme, then push UnlockScreen, which prompts to
@@ -312,6 +316,15 @@ class ZecretApp(App[None]):
         that it might. The test is the one the idle lock already uses: what
         must not be locked away unasked must not be quit away unasked.
         """
+        if self.is_working():
+            # The password is being changed. Quitting there and then did
+            # not stop it -- the re-key ran on in its thread and saved after
+            # the app had gone, with nothing said, so the old password was
+            # the one anyone would try next and it was refused. Wait for it,
+            # and leave saying how it ended (PasswordScreen.change_password).
+            self.quit_pending = True
+            self.notify(QUIT_WHEN_DONE)
+            return
         if not self.locking_would_lose_work():
             self.exit()
             return

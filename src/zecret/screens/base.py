@@ -426,7 +426,7 @@ class FormScreen(ZecretScreen):
         has gone wrong outranks something that merely might.
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
-        line.remove_class("-advice", "-advice-strong")
+        line.remove_class("-advice", "-advice-strong", "-status")
         # Plain: an error can quote the operating system, or a path.
         line.update(plain(message))
 

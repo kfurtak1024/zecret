@@ -144,6 +144,13 @@ PasswordScreen {
     color: $text-success;
 }
 
+/* And what the password dialog is doing while its fields are greyed out:
+   a second or two of Argon2id, twice over. Muted, because it is neither a
+   complaint nor advice -- just the reason nothing seems to be happening. */
+#password-error.-status {
+    color: $text-muted;
+}
+
 /* --- The warning about a forgotten password ----------------------------- */
 
 /* $error, which is otherwise reserved for errors and destructive actions.

@@ -21,7 +21,11 @@ Required coverage:
       for it, then says how it ended: the change carried on in its thread
       when the dialog was torn down, so a lock part way through changed the
       password on disk and said only "Locked.". Escape and the idle timer
-      wait for it too.
+      wait for it too, and so does ctrl+q: quitting part way through let
+      the change save after the app had gone, with nothing said at all.
+      It leaves saying how the change ended, in the terminal.
+    - While the change runs, the dialog says what it is doing on its error
+      row, in its own muted colour rather than an error's.
     - Unlocking again works, and comes back to the entry list.
     - The idle timer locks once the wait has passed, and does not before.
     - **A suspended machine counts as being away.** CLOCK_MONOTONIC does
@@ -63,10 +67,10 @@ from pathlib import Path
 
 import pytest
 from textual import events
-from textual.widgets import Input, TextArea
+from textual.widgets import Input, Label, TextArea
 
 import zecret.app
-from zecret.app import LOCK_WHEN_DONE, Instant, ZecretApp
+from zecret.app import LOCK_WHEN_DONE, QUIT_WHEN_DONE, Instant, ZecretApp
 from zecret.models import Entry
 from zecret.screens.calendar_view import CalendarScreen
 from zecret.screens.confirm import ConfirmScreen
@@ -74,7 +78,7 @@ from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.help import HelpScreen
-from zecret.screens.password import PasswordScreen
+from zecret.screens.password import REKEYING, PasswordScreen
 from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
 from zecret.screens.unlock import UnlockScreen
@@ -470,6 +474,45 @@ async def test_a_lock_that_does_not_wait_leaves_no_key_behind(
         assert "Master password changed." in notifications(app)
 
     DiaryFile.unlock(diary_path, "new one")
+
+
+async def test_ctrl_q_during_the_re_key_waits_and_says_how_it_ended(
+    diary_path, monkeypatch, notifications
+):
+    """Verified before the fix: the app was gone at once, the re-key saved
+    behind it, and the old password was refused at the next start."""
+    rekey = SlowRekey(monkeypatch)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await rekey.start(app, pilot)
+
+        # The key itself, posted: ctrl+q is Textual's own app binding.
+        app.post_message(events.Key("ctrl+q", None))
+        await asyncio.sleep(0.1)
+        assert app.return_code is None, "must not quit until the change is over"
+        assert QUIT_WHEN_DONE in notifications(app)
+
+        rekey.release.set()
+        await settle(lambda: app.return_code is not None)
+        assert app.return_code == 0
+        said = [str(renderable) for renderable in app._exit_renderables]
+        assert said == ["Zecret: master password changed."]
+
+    DiaryFile.unlock(diary_path, "new one")
+
+
+async def test_the_dialog_says_what_it_is_doing(diary_path, monkeypatch):
+    rekey = SlowRekey(monkeypatch)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await rekey.start(app, pilot)
+        line = app.screen.query_one("#password-error", Label)
+        assert str(line.content) == REKEYING
+        assert line.has_class("-status")
+        assert line.styles.color != app.screen.query_one("#password-title", Label).styles.color
+        await rekey.finish(app, pilot)
 
 
 async def test_a_lock_after_a_failed_re_key_says_nothing_changed(
