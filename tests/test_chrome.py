@@ -17,8 +17,9 @@ Required coverage:
       box covered the bar, which on a terminal wider than the box it did
       not.
     - Every bar reads the same way: this screen's own keys, the way out,
-      then Lock -- followed by Help and Quit on the two main views. And one
-      action has one name: opening a day in the editor is "Edit" on the
+      then Lock -- followed by Help and Quit on the two main views. Lock is
+      on every bar once the diary is open, search, settings and the popups
+      included. And one action has one name: opening a day in the editor is "Edit" on the
       list and in the calendar alike.
     - The answers to a question are all one width, and every label fits
       the width it is given -- the buttons are sized in app.tcss rather
@@ -57,10 +58,15 @@ from textual.widgets import Button, Footer, Input, TextArea
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.calendar_view import CalendarScreen
+from zecret.screens.confirm import ConfirmScreen
+from zecret.screens.date_prompt import DatePromptScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.entry_list import EntryListScreen
 from zecret.screens.header import DiaryHeader
-from zecret.screens.help import documented_bindings
+from zecret.screens.help import HelpScreen, documented_bindings
+from zecret.screens.password import PasswordScreen
+from zecret.screens.search import SearchScreen
+from zecret.screens.settings import SettingsScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -586,6 +592,11 @@ def test_every_bar_ends_the_same_way():
     assert advertised(CalendarScreen)[-3:] == ["Lock", "Help", "Quit"]
     assert advertised(EditorScreen)[-2:] == ["Back", "Lock"]
     assert advertised(CalendarScreen)[-4] == "List", "the way out comes just before Lock"
+    assert advertised(SearchScreen)[-2:] == ["Back", "Lock"]
+    assert advertised(SettingsScreen)[-2:] == ["Back", "Lock"]
+    assert advertised(HelpScreen)[-2:] == ["Close", "Lock"]
+    for popup in (ConfirmScreen, DatePromptScreen, PasswordScreen):
+        assert advertised(popup)[-2:] == ["Cancel", "Lock"], popup.__name__
 
 
 def test_opening_a_day_has_one_name():

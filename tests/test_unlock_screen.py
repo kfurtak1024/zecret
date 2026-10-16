@@ -6,9 +6,15 @@ cover routing and the security-relevant behavior rather than appearance.
 
 Required coverage:
     - A missing diary presents the create flow; an existing one presents
-      the unlock flow.
+      the unlock flow. A diary that appears while a password is being
+      chosen for a new one is never written over: the screen becomes the
+      unlock screen for it, says why, and opens it with its own password.
     - Creating a diary writes the file and leaves app.diary/app.key set.
     - Mismatched or empty passwords are refused without creating a file.
+    - Enter in the password field moves on to the confirmation while that
+      is empty, rather than failing as a mismatch and clearing both. The
+      confirmation's placeholder says Enter is how the form finishes,
+      since there is no button to, and fits its field unclipped at 80x24.
     - The correct password unlocks and exposes the decrypted entries.
     - A wrong password shows an inline error, leaves app.diary as None, and
       does not leak whether the file was wrong-password vs. corrupted.
@@ -39,7 +45,7 @@ from textual.widgets import Input, Label
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
-from zecret.screens.unlock import UNLOCK_FAILED, UnlockScreen
+from zecret.screens.unlock import CONFIRM_HINT, DIARY_APPEARED, UNLOCK_FAILED, UnlockScreen
 from zecret.storage import DiaryFile
 from zecret.strength import FILLED, HOLLOW
 
@@ -160,6 +166,16 @@ async def test_ctrl_q_quits_from_the_lock_screen(diary_path):
 # --- creating a diary ------------------------------------------------------
 
 
+async def test_the_confirmation_says_enter_finishes_the_form(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        field = app.screen.query_one("#confirm", Input)
+        assert field.placeholder == CONFIRM_HINT
+        assert "Enter" in CONFIRM_HINT
+        assert field.content_region.width >= len(CONFIRM_HINT), "cut off"
+
+
 async def test_create_writes_the_file_and_unlocks_the_session(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -186,6 +202,25 @@ async def test_create_refuses_mismatched_passwords(diary_path):
         assert not diary_path.exists(), "no diary may be written on mismatch"
         assert app.diary is None
         assert "match" in error_text(app).lower()
+
+
+async def test_enter_moves_on_to_an_empty_confirmation(diary_path):
+    """Enter is "next" in most forms. Submitting from the first field
+    compared the password with an empty confirmation, failed, and cleared
+    the password just typed."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, PASSWORD)
+        assert app.focused is app.screen.query_one("#confirm", Input)
+        assert app.screen.query_one("#password", Input).value == PASSWORD
+        # The strength reading may be there; a mismatch must not be.
+        assert "match" not in error_text(app).lower()
+        assert not diary_path.exists()
+
+        await pilot.press(*PASSWORD, "enter")
+        await pilot.pause()
+        assert diary_path.exists()
+        assert app.diary is not None
 
 
 async def test_create_refuses_an_empty_password(diary_path):
@@ -318,9 +353,35 @@ async def test_a_diary_appearing_before_create_is_reported_not_overwritten(diary
 
         await submit(pilot, PASSWORD, confirm=PASSWORD)
         assert app.diary is None
-        assert "already exists" in error_text(app)
+        assert error_text(app) == DIARY_APPEARED
 
     assert diary_path.read_bytes() == before, "the existing diary must be untouched"
+
+
+async def test_a_diary_appearing_before_create_turns_it_into_unlock(diary_path):
+    """It used to stay the create screen, and every retry was refused the
+    same way: the only way on was to quit."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        existing_diary(diary_path)
+        await submit(pilot, "a new one I chose", confirm="a new one I chose")
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, UnlockScreen)
+        assert screen.creating is False
+        assert not screen.query("#confirm"), "nothing left to confirm"
+        assert not screen.query(".caution"), "and no warning about choosing one"
+        assert str(screen.query_one("#unlock-title", Label).content) == "Unlock your diary"
+        assert screen.sub_title == "Locked"
+        assert screen.query_one("#password", Input).value == "", "the chosen password goes"
+        assert screen.focused is screen.query_one("#password", Input)
+        line = screen.query_one("#unlock-error", Label)
+        assert line.content_region.width >= len(DIARY_APPEARED), "cut off"
+
+        await submit(pilot, PASSWORD)
+        assert app.is_unlocked, "and the diary that is there opens with its own password"
 
 
 async def test_a_diary_vanishing_before_unlock_is_reported(diary_path):

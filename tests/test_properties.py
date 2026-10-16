@@ -140,7 +140,7 @@ def test_load_document_is_a_diary_or_a_value_error(document: Any, tmp_path):
     path = tmp_path / "diary.enc"
     path.write_bytes(json.dumps(document).encode("utf-8"))
     try:
-        loaded = _load_document(path)
+        loaded, _ = _load_document(path)
     except ValueError:
         return
     assert isinstance(loaded, dict)
@@ -152,7 +152,7 @@ def test_load_document_is_total_over_arbitrary_bytes(data: bytes, tmp_path):
     path = tmp_path / "diary.enc"
     path.write_bytes(data)
     try:
-        loaded = _load_document(path)
+        loaded, _ = _load_document(path)
     except ValueError:
         return
     assert isinstance(loaded, dict)

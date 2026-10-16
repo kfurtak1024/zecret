@@ -23,7 +23,14 @@ Required coverage:
       show() posts nothing, which is what lets the field above drive the
       grid while it is being typed into.
     - A click lands the cursor on the day under it, and a click on the
-      headings or on the blank around a month does nothing.
+      headings, on the blank around a month or on a day not yet come does
+      nothing.
+    - The legend under a calendar says what the mark means, and shows
+      today as today's own date drawn the way the grid draws it: underlined,
+      from the same stylesheet rule, so the two cannot disagree.
+    - The starting date clamps to today too. show() does not: a future
+      date typed into the field above is shown where it is, so the day
+      highlighted is the day the field will refuse.
 
     YearCalendar, over and above what the two share:
     - It draws the twelve months of the year the cursor is in, each named
@@ -63,8 +70,10 @@ from textual.app import App, ComposeResult
 import zecret
 from zecret.screens.calendar import (
     DAYS,
+    LEGEND,
     MONTH_WIDTH,
     WEEKS,
+    CalendarLegend,
     MonthCalendar,
     MonthGrid,
     WalkableCalendar,
@@ -388,6 +397,36 @@ async def test_clicking_a_day_does_not_choose_it():
         await pilot.click("#cal", offset=(0, 3))
         await pilot.pause()
         assert app.picked == []
+
+
+async def test_clicking_a_day_not_yet_come_moves_nothing(monkeypatch):
+    """Refused, as the year refuses it, rather than clamped to today --
+    which put the cursor on a day nobody clicked."""
+    monkeypatch.setattr("zecret.screens.calendar.today", lambda: AUGUST)
+    app = CalendarHarness(dt.date(2020, 8, 10))
+    async with app.run_test() as pilot:
+        # The 24th: first column of the fourth full week, after AUGUST.
+        await pilot.click("#cal", offset=(0, 6))
+        await pilot.pause()
+        assert app.calendar.date == dt.date(2020, 8, 10)
+
+
+async def test_show_puts_the_cursor_on_a_typed_future_date():
+    """Clamped to today, the grid highlighted a day it could choose while
+    enter read the field and refused the day typed there."""
+    future = TOMORROW + dt.timedelta(days=40)
+    app = CalendarHarness(YESTERDAY)
+    async with app.run_test() as pilot:
+        app.calendar.show(future)
+        await pilot.pause()
+        assert app.calendar.date == future
+        assert app.changes == [], "show() still says nothing"
+
+
+async def test_a_future_starting_date_starts_on_today():
+    app = CalendarHarness(TOMORROW)
+    async with app.run_test():
+        assert app.calendar.date == TODAY
 
 
 async def test_clicking_the_headings_moves_nothing():
@@ -745,3 +784,45 @@ async def test_clicking_a_day_not_yet_come_does_nothing():
         await pilot.pause()
         assert app.year.date == YESTERDAY
         assert app.changes == []
+
+
+# --- the legend ------------------------------------------------------------
+
+
+class LegendHarness(App[None]):
+    """A month and its legend, wearing the app's stylesheet -- the underline
+    is a rule in app.tcss, and a bare app has nothing to underline with."""
+
+    CSS_PATH = str(Path(zecret.__file__).with_name("app.tcss"))
+
+    def compose(self) -> ComposeResult:
+        yield MonthCalendar(YESTERDAY, frozenset(), id="cal")
+        yield CalendarLegend()
+
+
+def underlined(text) -> list[str]:
+    """The parts of a rich Text drawn underlined."""
+    return [
+        text.plain[span.start : span.end]
+        for span in text.spans
+        if getattr(span.style, "underline", False)
+    ]
+
+
+async def test_the_legend_explains_the_mark_and_shows_today():
+    app = LegendHarness()
+    async with app.run_test():
+        legend = app.query_one(CalendarLegend).render()
+        assert legend.plain.startswith(LEGEND)
+        assert legend.plain.endswith(f"{TODAY.day} today")
+
+
+async def test_the_legend_underlines_today_as_the_grid_does():
+    """Read from the stylesheet on both sides, not assumed."""
+    app = LegendHarness()
+    async with app.run_test():
+        legend = app.query_one(CalendarLegend).render()
+        assert underlined(legend) == [str(TODAY.day)], "only the sample, and all of it"
+        month = app.query_one(MonthCalendar).render()
+        # The grid's cell for today is the digits and the mark beside them.
+        assert any(part.strip() == str(TODAY.day) for part in underlined(month))

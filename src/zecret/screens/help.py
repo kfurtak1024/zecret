@@ -163,6 +163,9 @@ class HelpScreen(ModalScreen[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Close", priority=True),
         Binding("question_mark", "back", "Close", key_display="?", show=False),
+        # The same chord as everywhere the diary is open -- see
+        # ZecretApp.action_lock.
+        Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def __init__(self) -> None:

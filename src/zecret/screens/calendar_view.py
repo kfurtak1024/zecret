@@ -19,16 +19,21 @@ Responsibilities:
     - 'e' or enter opens the day under the cursor in the editor, whether
       or not it has been written -- the editor decides which it is, as it
       does from everywhere else.
+    - 'd' deletes the entry under the cursor, after the same question the
+      list asks, and unmarks the day. On a day with nothing written it
+      says so rather than doing nothing.
     - '[' and ']' go to the same day a year either side. The day, week and
       month keys are the YearCalendar's own, and cross into the next year
       by themselves.
     - On every return from the editor, re-read which days are written, so
-      a day just written has its mark.
+      a day just written has its mark -- and after a deletion, so a day
+      deleted loses it.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from contextlib import ExitStack
 from typing import ClassVar
 
@@ -39,8 +44,17 @@ from textual.containers import Center
 from textual.widgets import Label
 
 from zecret.models import Entry
-from zecret.screens.base import ZecretScreen, card, count_entries, today, unchanged
-from zecret.screens.calendar import LEGEND, MONTH_WIDTH, YearCalendar, reachable
+from zecret.screens.base import (
+    ZecretScreen,
+    card,
+    count_entries,
+    delete_question,
+    format_day,
+    today,
+    unchanged,
+)
+from zecret.screens.calendar import MONTH_WIDTH, CalendarLegend, YearCalendar, reachable
+from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 
@@ -90,11 +104,16 @@ class CalendarScreen(ZecretScreen):
         # one in the bar: enter is what a calendar is expected to answer to
         # and needs no advertising, while 'e' is the key this view adds.
         Binding("enter", "edit_day", "Edit", show=False),
+        # The list's key and the list's name for it, since it is the same
+        # thing done to a day chosen another way -- which also keeps it off
+        # the calendar's column of the help popup, where the list's section
+        # has already said it.
+        Binding("d", "delete_day", "Delete"),
         # On the screen rather than the widget, unlike the arrows and the
         # page keys: an arrow key in a calendar needs no explaining, a
         # bracket does, and the help popup and the bar are built from
         # screen bindings. In the bar as well, since it has the room --
-        # these make seven keys in 63 columns, where the list's eight take
+        # these make eight keys in 72 columns, against the list's eight in
         # 69 -- and a year key nobody finds leaves the arrows to walk there
         # instead.
         Binding("left_square_bracket", "previous_year", "Previous year", key_display="["),
@@ -149,7 +168,7 @@ class CalendarScreen(ZecretScreen):
             # scrolls, and in most terminals this one does.
             with Center():
                 yield YearCalendar(self.date, self.written_days, id="year")
-            yield Label(LEGEND, id="year-legend")
+            yield CalendarLegend(id="year-legend")
         yield DiaryFooter()
 
     def on_mount(self) -> None:
@@ -238,8 +257,11 @@ class CalendarScreen(ZecretScreen):
         Skipped while locking, which pops this screen with the diary
         already on its way out -- see EntryListScreen.
         """
-        if not self.zecret.is_unlocked:
-            return
+        if self.zecret.is_unlocked:
+            self.redraw()
+
+    def redraw(self) -> None:
+        """Mark the days written as the diary has them now, if that changed."""
         diary, _ = self.zecret.unlocked
         if not unchanged(self.drawn, diary.entries):
             self.drawn = dict(diary.entries)
@@ -308,6 +330,36 @@ class CalendarScreen(ZecretScreen):
     def action_edit_day(self) -> None:
         """Open the day under the cursor -- written or not, the editor knows."""
         self.app.push_screen(EditorScreen(self.take_date()))
+
+    def action_delete_day(self) -> None:
+        """Ask about deleting the day under the cursor -- if it has an entry.
+
+        A day with nothing written gets a word rather than silence: on a
+        grid of days, unlike in the list, the cursor can be on one, and a
+        dead key there reads as a broken one.
+        """
+        date = self.take_date()
+        diary, _ = self.zecret.unlocked
+        if date not in diary.entries:
+            self.notify(f"Nothing written on {format_day(date)}.", markup=False)
+            return
+        self.app.push_screen(ConfirmScreen(delete_question(date)), self.confirm_delete(date))
+
+    def confirm_delete(self, date: dt.date) -> Callable[[Choice | None], None]:
+        """Build the callback ConfirmScreen dismisses into -- see the list's.
+
+        Redraws here as well as on resume: nothing orders a dismiss
+        callback against this screen's resume, and the resume may already
+        have run and found nothing changed. redraw() is idempotent, so
+        whichever comes second does nothing.
+        """
+
+        def on_answered(choice: Choice | None) -> None:
+            if choice is Choice.CONFIRM:
+                self.delete_day(date)
+                self.redraw()
+
+        return on_answered
 
     def action_back(self) -> None:
         """Back to the list, which lands on self.date -- taken fresh here."""

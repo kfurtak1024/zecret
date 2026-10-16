@@ -144,6 +144,13 @@ PasswordScreen {
     color: $text-success;
 }
 
+/* And what the password dialog is doing while its fields are greyed out:
+   a second or two of Argon2id, twice over. Muted, because it is neither a
+   complaint nor advice -- just the reason nothing seems to be happening. */
+#password-error.-status {
+    color: $text-muted;
+}
+
 /* --- The warning about a forgotten password ----------------------------- */
 
 /* $error, which is otherwise reserved for errors and destructive actions.
@@ -641,9 +648,11 @@ MonthGrid > .month-calendar--written {
    answers to, so it must set nothing but the style it adds: today is
    usually a written day and always where the cursor starts, and a colour
    here would take that day's own colour away from it. Underlined, because
-   an underline is the one thing none of the others use. */
+   an underline is the one thing none of the others use. The legend under
+   each calendar draws its sample of today from this same rule. */
 MonthCalendar > .month-calendar--today,
-MonthGrid > .month-calendar--today {
+MonthGrid > .month-calendar--today,
+CalendarLegend > .month-calendar--today {
     text-style: underline;
 }
 

@@ -10,6 +10,83 @@ file matters as much as that does.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-16
+
+### Added
+
+- **<kbd>d</kbd> deletes a day from the calendar view**, as it does in the
+  list. It asks first, the same question the list asks, and the day's mark
+  goes as soon as you say yes. On a day with nothing written it just tells
+  you so.
+- **The calendars say how today is marked.** The legend under the year,
+  and under the month in the which-day question, now shows today's date
+  underlined the way the grid draws it, beside what the bullet means.
+
+### Fixed
+
+- **<kbd>ctrl</kbd>+<kbd>l</kbd> locks from every screen**, not just the
+  list, the calendar and the editor. Search, which lays the whole diary
+  out, and settings, help and every popup could only wait for the idle
+  timer. From a popup over a day you are writing it saves the day first,
+  as the editor does.
+- **Locking or quitting while the master password is being changed waits
+  for the change to finish**, then tells you whether it went through --
+  on the lock screen, or in the terminal you are left in. Before, quitting
+  with <kbd>ctrl</kbd>+<kbd>q</kbd> left the change to finish after Zecret
+  had gone, without a word, so the old password was refused at the next
+  start; and locking left the new key in memory behind the lock screen.
+  <kbd>esc</kbd> waits too, rather than closing the dialog part way
+  through.
+- **The change-password dialog says what it is doing** while it checks
+  your current password and re-encrypts the diary, instead of greying out
+  for a couple of seconds in silence. A change that could not be saved
+  now empties the fields, as every other refusal already did, and any
+  refusal puts you back in the first field to start again.
+- **The password forms say how they finish.** The last field, when
+  creating a diary and when changing its password, now reads "…then
+  press Enter", since neither form has a button to say it.
+- **Deleting a day says so**, naming the day, as saving and locking do.
+- **The create screen no longer gets stuck when a diary appears while you
+  are choosing a password for one** -- created by another Zecret in the
+  meantime. It already refused to write over that diary, but kept asking
+  for a new password, refused every retry the same way, and left quitting
+  as the only way on. It now turns into the unlock screen for the diary
+  that is there, and says why.
+- **A message is shown once.** "Master password changed." came up again
+  over the list when you left settings, as though something else had
+  happened. A message now follows you onto the screen you land on, and no
+  further.
+- **A new day stops being called "new" in the editor's title as soon as
+  it is saved**, rather than the next time it is opened.
+- **Two Zecrets on one diary can no longer lose an entry while one of them
+  is unlocking.** If the other one saved during the second or so it takes
+  to open the diary, the one being unlocked took that save as its starting
+  point without having read it, and its next save quietly wrote over the
+  new entry. That save is now refused with the usual "changed since it was
+  opened" message, as it is at any other time.
+- **Creating a diary no longer changes the permissions of the folder it is
+  in.** `zecret --path ~/diary.enc` used to make your home folder private
+  to you, and a diary created in a shared or synced folder did the same to
+  that folder. Only a folder Zecret creates for the diary is made private
+  now. The diary file itself is private, as before.
+- **A `~` in `ZECRET_DIARY_PATH`, `ZECRET_CONFIG_PATH`, or in
+  `--path=~/...` means your home folder.** When the shell left it
+  unexpanded (in quotes, or after `=`), Zecret looked for a folder named
+  `~` in the current directory, found no diary there, and offered to
+  create a new one.
+- **<kbd>Enter</kbd> in a password field moves on to the next one** while
+  that one is still empty, when creating a diary or changing its
+  password. It used to submit straight away, fail with "Passwords do not
+  match" and clear the password you had just typed.
+- **Clicking a day that has not happened yet in the which-day calendar
+  does nothing**, as it already did in the calendar view, instead of
+  jumping to today.
+- **Search keeps up as you type in a long diary.** Each keystroke used to
+  re-read every entry from scratch.
+- **A deletion that fails to save no longer causes a later save to
+  re-encrypt that day.** The diary still read correctly either way; the
+  day was simply rewritten when it did not need to be.
+
 ## [0.8.1] - 2026-10-07
 
 ### Security
@@ -522,7 +599,8 @@ written today will be readable by every later Zecret or migrated by one.
   them: the file reveals *which days* have entries, though not a word of
   what they say.
 
-[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/kfurtak1024/zecret/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/kfurtak1024/zecret/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/kfurtak1024/zecret/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/kfurtak1024/zecret/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/kfurtak1024/zecret/compare/v0.7.0...v0.7.1

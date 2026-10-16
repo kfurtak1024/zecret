@@ -70,7 +70,8 @@ import hmac
 import json
 import os
 import tempfile
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Self
@@ -159,8 +160,7 @@ class DiaryFile:
         """
         if path.exists():
             raise FileExistsError(f"a diary already exists at {path}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _restrict(path.parent, DIR_MODE)
+        _make_private_directory(path.parent)
 
         kdf_params = KdfParams.generate()
         key = derive_key(password, kdf_params)
@@ -182,10 +182,10 @@ class DiaryFile:
             ValueError: if the file is not a diary we can parse, or is a
                 format version this build does not understand.
         """
-        document = _load_document(path)
+        document, stamp = _load_document(path)
         kdf_params = KdfParams.from_dict(document["kdf"])
         key = derive_key(password, kdf_params)
-        return cls._decrypted(path, document, kdf_params, key), key
+        return cls._decrypted(path, document, stamp, kdf_params, key), key
 
     @classmethod
     def reopen(cls, path: Path, key: bytes) -> Self:
@@ -214,18 +214,30 @@ class DiaryFile:
             zecret.crypto.ZecretDecryptError: if `key` no longer opens it.
             ValueError: if the file is not a diary we can parse.
         """
-        document = _load_document(path)
+        document, stamp = _load_document(path)
         kdf_params = KdfParams.from_dict(document["kdf"])
-        return cls._decrypted(path, document, kdf_params, key)
+        return cls._decrypted(path, document, stamp, kdf_params, key)
 
     @classmethod
     def _decrypted(
-        cls, path: Path, document: dict[str, Any], kdf_params: KdfParams, key: bytes
+        cls,
+        path: Path,
+        document: dict[str, Any],
+        stamp: tuple[int, int],
+        kdf_params: KdfParams,
+        key: bytes,
     ) -> Self:
         """Turn a loaded document into an open diary, given the key for it.
 
         Shared by unlock() and reopen(), which differ only in where the key
         came from -- derived from a password, or already in hand.
+
+        `stamp` is the file's (mtime, size) as of the read that produced
+        `document`, not as of now. Between the two lie the key derivation
+        and every decryption -- most of a second, on purpose -- and a stamp
+        taken at the end would adopt whatever another Zecret saved in that
+        time as this session's own, so the next save() would see no
+        conflict and write the older entries over the newer.
         """
         _check_verifier(key, document["verifier"])
 
@@ -250,7 +262,7 @@ class DiaryFile:
         diary = cls(path=path, kdf_params=kdf_params, entries=entries)
         diary._records = records
         diary._records_key = _key_fingerprint(key)
-        diary._file_stamp = _file_stamp(path)
+        diary._file_stamp = stamp
         return diary
 
     def save(self, key: bytes) -> None:
@@ -264,8 +276,8 @@ class DiaryFile:
         ciphertexts were produced with -- i.e. after change_password() --
         every entry is necessarily re-encrypted.
 
-        Called after any add/edit/delete, and after a password change (with
-        the new key and new self.kdf_params already set).
+        A screen that changes the diary saves through saving() instead,
+        which also takes the change back if this fails.
 
         Raises:
             ZecretConflictError: if the file changed since this session
@@ -275,6 +287,44 @@ class DiaryFile:
         """
         self._check_unchanged()
         self._write(key)
+
+    @contextmanager
+    def saving(self, key: bytes) -> Iterator[None]:
+        """Make the changes in the `with` block, then save them -- or neither.
+
+            with diary.saving(key):
+                diary.delete_entry(day)
+
+        If the block or the save raises, the entries and the ciphertext
+        cache are put back as they were before the block, and the exception
+        goes on to the caller. Memory then still matches the file, so trying
+        again is a clean second attempt rather than "an entry already
+        exists" -- and a day put back keeps the ciphertext it has on disk,
+        so the next save does not re-encrypt it (requirement 6).
+
+        This is the undo every screen that saves used to write for itself,
+        each knowing a little of DiaryFile's insides to do it -- and one of
+        them, putting back a deletion, got it wrong.
+
+        Use it on the event loop, not from a worker thread: the undo empties
+        and refills self.entries in place, and a screen drawing from that
+        dict at the same moment would see a diary with nothing in it.
+
+        Raises:
+            ZecretConflictError, OSError: as save() does.
+        """
+        entries = dict(self.entries)
+        records = dict(self._records)
+        try:
+            yield
+            self.save(key)
+        except BaseException:
+            # Refilled rather than replaced, so anything holding this dict
+            # sees the restored entries rather than a stale copy.
+            self.entries.clear()
+            self.entries.update(entries)
+            self._records = records
+            raise
 
     def _write(self, key: bytes, *, exclusive: bool = False) -> None:
         """Encrypt what needs encrypting and put the whole diary on disk.
@@ -332,15 +382,15 @@ class DiaryFile:
         }
         encoded = json.dumps(document).encode("utf-8")
         if exclusive:
-            _create_exclusively(self.path, encoded)
+            stamp = _create_exclusively(self.path, encoded)
         else:
-            _atomic_write(self.path, encoded)
+            stamp = _atomic_write(self.path, encoded)
 
         # Only adopt the new records once the write has actually landed, so
         # a failed save leaves the cache describing what is really on disk.
         self._records = records
         self._records_key = fingerprint
-        self._file_stamp = _file_stamp(self.path)
+        self._file_stamp = stamp
 
     def _check_unchanged(self) -> None:
         """Refuse to write over a file someone else has written.
@@ -406,7 +456,8 @@ class DiaryFile:
         """
         del self.entries[date]
         # Drop the cached copy too: no reason to keep a deleted entry's
-        # plaintext alive in memory until the next save.
+        # plaintext alive in memory until the next save. A deletion undone
+        # by saving() gets it back from saving()'s own copy.
         self._records.pop(date, None)
 
     def verify_password(self, password: str, key: bytes) -> bool:
@@ -423,16 +474,34 @@ class DiaryFile:
         return hmac.compare_digest(derive_key(password, self.kdf_params), key)
 
     def change_password(self, new_password: str) -> bytes:
-        """Rotate to a new password: generate new KdfParams, derive new key.
+        """Rotate to a new password and save the diary re-encrypted under it.
 
         A fresh salt is generated, so the new key is unrelated to the old
-        one even if the user reuses a password.
+        one even if the user reuses a password. Every entry is re-encrypted,
+        since the key it was encrypted under has gone.
 
-        Returns the new key. Caller must still call save(new_key) to persist
-        the diary re-encrypted under the new key.
+        Returns the new key, for the caller to hold from now on.
+
+        Raises:
+            ZecretConflictError, OSError: if the save fails. The diary is
+                then still under the old password, on disk and in memory,
+                and the old key is still the one to use.
         """
+        previous = self.kdf_params
         self.kdf_params = KdfParams.generate()
-        return derive_key(new_password, self.kdf_params)
+        new_key = derive_key(new_password, self.kdf_params)
+        # Its own undo rather than saving(): this runs in a worker thread
+        # (see PasswordScreen), it changes no entries, and the KDF params
+        # are all there is to put back. Left in place they would describe
+        # a key that never reached disk, and the next save under the old
+        # key would write them over old ciphertext -- a file neither
+        # password opens.
+        try:
+            self.save(new_key)
+        except BaseException:
+            self.kdf_params = previous
+            raise
+        return new_key
 
 
 def _file_stamp(path: Path) -> tuple[int, int] | None:
@@ -442,9 +511,20 @@ def _file_stamp(path: Path) -> tuple[int, int] | None:
     it back in full on every save.
     """
     try:
-        status = path.stat()
+        return _stamp_of(path.stat())
     except OSError:
         return None
+
+
+def _stamp_of(status: os.stat_result) -> tuple[int, int]:
+    """The (mtime, size) pair _file_stamp() compares, from a stat result.
+
+    A read takes its own with fstat() on the descriptor it read from, so
+    the stamp describes exactly the bytes this session read -- a stat of
+    the path afterwards could already be describing someone else's. A
+    write takes its own from the file it wrote, as close to the write as
+    the filesystem allows; see _atomic_write().
+    """
     return status.st_mtime_ns, status.st_size
 
 
@@ -461,14 +541,20 @@ def _b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 
 
-def _load_document(path: Path) -> dict[str, Any]:
+def _load_document(path: Path) -> tuple[dict[str, Any], tuple[int, int]]:
     """Read and structurally validate the diary file at `path`.
+
+    Returns the document and the file's stamp, both from the same open
+    descriptor -- see DiaryFile._decrypted() for why they must not be
+    taken apart.
 
     Raises:
         FileNotFoundError: if `path` does not exist.
         ValueError: if the contents are not a diary of a known version.
     """
-    raw = path.read_bytes()
+    with path.open("rb") as handle:
+        raw = handle.read()
+        stamp = _stamp_of(os.fstat(handle.fileno()))
     try:
         document = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -490,7 +576,7 @@ def _load_document(path: Path) -> dict[str, Any]:
         raise ValueError("diary file is missing its key verifier")
     if not isinstance(document.get("entries"), list):
         raise ValueError("diary file is missing its entries list")
-    return document
+    return document, stamp
 
 
 def _check_verifier(key: bytes, verifier: dict[str, Any]) -> None:
@@ -526,7 +612,7 @@ def _parse_record(raw: object) -> tuple[dt.date, bytes, bytes]:
         raise ValueError(f"malformed entry record: {exc}") from exc
 
 
-def _atomic_write(path: Path, data: bytes) -> None:
+def _atomic_write(path: Path, data: bytes) -> tuple[int, int]:
     """Write `data` to `path` atomically, never leaving a partial file.
 
     Writes to a temp file in the same directory (same filesystem, so the
@@ -541,6 +627,14 @@ def _atomic_write(path: Path, data: bytes) -> None:
     a local copy while the one being synced stopped changing -- with no
     error anywhere. Resolving it also puts the temp file beside the real
     file, which is what keeps the rename on one filesystem.
+
+    Returns the written file's stamp, taken from the temp file just before
+    the rename: a rename keeps a file's mtime and size, and a stat of the
+    path after it could already see another process's write. After the
+    close rather than from the open descriptor, because some filesystems
+    (SMB, some FUSE mounts) set the mtime when the file is closed, and a
+    stamp from before that never matched the file again -- every save
+    after the first was refused as a conflict.
     """
     path = path.resolve()
     directory = path.parent
@@ -552,14 +646,16 @@ def _atomic_write(path: Path, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         _restrict(tmp_path, FILE_MODE)
+        stamp = _stamp_of(tmp_path.stat())
         os.replace(tmp_path, path)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
     _fsync_directory(directory)
+    return stamp
 
 
-def _create_exclusively(path: Path, data: bytes) -> None:
+def _create_exclusively(path: Path, data: bytes) -> tuple[int, int] | None:
     """Write `data` to `path`, refusing a path that already holds a file.
 
     O_EXCL makes the "is it there?" and the "claim it" one indivisible step,
@@ -577,6 +673,9 @@ def _create_exclusively(path: Path, data: bytes) -> None:
     after the slow key derivation rather than before it, and anything that
     goes wrong takes the stub with it.
 
+    Returns the new file's stamp, taken as _atomic_write() takes it, or
+    None if the new file could not be stat-ed.
+
     Raises:
         FileExistsError: if something is already at `path`.
         OSError: if the write fails for any other reason.
@@ -592,7 +691,57 @@ def _create_exclusively(path: Path, data: bytes) -> None:
         raise
     # O_EXCL honours the mode only where the umask allows it.
     _restrict(path, FILE_MODE)
+    # After the close, for the reason _atomic_write() gives. The path
+    # rather than a descriptor, since there is no temp file here; the
+    # window that leaves is a write landing between two system calls.
+    # _file_stamp() rather than a bare stat, because the diary is created
+    # by now: a stat that failed must not report the creation as failed
+    # and leave the file behind it. No stamp only skips the conflict check
+    # until the next save takes one.
+    stamp = _file_stamp(path)
     _fsync_directory(path.parent)
+    return stamp
+
+
+def _make_private_directory(directory: Path) -> None:
+    """Create `directory` private to its owner, or leave an existing one be.
+
+    Only a directory Zecret makes, or ~/.zecret -- Zecret's whatever made
+    it, however the path names it -- is narrowed to DIR_MODE. Any other
+    directory that
+    was already there belongs to whoever made it: `--path ~/diary.enc` used
+    to chmod the home directory to 0700, and a diary kept in a synced or
+    shared folder took that folder's group access with it, silently. The
+    diary file is still created 0600 either way, which is what keeps it
+    private; the directory mode adds that nobody else can list it.
+    Ancestors created on the way get the umask's default, as `mkdir -p`
+    gives them.
+    """
+    try:
+        directory.mkdir(parents=True, mode=DIR_MODE)
+    except FileExistsError:
+        if not _is_zecret_s_own(directory):
+            return
+    # mkdir's mode is filtered through the umask; make it exact.
+    _restrict(directory, DIR_MODE)
+
+
+def _is_zecret_s_own(directory: Path) -> bool:
+    """Whether an existing `directory` is ~/.zecret itself.
+
+    The same directory on disk, not the same spelling: `.zecret` from ~,
+    a path with `..` in it and a home reached through a symlink all name
+    it. A symlink *at* ~/.zecret is not Zecret's to narrow -- someone
+    pointed it at a folder of their own, and chmod would follow the link
+    and take that folder's access away. Nor is anything that is not a
+    directory, which the write that follows will fail on anyway.
+    """
+    if directory.is_symlink() or not directory.is_dir():
+        return False
+    try:
+        return directory.samefile(DEFAULT_DIARY_PATH.parent)
+    except OSError:
+        return False
 
 
 def _restrict(target: Path, mode: int) -> None:

@@ -20,6 +20,12 @@ And DayList, the list both the entry list and search show days in.
 And the wording for a save that did not happen, which is the same wherever
 a save is attempted -- three screens attempt one, and none of them should
 be deciding for itself how to describe a diary that changed underneath it.
+
+And deleting a day, which the entry list and the calendar both offer: the
+question asked first (delete_question) and the deletion itself
+(ZecretScreen.delete_day), so the two ask the same thing and fail the same
+way. Each screen pushes the question itself -- confirm.py imports this
+module, so this one cannot import the modal back.
 """
 
 from __future__ import annotations
@@ -195,6 +201,11 @@ def save_error(error: OSError | ZecretConflictError) -> str:
     return f"Could not save: {error.strerror or error}."
 
 
+def delete_question(date: dt.date) -> str:
+    """What to ask before a day's entry is deleted, wherever it is asked."""
+    return f"Delete the entry for {format_day(date)}? This cannot be undone."
+
+
 def card(id: str) -> VerticalScroll:
     """The scrolling panel a screen's content sits in, out of the tab order.
 
@@ -330,6 +341,14 @@ class ZecretScreen(Screen[None]):
         diary, _ = self.zecret.unlocked
         return frozenset(diary.entries)
 
+    #: Whether this screen is part way through something that must finish
+    #: before the diary can lock -- re-encrypting it under a new password,
+    #: which is the one thing that does. Unlike blocks_lock this is not
+    #: unsaved work to ask about: it is seconds long, and a lock asked for
+    #: meanwhile waits for it rather than being refused (see
+    #: ZecretApp.action_lock).
+    working = False
+
     @property
     def blocks_lock(self) -> bool:
         """Whether locking now would throw away something not yet saved.
@@ -354,6 +373,28 @@ class ZecretScreen(Screen[None]):
         it succeeded is the truth for it.
         """
         return True
+
+    def delete_day(self, date: dt.date) -> None:
+        """Remove the day's entry and save at once, and say which happened.
+
+        The file still holds the entry if the save fails, and saving() puts
+        it back in memory too, so the deletion is not shown as having
+        stuck. Whatever the screen draws from the diary is its own to
+        redraw afterwards, either way.
+
+        A deletion that worked is said too, as a save, a lock and a change
+        of password are: otherwise the only sign is a row closing up, or in
+        the calendar one small mark going out, and the day named is the
+        check that it was the one meant.
+        """
+        diary, key = self.zecret.unlocked
+        try:
+            with diary.saving(key):
+                diary.delete_entry(date)
+        except (OSError, ZecretConflictError) as error:
+            self.notify(save_error(error), severity="error", markup=False)
+            return
+        self.notify(f"Deleted the entry for {format_day(date)}.", markup=False)
 
 
 class FormScreen(ZecretScreen):
@@ -385,7 +426,7 @@ class FormScreen(ZecretScreen):
         has gone wrong outranks something that merely might.
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
-        line.remove_class("-advice", "-advice-strong")
+        line.remove_class("-advice", "-advice-strong", "-status")
         # Plain: an error can quote the operating system, or a path.
         line.update(plain(message))
 
@@ -434,3 +475,29 @@ class FormScreen(ZecretScreen):
         """
         for widget in self.query(Input):
             widget.value = ""
+
+    def advance(self, submitted: Input) -> bool:
+        """On to a field still empty, if Enter came early; say if so.
+
+        For a form whose answer is spread over several fields. Enter is
+        what most forms take as "next", and here it submitted the whole
+        form from the first field: the confirmation was empty, so the
+        attempt failed as a mismatch, and failing clears every field --
+        the password just typed with it. Now Enter in a filled field
+        moves to the next empty one, and submits only once there is none.
+
+        The next after this one, then the first before it: a field
+        skipped by clicking past it is as empty as one not reached yet,
+        and submitting over it would clear everything typed after it. An
+        empty field itself submits as before, so the error says what is
+        missing rather than Enter doing nothing.
+        """
+        if not submitted.value:
+            return False
+        fields = list(self.query(Input))
+        at = fields.index(submitted)
+        for field in fields[at + 1 :] + fields[:at]:
+            if not field.value:
+                field.focus()
+                return True
+        return False

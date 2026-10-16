@@ -28,8 +28,11 @@ Three things neither will do:
   cursor that could sit on one would be offering something the screen
   behind it is going to turn down. A move in time clamps to today instead
   of refusing, so no such key is ever dead: paging into next month lands
-  on today. A move across the year's grid does refuse -- clamping there
-  would send the cursor to a cell nobody pointed at.
+  on today. A move across the year's grid does refuse, and so does a click
+  in either calendar -- clamping there would send the cursor to a cell
+  nobody pointed at. The one exception is a date typed into the field
+  above the month: that is the field's to refuse, and the grid shows the
+  day typed rather than one beside it -- see MonthCalendar.show.
 - Change the month it shows on its own. The month is wherever the cursor
   is, so the grid only ever moves because someone moved it.
 - Own the date. The field above it does; this posts what it is on and lets
@@ -76,8 +79,12 @@ DAYS = 7
 WRITTEN = "•"
 
 #: Said under the grid, because the mark means nothing to someone meeting
-#: it for the first time.
+#: it for the first time. CalendarLegend draws it, beside a sample of how
+#: today is marked.
 LEGEND = f"{WRITTEN} a day you have written"
+
+#: Between the two halves of the legend.
+LEGEND_GAP = "   "
 
 
 def day_in(year: int, month: int, day: int) -> dt.date:
@@ -320,6 +327,33 @@ class WalkableCalendar(Widget, can_focus=True):
         self.move_to(self.date.replace(day=last))
 
 
+class CalendarLegend(Widget):
+    """What the marks on a calendar mean: the written days, and today.
+
+    Today is explained by showing it -- its own date, drawn the way the
+    grid draws it -- rather than by naming the style, since "underlined"
+    tells a reader less than an underlined number does. The style is read
+    from the same component class the grids paint today with, so the one
+    rule in app.tcss styles both and the legend cannot describe a mark the
+    grid no longer makes.
+    """
+
+    COMPONENT_CLASSES: ClassVar[set[str]] = {"month-calendar--today"}
+
+    DEFAULT_CSS = """
+    CalendarLegend {
+        height: auto;
+    }
+    """
+
+    def render(self) -> RenderResult:
+        landmark = self.get_component_rich_style("month-calendar--today", partial=True)
+        text = Text(LEGEND + LEGEND_GAP)
+        text.append(str(today().day), landmark)
+        text.append(" today")
+        return text
+
+
 class MonthCalendar(WalkableCalendar):
     """One month, walkable, with the written days marked."""
 
@@ -363,7 +397,7 @@ class MonthCalendar(WalkableCalendar):
             # set_reactive rather than assignment: this runs before the
             # widget is mounted, and a watcher firing then would post a
             # DateChanged nobody is listening for yet.
-            self.set_reactive(MonthCalendar.date, date)
+            self.set_reactive(MonthCalendar.date, reachable(date))
 
     # --- what it draws -----------------------------------------------------
 
@@ -385,6 +419,12 @@ class MonthCalendar(WalkableCalendar):
 
         Everything else about it is an ordinary move, and it is drawn the
         same way; what is skipped is only the telling.
+
+        Not clamped, unlike every other move. A future date typed into the
+        field is the field's to refuse, and the cursor shows it so that
+        the day highlighted and the day refused are the same day: clamped
+        to today, the grid highlighted a day it could choose while enter
+        on it read the field and refused the date typed there.
         """
         if date == self.date:
             return
@@ -403,12 +443,15 @@ class MonthCalendar(WalkableCalendar):
         a row of the entry list does: a list row is a thing you asked for,
         and a calendar cell is one of forty-two an unsteady hand can land
         on. Enter is what chooses, from either the grid or the field.
+
+        A day not yet come is refused, as the year refuses it: clamping
+        moved the cursor to today, a day nobody clicked.
         """
         offset = event.get_content_offset(self)
         if offset is None:
             return
         date = self.date_at(offset.x - self.grid_left, offset.y)
-        if date is not None:
+        if date is not None and date <= today():
             self.focus()
             self.move_to(date)
 

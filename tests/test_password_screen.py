@@ -13,10 +13,20 @@ Required coverage:
       diary: the new password opens it, the old one no longer does, and
       the file gets a fresh salt.
     - app.key is updated, so the session keeps working afterwards.
+    - The change is said over the settings screen the dialog closes onto,
+      and not again over the list when settings is left: a notification
+      crosses one pop and no more.
     - A wrong current password is refused and changes nothing.
     - An empty or mismatched new password is refused.
+    - The confirmation's placeholder says Enter is how the change is made,
+      since the dialog has no button, and fits its field unclipped at
+      80x24.
+    - Enter in a filled field moves on to the next empty one rather than
+      submitting the change half-typed and clearing every field -- an
+      empty field before it included, for a form filled out of order.
     - Every refusal empties the fields, so an unattended terminal never
-      holds a typed password in a widget.
+      holds a typed password in a widget -- a save that failed included --
+      and puts the cursor back in the first field, where retyping starts.
     - A save that fails does not leave the diary half re-keyed.
     - The new password is rated as it is typed, and is then accepted
       whatever the rating. The reading sits on the error row rather than a
@@ -41,6 +51,7 @@ from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
 from zecret.screens.password import (
     CHANGED,
+    CONFIRM_HINT,
     EMPTY_NEW,
     MISMATCH,
     WRONG_CURRENT,
@@ -186,6 +197,24 @@ async def test_the_change_is_said_over_the_screen_it_returns_to(diary_path, noti
         assert CHANGED in notifications(app)
 
 
+async def test_the_change_is_said_once_and_not_again_on_leaving_settings(diary_path, notifications):
+    """It is carried across the dialog closing, which is the point -- and
+    used to be carried across settings closing too, coming up a second time
+    over the list as if something else had just happened."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
+        assert isinstance(app.screen, SettingsScreen)
+        assert CHANGED in notifications(app)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert notifications(app) == [], "already said, over the screen it closed onto"
+
+
 async def test_change_updates_the_session_key(diary_path):
     """A stale app.key would corrupt the next save."""
     app = ZecretApp(diary_path=diary_path)
@@ -230,6 +259,17 @@ async def test_change_uses_a_fresh_salt(diary_path):
 # --- refusals --------------------------------------------------------------
 
 
+async def test_the_confirmation_says_enter_makes_the_change(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        field = app.screen.query_one("#confirm", Input)
+        assert field.placeholder == CONFIRM_HINT
+        assert "Enter" in CONFIRM_HINT
+        assert field.content_region.width >= len(CONFIRM_HINT), "cut off"
+
+
 async def test_wrong_current_password_is_refused(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -255,6 +295,46 @@ async def test_mismatched_new_passwords_are_refused(diary_path):
     DiaryFile.unlock(diary_path, PASSWORD)
 
 
+async def test_enter_moves_on_to_the_next_empty_field(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        screen = app.screen
+        await pilot.press(*PASSWORD, "enter")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#new", Input)
+        assert screen.query_one("#current", Input).value == PASSWORD
+        assert not error_of(screen)
+
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#confirm", Input)
+
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        await pilot.pause()
+    DiaryFile.unlock(diary_path, NEW_PASSWORD)
+
+
+async def test_enter_goes_back_to_a_field_skipped_over(diary_path):
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        screen = app.screen
+        screen.query_one("#new", Input).focus()
+        await pilot.pause()
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        await pilot.press(*NEW_PASSWORD, "enter")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#current", Input)
+        assert screen.query_one("#new", Input).value == NEW_PASSWORD
+        assert screen.query_one("#confirm", Input).value == NEW_PASSWORD
+        assert error_of(screen) != WRONG_CURRENT, "nothing may have been submitted"
+
+
 async def test_empty_new_password_is_refused(diary_path):
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -272,6 +352,26 @@ async def test_wrong_current_password_clears_the_fields(diary_path):
         await open_dialog(pilot)
         await submit_change(pilot, "not my password", NEW_PASSWORD, NEW_PASSWORD)
         assert all(widget.value == "" for widget in app.screen.query(Input))
+
+
+@pytest.mark.parametrize(
+    "current,new,confirm",
+    [
+        (PASSWORD, "", ""),
+        (PASSWORD, "a new password", "a different one"),
+        ("not my password", "a new password", "a new password"),
+    ],
+    ids=["empty", "mismatch", "wrong-current"],
+)
+async def test_a_refusal_starts_again_from_the_first_field(diary_path, current, new, confirm):
+    """Left where Enter was pressed, the cursor sat in an empty Confirm
+    under two fields just emptied above it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        await submit_change(pilot, current, new, confirm)
+        assert app.screen.focused is app.screen.query_one("#current", Input)
 
 
 @pytest.mark.parametrize(
@@ -312,6 +412,10 @@ async def test_a_failed_save_leaves_the_diary_openable(diary_path, monkeypatch):
         await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
         assert isinstance(app.screen, PasswordScreen)
         assert "No space left" in error_of(app.screen)
+        assert [field.value for field in app.screen.query(Input)] == ["", "", ""], (
+            "a failed save is a refusal too, and must not leave passwords behind"
+        )
+        assert app.screen.focused is app.screen.query_one("#current", Input)
 
         # Params rolled back, session key untouched.
         monkeypatch.undo()

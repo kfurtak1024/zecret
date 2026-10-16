@@ -21,8 +21,11 @@ Which of the two flows to present is decided by ZecretApp and passed in as
 `creating`, keeping the "does the file exist" question with the app that
 owns the path (and letting tests drive either flow directly). Because that
 decision is made when the screen is built, the file can still turn out to
-be missing or already there by the time the password is submitted; both
-are handled as ordinary failures rather than crashes.
+be missing or already there by the time the password is submitted. A diary
+already there turns the screen into the unlock screen for it; a diary gone
+missing is reported, and the screen stays as it is -- offering to create a
+new diary where one has just vanished would invite writing an empty diary
+in the place of one that may only be on an unmounted disk.
 """
 
 from __future__ import annotations
@@ -43,6 +46,14 @@ from zecret.storage import DiaryFile
 # file: distinguishing them would tell an attacker that a given path holds a
 # real, intact diary.
 UNLOCK_FAILED = "Incorrect password."
+
+#: Said when the diary being created turned out to exist by the time the
+#: password was submitted -- another Zecret made it in between. The screen
+#: has become the unlock screen by then, so this asks for that password.
+DIARY_APPEARED = "A diary appeared here meanwhile. Enter its password."
+
+#: The confirmation field's placeholder when creating a diary.
+CONFIRM_HINT = "Confirm password, then press Enter"
 
 
 class UnlockScreen(FormScreen):
@@ -97,7 +108,9 @@ class UnlockScreen(FormScreen):
                 yield Label("Unlock your diary", id="unlock-title")
             yield Input(placeholder="Master password", password=True, id="password")
             if self.creating:
-                yield Input(placeholder="Confirm password", password=True, id="confirm")
+                # Says how the form finishes, as the password dialog's does:
+                # neither has a button to say it for them.
+                yield Input(placeholder=CONFIRM_HINT, password=True, id="confirm")
             yield Label("", id="unlock-error")
         yield DiaryFooter()
 
@@ -116,8 +129,11 @@ class UnlockScreen(FormScreen):
         if self.creating and event.input.id == "password":
             self.advise_on_password(event.value)
 
-    async def on_input_submitted(self, _event: Input.Submitted) -> None:
-        """Enter in either field submits the form."""
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter submits the form, or moves on to the confirmation while it
+        is still empty (see FormScreen.advance)."""
+        if self.advance(event.input):
+            return
         await self.attempt()
 
     async def attempt(self) -> None:
@@ -145,7 +161,7 @@ class UnlockScreen(FormScreen):
             await self.fail(UNLOCK_FAILED)
             return
         except FileExistsError:
-            await self.fail("A diary already exists at that path.")
+            await self.become_unlock()
             return
         except FileNotFoundError:
             await self.fail("The diary file has gone missing.")
@@ -159,6 +175,30 @@ class UnlockScreen(FormScreen):
         # Drop the typed password from the widget as soon as it is spent.
         self.clear_inputs()
         self.dismiss()
+
+    async def become_unlock(self) -> None:
+        """Turn from creating a diary into unlocking the one now there.
+
+        Which flow to show is decided when the screen is built, so a diary
+        another Zecret creates while this one is choosing a password is
+        only found by the create itself -- which refuses, rightly, rather
+        than write over a file whose password nobody here has checked. It
+        used to stop there, and every retry was refused the same way: the
+        screen went on asking for a new password and a confirmation for a
+        diary that could only be unlocked, and quitting was the only way
+        on. Now it becomes the unlock screen, and says why.
+
+        Rebuilt rather than edited in place, so that the title, the hint,
+        the warning and the confirmation field all follow `creating` from
+        the one compose() that decides them. The password typed goes with
+        the old fields: it was chosen for a new diary, and is not this
+        one's.
+        """
+        self.creating = False
+        await self.recompose()
+        self.sub_title = "Locked"
+        self.set_error(DIARY_APPEARED)
+        self.query_one("#password", Input).focus()
 
     async def fail(self, message: str) -> None:
         """Show an inline error, clear the inputs, and pause briefly."""

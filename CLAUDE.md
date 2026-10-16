@@ -68,7 +68,9 @@ src/zecret/
 │                 # fields and an error line, card() for the scrolling
 │                 # panel they sit in, the date/snippet formatting every
 │                 # screen shares, the warning about a forgotten
-│                 # password, and the wording for a refused save),
+│                 # password, the wording for a refused save, and
+│                 # deleting a day, which the list and the calendar
+│                 # both offer),
 │                 # header.py (both bars -- the title above and the keys
 │                 # below, which every screen wears including the modals),
 │                 # confirm.py (yes/no modal), date_prompt.py (which-day
@@ -107,7 +109,9 @@ Keep this layering strict:
   only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
   needs something crypto-shaped, storage grows the method: this is why
   `DiaryFile.verify_password()` exists, for the password dialog's re-check
-  of the current password.
+  of the current password, and why `change_password()` saves the re-keyed
+  diary itself rather than leaving the screen to save it and undo the
+  re-key if that fails.
 - Presentation belongs to the screens, and stays there. The entry list
   groups days under a month heading; `DiaryFile.entries` is an unordered
   mapping and knows nothing about it. Sorting, grouping and wording are the
@@ -211,8 +215,11 @@ Do not weaken any of these for convenience:
    the same file would otherwise write its copy over the first's entries
    with no error at all. `save()` compares the file's mtime and size
    against what they were when it last read or wrote it, and raises
-   `ZecretConflictError` instead. Every screen that saves rolls its
-   in-memory change back and says so. The same failure reaches creating a
+   `ZecretConflictError` instead. Every screen that saves makes its
+   change inside `DiaryFile.saving(key)`, which puts the in-memory diary
+   back when the save fails, and says so. Don't hand-write that undo in a
+   screen: it needs storage's insides to get right, and the copy that put
+   a deletion back got it wrong. The same failure reaches creating a
    diary by a different road — two Zecrets started with no diary, both
    passing the "is one there?" check, both going on to write — and the
    mtime check cannot see it, since neither has a stamp to compare
@@ -401,6 +408,19 @@ patch number, not a retry. This is why `check` and `verify` run first.
   ask and nothing to promise, so it waits instead. Quitting takes the
   third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
   about who can read this.
+  `ctrl+l` is bound on **every** screen once the diary is open -- search,
+  settings, help and each popup bind `app.lock` (`ZecretApp.action_lock`),
+  which saves whatever an editor underneath is holding before it locks,
+  as the editor's own does. The one thing a lock waits for is a screen
+  that is `working` (`ZecretScreen.working`): the password dialog while
+  it re-encrypts. Locking part way through let the re-key finish anyway
+  and hand its new key to an app that had just forgotten the old one, so
+  a lock asked for then sets `lock_pending`, says it is waiting, and the
+  dialog locks when it is done; the idle timer skips the tick. `ctrl+q`
+  waits the same way (`quit_pending`) and leaves the outcome in the
+  terminal through `App.exit(message=...)`: quitting part way through let
+  the re-key save after the app had gone, with nothing said, and the old
+  password was refused at the next start.
 - **Idleness is measured on two clocks, and the longer wait wins.**
   `Instant` in `app.py` holds a reading of each. `time.monotonic()` is
   `CLOCK_MONOTONIC`, which does *not* advance while the machine is
@@ -571,7 +591,10 @@ patch number, not a retry. This is why `check` and `verify` run first.
   their walking through a base class, `WalkableCalendar`, draw a month
   through the same module functions (`draw_month`, `day_role`), and wear
   the same `month-calendar--*`
-  component classes, so one set of rules in `app.tcss` paints both. How
+  component classes, so one set of rules in `app.tcss` paints both. The
+  `CalendarLegend` under each wears the today class as well, and draws
+  today's own date in it, so the legend's sample of how today is marked is
+  the grid's rule and cannot drift from it. How
   many months sit across is the stylesheet's call, from a `-months-N`
   class `CalendarScreen.fit_months` sets from the terminal's width, not the
   widget's — nothing measures the terminal, and three months fit 80
@@ -725,7 +748,13 @@ patch number, not a retry. This is why `check` and `verify` run first.
   and that asymmetry is the rule: **pushing** is starting something new,
   so what was said about the last thing is finished; **popping** is the
   end of the thing being spoken about, which is how "Saved." reaches the
-  list the editor returns to. Anything that pushes a screen and then
+  list the editor returns to. But only **one** pop:
+  `ZecretApp.pop_screen` drops whatever was raised before the previous
+  pop, so a message is carried onto the screen you land on and no
+  further — "Master password changed." used to come up over settings and
+  then again over the list. It goes by `raised_at`, because `notify()`
+  only posts a message and a toast raised just before `dismiss()` is not
+  stored yet when that pop happens. Anything that pushes a screen and then
   notifies must do it in that order — see `lock()`.
 - **A card is built with `card()`, which keeps it off the tab ring.**
   Textual makes a scrollable container focusable so it can be scrolled
@@ -760,8 +789,8 @@ patch number, not a retry. This is why `check` and `verify` run first.
   wider terminal the list's dead keys showed either side of it. It has
   its own bar now, and there is no exception.
 - **Every bar reads the same way.** This screen's own actions first, then
-  the way out, then `^l Lock`, `? Help` and `q Quit` wherever the diary is
-  open -- so Lock is always in the same place relative to the end of the
+  the way out, then `^l Lock` on every screen once the diary is open, and
+  `? Help` and `q Quit` on the two main views -- so Lock is always in the same place relative to the end of the
   bar, and the help popup, which lists keys in declaration order, reads
   the same way. Naming follows three rules: a full screen's way out is
   **Back**, a popup's is **Cancel** (it dismisses a question) or **Close**
@@ -838,7 +867,8 @@ patch number, not a retry. This is why `check` and `verify` run first.
   their own: one action for two screens, and neither of them can import
   the popup, which imports them both to list their keys. The calendar's
   column on the page leaves out rows the list's section has already given
-  (`Section.shares_diary_keys`).
+  (`Section.shares_diary_keys`) -- which is why the calendar's `d` is named
+  **Delete**, as the list's is, and so does not appear twice.
 - **The help popup spends width to buy height.** A section longer than
   `COLUMN_THRESHOLD` is split down the middle into two columns, read down
   and then across, and `fit_columns()` stacks them again where the terminal

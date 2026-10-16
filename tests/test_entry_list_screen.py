@@ -18,7 +18,8 @@ Required coverage:
       save where there is writing to save, and a deletion has nothing
       between going ahead and leaving the day alone.
     - Confirmed delete removes the entry from memory AND from disk, and
-      leaves the other entries intact.
+      leaves the other entries intact -- and says so, naming the day. One
+      that fails to save says that instead, and never that it worked.
     - The list refreshes from app.diary whenever the screen is resumed and
       the diary has changed -- and only then: closing the help or reading a
       day without writing does not rebuild a list that can be years long.
@@ -438,7 +439,7 @@ async def test_cancelling_the_confirmation_keeps_the_entry(diary_path):
     assert reopened.entries == {YESTERDAY: entry}
 
 
-async def test_confirmed_delete_removes_the_entry_everywhere(diary_path):
+async def test_confirmed_delete_removes_the_entry_everywhere(diary_path, notifications):
     seed(diary_path, Entry.new(YESTERDAY, "Delete me"), Entry.new(LAST_WEEK, "Keep me"))
 
     app = ZecretApp(diary_path=diary_path)
@@ -452,6 +453,7 @@ async def test_confirmed_delete_removes_the_entry_everywhere(diary_path):
 
         assert set(app.diary.entries) == {LAST_WEEK}
         assert snippets(app) == ["Keep me"]
+        assert f"Deleted the entry for {format_day(YESTERDAY)}." in notifications(app)
 
     # Persisted, not just dropped from memory.
     reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
@@ -517,7 +519,7 @@ async def test_confirmation_defaults_to_cancel(diary_path):
         assert app.diary.entries == {YESTERDAY: entry}
 
 
-async def test_a_failed_delete_keeps_the_entry_visible(diary_path, monkeypatch):
+async def test_a_failed_delete_keeps_the_entry_visible(diary_path, monkeypatch, notifications):
     """The file still holds it, so the list must not claim otherwise."""
     entry = Entry.new(YESTERDAY, "Keep me")
     seed(diary_path, entry)
@@ -537,6 +539,7 @@ async def test_a_failed_delete_keeps_the_entry_visible(diary_path, monkeypatch):
 
         assert app.diary.entries == {YESTERDAY: entry}
         assert entry_labels(app) == [f"{format_day_short(YESTERDAY)}   Keep me"]
+        assert not any(note.startswith("Deleted") for note in notifications(app))
 
 
 # --- refresh on resume -----------------------------------------------------

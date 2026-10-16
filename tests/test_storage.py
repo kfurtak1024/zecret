@@ -18,15 +18,36 @@ Required coverage:
     - save() through a symlink replaces the file it points to, not the
       link: a diary kept elsewhere and linked into ~/.zecret used to be cut
       loose on its first save.
+    - create_new() narrows a directory it creates to the owner alone, and
+      leaves the mode of one that was already there untouched: a diary
+      created in ~ used to chmod the home directory to 0700. ~/.zecret is
+      Zecret's own, and is narrowed whoever made it and however the path
+      spells it -- unless it is a symlink, whose target is someone else's.
+    - A diary created but not stat-able afterwards is still a created
+      diary: create_new() succeeds rather than reporting a failure over
+      a file it leaves behind.
     - create_new() refuses a path that gained a diary while it was busy
       deriving the key, rather than writing over it, and leaves nothing
       behind if the write fails.
+    - A deletion undone by saving() keeps that day's ciphertext: the next
+      save of another day must not re-encrypt it.
+    - A save by another session while this one is unlocking -- after the
+      file is read, before the key is derived -- is a conflict on this
+      session's next save, not adopted as its baseline. The stamp a save
+      leaves is the file's as the path now shows it.
     - reopen() re-reads the file with the key already held, picking up
       another session's writing and clearing the conflict; it refuses a key
       that no longer fits, and leaves the diary in hand alone when it
       fails.
-    - change_password() + save() + unlock() with the NEW password succeeds,
-      and unlock() with the OLD password now fails.
+    - saving() saves what its block changed, and when the block or the
+      save fails puts the entries and KDF params back as they were and
+      lets the error through -- the undo every saving screen relies on.
+      change_password() runs off the event loop and does not go through
+      it, so a failed change leaves the entries dict untouched.
+    - change_password() + unlock() with the NEW password succeeds, and
+      unlock() with the OLD password now fails: it saves by itself. A
+      change_password() whose save fails leaves the old password working,
+      on disk and in memory.
     - A KDF header that parses but names cost factors Argon2 refuses is
       rejected as a ValueError, not as whatever argon2 raises. The screens
       catch ValueError; anything else reaches the user as a traceback over
@@ -128,6 +149,26 @@ def test_create_new_creates_missing_parent_directories(tmp_path):
     nested = tmp_path / "deeply" / "nested" / "diary.enc"
     DiaryFile.create_new(nested, PASSWORD)
     assert nested.exists()
+
+
+def test_create_new_makes_the_directory_it_creates_private(tmp_path):
+    directory = tmp_path / "fresh"
+    DiaryFile.create_new(directory / "diary.enc", PASSWORD)
+    assert stat.S_IMODE(directory.stat().st_mode) == storage.DIR_MODE
+
+
+def test_create_new_leaves_an_existing_directory_s_mode_alone(tmp_path):
+    """The directory is someone else's -- ~, or a synced folder -- and
+    taking its group and world bits away broke whatever relied on them,
+    without a word. The diary file is private either way."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+
+    DiaryFile.create_new(shared / "diary.enc", PASSWORD)
+
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o755
+    assert stat.S_IMODE((shared / "diary.enc").stat().st_mode) & 0o077 == 0
 
 
 def test_create_new_refuses_to_overwrite_existing_file(diary_path):
@@ -521,6 +562,94 @@ def test_delete_entry_leaves_other_ciphertexts_byte_identical(diary_path):
         assert after[day] == before[day], "unrelated ciphertext was rewritten"
 
 
+def test_create_new_narrows_zecret_s_own_directory_whoever_made_it(tmp_path, monkeypatch):
+    own = tmp_path / ".zecret"
+    own.mkdir()
+    own.chmod(0o755)
+    monkeypatch.setattr(storage, "DEFAULT_DIARY_PATH", own / "diary.enc")
+
+    DiaryFile.create_new(own / "diary.enc", PASSWORD)
+
+    assert stat.S_IMODE(own.stat().st_mode) == storage.DIR_MODE
+
+
+def test_zecret_s_own_directory_is_recognised_however_it_is_spelt(tmp_path, monkeypatch):
+    own = tmp_path / ".zecret"
+    own.mkdir()
+    own.chmod(0o755)
+    monkeypatch.setattr(storage, "DEFAULT_DIARY_PATH", own / "diary.enc")
+    monkeypatch.chdir(tmp_path)
+
+    DiaryFile.create_new(Path(".zecret") / ".." / ".zecret" / "diary.enc", PASSWORD)
+
+    assert stat.S_IMODE(own.stat().st_mode) == storage.DIR_MODE
+
+
+def test_a_symlinked_zecret_directory_is_left_alone(tmp_path, monkeypatch):
+    """Someone pointed ~/.zecret at a folder of their own; chmod would
+    follow the link and narrow that folder."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+    own = tmp_path / ".zecret"
+    own.symlink_to(shared)
+    monkeypatch.setattr(storage, "DEFAULT_DIARY_PATH", own / "diary.enc")
+
+    DiaryFile.create_new(own / "diary.enc", PASSWORD)
+
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o755
+    assert (shared / "diary.enc").exists()
+
+
+def test_a_created_diary_that_cannot_be_stat_ed_is_still_created(diary_path, monkeypatch):
+    """The stamp is taken after the file is complete. A stat failing there
+    used to fail create_new() over a diary it then left on disk, so the
+    next launch asked for a password the user had abandoned."""
+
+    def no_stat(status):
+        raise OSError("stat refused")
+
+    monkeypatch.setattr(storage, "_stamp_of", no_stat)
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+    monkeypatch.undo()
+
+    assert diary_path.exists()
+    diary.add_entry(Entry.new(DAYS[0], "Saved after all"))
+    diary.save(key)
+    assert DiaryFile.unlock(diary_path, PASSWORD)[0].entry_for(DAYS[0]) is not None
+
+
+def test_a_save_leaves_the_stamp_the_path_shows(diary_path):
+    """Taken after the file is closed: some filesystems set the mtime on
+    close, and a stamp from before it made every later save a conflict."""
+    diary, key, _ = populated(diary_path)
+    assert diary._file_stamp == storage._file_stamp(diary_path)
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "Another"))
+    diary.save(key)
+    assert diary._file_stamp == storage._file_stamp(diary_path)
+
+
+def test_an_undone_deletion_keeps_the_day_s_ciphertext(diary_path, monkeypatch):
+    """The entry list's road: a deletion inside saving() that fails to
+    save. The screen used to put the entry back by hand with add_entry(),
+    which restored it without its cached record, so the next save of some
+    other day re-encrypted it."""
+    diary, key, entries = populated(diary_path)
+    before = ciphertexts_by_date(diary_path)
+
+    fail_writes(monkeypatch)
+    with pytest.raises(OSError), diary.saving(key):
+        diary.delete_entry(DAYS[0])
+    monkeypatch.undo()
+
+    diary.update_entry(entries[2].edited("A later edit to another day"))
+    diary.save(key)
+
+    after = ciphertexts_by_date(diary_path)
+    assert after[DAYS[0].isoformat()] == before[DAYS[0].isoformat()]
+    assert after[DAYS[1].isoformat()] == before[DAYS[1].isoformat()]
+
+
 def test_delete_entry_rejects_an_unwritten_day(diary_path):
     diary, _, _ = populated(diary_path)
     with pytest.raises(KeyError):
@@ -632,6 +761,36 @@ def test_reopening_clears_the_conflict(diary_path):
 
     final, _ = DiaryFile.unlock(diary_path, PASSWORD)
     assert set(final.entries) == set(DAYS) | {UNWRITTEN_DAY, dt.date(2026, 7, 1)}
+
+
+def test_a_save_made_while_unlocking_is_a_conflict(diary_path, monkeypatch):
+    """Unlocking reads the file and then spends most of a second deriving
+    the key and decrypting. The stamp used to be taken at the end of that,
+    so a save another session made in between became this session's
+    baseline -- and its next save wrote the older entries over the newer
+    one with no conflict raised.
+
+    Reproduced by having the other session save during key derivation.
+    """
+    other, other_key, _ = populated(diary_path)
+    real_derive = storage.derive_key
+
+    def derive_while_the_other_session_saves(password, params):
+        monkeypatch.setattr(storage, "derive_key", real_derive)
+        other.add_entry(Entry.new(UNWRITTEN_DAY, "Saved mid-unlock"))
+        other.save(other_key)
+        return real_derive(password, params)
+
+    monkeypatch.setattr(storage, "derive_key", derive_while_the_other_session_saves)
+    late, late_key = DiaryFile.unlock(diary_path, PASSWORD)
+    assert UNWRITTEN_DAY not in late.entries, "the race was not reproduced"
+
+    late.add_entry(Entry.new(dt.date(2026, 7, 1), "Written by the late session"))
+    with pytest.raises(ZecretConflictError):
+        late.save(late_key)
+
+    survivor, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert survivor.entry_for(UNWRITTEN_DAY).body == "Saved mid-unlock"
 
 
 def test_a_diary_that_has_never_written_has_nothing_to_conflict_with(diary_path):
@@ -811,7 +970,126 @@ def test_save_never_writes_plaintext_into_the_file(diary_path):
     assert PASSWORD.encode() not in raw
 
 
+# --- saving() --------------------------------------------------------------
+
+
+def fail_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("boom")))
+
+
+def test_saving_saves_what_the_block_changed(diary_path):
+    diary, key, _ = populated(diary_path)
+    with diary.saving(key):
+        diary.add_entry(Entry.new(UNWRITTEN_DAY, "Saved on the way out"))
+
+    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
+    assert reopened.entry_for(UNWRITTEN_DAY).body == "Saved on the way out"
+
+
+@pytest.mark.parametrize("change", ["add", "update", "delete"])
+def test_saving_undoes_the_block_when_the_save_fails(diary_path, monkeypatch, change):
+    diary, key, entries = populated(diary_path)
+    before = dict(diary.entries)
+
+    fail_writes(monkeypatch)
+    with pytest.raises(OSError), diary.saving(key):
+        if change == "add":
+            diary.add_entry(Entry.new(UNWRITTEN_DAY, "Never landed"))
+        elif change == "update":
+            diary.update_entry(entries[0].edited("Never landed"))
+        else:
+            diary.delete_entry(DAYS[0])
+
+    assert diary.entries == before
+    # And the retry is a clean second attempt, not "already exists".
+    monkeypatch.undo()
+    with diary.saving(key):
+        diary.add_entry(Entry.new(UNWRITTEN_DAY, "Second attempt"))
+
+
+def test_saving_undoes_the_block_on_a_conflict(diary_path):
+    diary, key, _ = populated(diary_path)
+    other, other_key = DiaryFile.unlock(diary_path, PASSWORD)
+    other.add_entry(Entry.new(dt.date(2026, 7, 1), "The other session's"))
+    other.save(other_key)
+
+    with pytest.raises(ZecretConflictError), diary.saving(key):
+        diary.delete_entry(DAYS[0])
+
+    assert DAYS[0] in diary.entries
+
+
+def test_saving_undoes_a_block_that_raises_and_saves_nothing(diary_path):
+    diary, key, _ = populated(diary_path)
+    on_disk = diary_path.read_bytes()
+
+    with pytest.raises(ValueError), diary.saving(key):
+        diary.delete_entry(DAYS[0])
+        diary.add_entry(Entry.new(DAYS[1], "A second entry for a written day"))
+
+    assert DAYS[0] in diary.entries
+    assert diary_path.read_bytes() == on_disk
+
+
+def test_a_failed_change_password_leaves_the_entries_dict_alone(diary_path, monkeypatch):
+    """change_password() fails inside a worker thread; emptying and
+    refilling the dict there would show the event loop an empty diary."""
+
+    class Watched(dict):
+        cleared = False
+
+        def clear(self) -> None:
+            Watched.cleared = True
+            super().clear()
+
+    diary, _, _ = populated(diary_path)
+    diary.entries = Watched(diary.entries)
+    fail_writes(monkeypatch)
+    with pytest.raises(OSError):
+        diary.change_password(NEW_PASSWORD)
+    assert not Watched.cleared
+
+
+def test_saving_keeps_the_same_entries_dict(diary_path, monkeypatch):
+    """Restored in place, so a reference to diary.entries is not left
+    holding the failed change."""
+    diary, key, _ = populated(diary_path)
+    held = diary.entries
+
+    fail_writes(monkeypatch)
+    with pytest.raises(OSError), diary.saving(key):
+        diary.delete_entry(DAYS[0])
+
+    assert diary.entries is held
+    assert DAYS[0] in held
+
+
 # --- change_password -------------------------------------------------------
+
+
+def test_change_password_saves_by_itself(diary_path):
+    diary, _, entries = populated(diary_path)
+    diary.change_password(NEW_PASSWORD)
+
+    reopened, _ = DiaryFile.unlock(diary_path, NEW_PASSWORD)
+    assert reopened.entries == {entry.date: entry for entry in entries}
+
+
+def test_a_change_password_that_fails_to_save_keeps_the_old_one(diary_path, monkeypatch):
+    diary, key, _ = populated(diary_path)
+    previous = diary.kdf_params
+
+    fail_writes(monkeypatch)
+    with pytest.raises(OSError):
+        diary.change_password(NEW_PASSWORD)
+    monkeypatch.undo()
+
+    assert diary.kdf_params == previous
+    assert diary.verify_password(PASSWORD, key)
+    DiaryFile.unlock(diary_path, PASSWORD)
+    # And the old key still saves.
+    diary.add_entry(Entry.new(UNWRITTEN_DAY, "After the failed change"))
+    diary.save(key)
 
 
 def test_change_password_then_save_then_unlock_with_new_password(diary_path):
@@ -858,13 +1136,6 @@ def test_change_password_reencrypts_every_entry(diary_path):
     assert set(after) == set(before)
     for day, ciphertext in after.items():
         assert ciphertext != before[day], "entry still encrypted under the old key"
-
-
-def test_change_password_does_not_persist_until_save(diary_path):
-    diary, _, _ = populated(diary_path)
-    diary.change_password(NEW_PASSWORD)
-    reopened, _ = DiaryFile.unlock(diary_path, PASSWORD)
-    assert len(reopened.entries) == 3
 
 
 def test_saving_with_the_wrong_key_after_rekey_is_not_silently_mixed(diary_path):

@@ -4,9 +4,9 @@ Opened on a date, never on an entry: a day holds at most one entry, so the
 date is the whole question and the screen looks up whether that day has
 been written yet.
     - Unwritten day: on save, build Entry.new(date, body), call
-      app.diary.add_entry(...), then app.diary.save(app.key).
+      app.diary.add_entry(...) inside app.diary.saving(app.key).
     - Written day: on save, build entry.edited(body), call
-      app.diary.update_entry(...), then app.diary.save(app.key).
+      app.diary.update_entry(...) inside app.diary.saving(app.key).
 
 Every save persists immediately (writes the full diary file atomically) —
 there is no separate "unsaved draft" state to manage across screens.
@@ -759,12 +759,21 @@ class EditorScreen(FormScreen):
         yield DiaryFooter()
 
     def on_mount(self) -> None:
-        day = format_day_long(self.date)
-        self.sub_title = f"{day} — new" if self.creating else day
+        self.show_title()
         # The mask belongs to the session, not to the day: someone writing
         # in a carriage covers the screen once, not once per entry.
         self.body.masked = self.zecret.masked
         self.body.focus()
+
+    def show_title(self) -> None:
+        """Name the day in the header, and say if it is not written yet.
+
+        Asked again after every save, because the first one is what makes
+        a new day written: the header went on calling it new until the
+        day was opened again.
+        """
+        day = format_day_long(self.date)
+        self.sub_title = f"{day} — new" if self.creating else day
 
     # --- current state -----------------------------------------------------
 
@@ -844,23 +853,16 @@ class EditorScreen(FormScreen):
 
         diary, key = self.zecret.unlocked
         existing = self.entry
-        if existing is None:
-            entry = Entry.new(self.date, body)
-            diary.add_entry(entry)
-        else:
-            entry = existing.edited(body)
-            diary.update_entry(entry)
-
+        entry = Entry.new(self.date, body) if existing is None else existing.edited(body)
         try:
-            diary.save(key)
+            # saving() puts the in-memory diary back if this fails, so
+            # pressing save again is a clean second attempt.
+            with diary.saving(key):
+                if existing is None:
+                    diary.add_entry(entry)
+                else:
+                    diary.update_entry(entry)
         except (OSError, ZecretConflictError) as error:
-            # Put the in-memory diary back as it was, so it still matches
-            # the file and pressing save again is a clean second attempt --
-            # otherwise the retry would hit "an entry already exists".
-            if existing is None:
-                diary.delete_entry(self.date)
-            else:
-                diary.update_entry(existing)
             # Stay put: popping now would throw away text that never
             # reached disk.
             self.set_error(save_error(error))
@@ -869,6 +871,7 @@ class EditorScreen(FormScreen):
 
         # Now the edit is the day's entry, so leaving is no longer "unsaved".
         self.entry = entry
+        self.show_title()
         return True
 
     def action_toggle_mask(self) -> None:
