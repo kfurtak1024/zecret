@@ -1,28 +1,15 @@
 """CLI entry point: `zecret` launches the Textual app.
 
-Supports:
     zecret                              # default diary and preferences
     zecret --path /custom/diary.enc     # override diary location
     zecret --config /custom/prefs.json  # override preferences location
     zecret --version                    # print the version and exit
     (or env vars ZECRET_DIARY_PATH / ZECRET_CONFIG_PATH)
 
-Both environment variables are named in `--help`'s epilog rather than left
-to this docstring. A variable nothing prints is a variable nobody finds:
-`--help` is the only description of the command line a user ever sees, and
-until they can read it there, the flags look like the whole interface.
-
-The two are independent, and neither implies the other. Preferences are
-settings for the person rather than for the file, so a diary opened with
---path still uses the same theme -- that is why config.py has a fixed path
-of its own, and it stays the default here.
-
---config is for the case that rule does not cover: running a *different
-build* of Zecret. Pointing --path at a scratch diary keeps development
-away from what you wrote, but without this the same run would still read
-and write the real preferences file, so testing the settings screen
-changes the theme you actually use. Which file to develop against is not a
-preference; it is a property of the run.
+The two paths are independent. Preferences belong to the person rather
+than to the file, so a diary opened with --path keeps the usual theme.
+--config is for running a different build without writing the preferences
+you actually use.
 """
 
 from __future__ import annotations
@@ -46,34 +33,24 @@ all counts as unset rather than as the current directory.
 
 
 def _from_env(name: str) -> str | None:
-    """The path environment variable `name` asks for, or None if it is silent.
+    """The path environment variable `name` asks for, or None.
 
-    Unset and empty mean the same thing here -- nothing. `Path("")` is
-    `Path(".")`, so treating them differently would read `ZECRET_DIARY_PATH=`
-    as a request to open a diary named after the current directory.
-
-    Handed back as the string it is, for argparse to convert: a string
-    default goes through the argument's `type` the same as a typed value,
-    so a path that cannot be made sense of is the same usage error from
-    either place rather than a traceback from this one.
+    Empty counts as unset: `Path("")` is the current directory. Returned
+    as a string so argparse converts it through the argument's `type`, and
+    a bad value is the same usage error from either source.
     """
     return os.environ.get(name) or None
 
 
 def _user_path(value: str) -> Path:
-    """`value` as a path, with a leading `~` meaning the home directory.
+    """`value` as a path, with a leading `~` expanded.
 
-    A shell expands `~` only where it is unquoted and starts a word, so
-    `export ZECRET_DIARY_PATH="~/diary.enc"` and `--path=~/diary.enc` both
-    arrive with the tilde intact. Taken literally that is a directory named
-    `~` under the current one, and Zecret offered to create a new, empty
-    diary there -- to someone whose real one was exactly where they said.
+    A shell leaves the tilde alone in `--path=~/diary.enc` and in a quoted
+    variable, and a literal `~` directory is not what was meant.
 
     Raises:
         argparse.ArgumentTypeError: if the home directory it names cannot
-            be found -- `~nobody/`, or no HOME and no password entry.
-            expanduser() raises RuntimeError for that, which argparse
-            would let through as a traceback.
+            be found.
     """
     try:
         return Path(value).expanduser()
@@ -87,17 +64,13 @@ def main() -> None:
         prog="zecret",
         description="A modern, encrypted terminal diary.",
         epilog=ENVIRONMENT_HELP,
-        # The epilog is laid out in columns; the default formatter would
-        # reflow it into a paragraph.
+        # Keeps the epilog's columns.
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--version",
         action="version",
         version=f"zecret {__version__}",
-        # The help popup shows this too, but only once the diary is open --
-        # so without this, saying which version misbehaved means first
-        # unlocking it. What you run should be answerable without a password.
         help="Show the version and exit.",
     )
     parser.add_argument(
@@ -109,10 +82,8 @@ def main() -> None:
     parser.add_argument(
         "--config",
         type=_user_path,
-        # Falls through as None rather than naming DEFAULT_CONFIG_PATH here.
-        # ZecretApp resolves that default when it is constructed, which is
-        # what lets the tests redirect it; spelling it out at this end would
-        # hand the app a real path and route around them.
+        # None, not DEFAULT_CONFIG_PATH: ZecretApp resolves the default when
+        # constructed, which is what lets tests redirect it.
         default=_from_env("ZECRET_CONFIG_PATH"),
         help="Path to the preferences file (default: ~/.zecret/config.json).",
     )

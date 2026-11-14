@@ -5,9 +5,8 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    # Read from the installed distribution, so pyproject.toml stays the one
-    # place the version is written. A second copy here would eventually
-    # disagree with it, and the help screen shows this one to the user.
+    # From the installed distribution: pyproject.toml is the only place
+    # the version is written.
     __version__ = version("zecret")
 except PackageNotFoundError:  # pragma: no cover - only when run uninstalled
     __version__ = "0.0.0+unknown"

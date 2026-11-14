@@ -1,23 +1,11 @@
 """One popup of help: what this is, every key, and the rules keys cannot express.
 
-A ModalScreen, which is Textual's pattern for a dialog -- its bindings take
-precedence and the screen underneath dims, so the diary stays visible
-behind the help rather than being replaced by it. Textual also ships a
-HelpPanel, but that is a different thing: context-sensitive keys for the
-widget that happens to have focus, docked as a side split. This page is
-about the app, not about the focused widget.
+A ModalScreen, so the diary stays visible behind it. Not Textual's
+HelpPanel, which documents whichever widget has focus rather than the app.
 
-The key list is built from the screens' own BINDINGS rather than written
-out here. A hand-kept copy would be wrong the first time a binding changed
-and nobody would notice -- the whole point of a help page is that it can be
-trusted.
-
-Every binding appears, not just the ones marked show=True. That flag decides
-what fits in the footer, which is a question about eighty columns rather
-than about what is worth knowing: the keys that get around a long diary are
-some of the most useful in the app and none of them would survive the
-budget. This page is where they are told to you, and it is why leaving a
-binding out of the bar costs nothing.
+The key list is generated from the screens' own BINDINGS, never written
+out here, so it cannot go stale. Every binding appears, whatever its
+`show`: that flag decides only what goes in the footer.
 """
 
 from __future__ import annotations
@@ -42,9 +30,7 @@ from zecret.screens.search import SearchScreen
 from zecret.screens.settings import SettingsScreen
 from zecret.screens.unlock import UnlockScreen
 
-#: Block-letter ZECRET. Kept as one constant so it can be swapped whole,
-#: and rendered without wrapping -- see MIN_LOGO_WIDTH for what happens
-#: when the terminal is too narrow to hold it.
+#: Block-letter ZECRET, rendered without wrapping.
 LOGO = r"""
 ███████╗███████╗ ██████╗██████╗ ███████╗████████╗
 ╚══███╔╝██╔════╝██╔════╝██╔══██╗██╔════╝╚══██╔══╝
@@ -54,25 +40,18 @@ LOGO = r"""
 ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝
 """.strip("\n")
 
-#: Below this many columns the logo cannot be drawn without being cut in
-#: half, which looks broken rather than decorative -- so it is dropped and
-#: the help itself, which is the point, keeps the room.
+#: Below this many columns the logo would be cut off, so it is hidden.
 MIN_LOGO_WIDTH = max(len(line) for line in LOGO.splitlines()) + 6
 
 TAGLINE = f"An encrypted terminal diary · v{__version__}"
 
 CLOSE_HINT = "esc or ? to close"
 
-#: A section longer than this is laid out in two columns rather than one
-#: long list. A key row is barely twenty columns wide, so a single column
-#: spends height the popup does not have on width it is not using -- and
-#: the entry list's eighteen keys are most of the page. Short sections stay
-#: in one column: two columns of one row each is a table, not a list.
+#: A section with more rows than this is laid out in two columns, trading
+#: width the popup has for height it does not.
 COLUMN_THRESHOLD = 8
 
-#: Blank columns kept between two side-by-side columns of keys, so the
-#: right-aligned keys of the second do not run into the descriptions of the
-#: first.
+#: Blank columns between two side-by-side columns of keys.
 COLUMN_GAP = 4
 
 
@@ -83,32 +62,20 @@ class Section(NamedTuple):
     #: One binding list per screen the section covers. Rows repeated
     #: between them are listed once.
     groups: list[list[BindingType]]
-    #: Whether this section's keys mean what the list's do wherever the
-    #: two share one, so that a row already under "The diary" is not said
-    #: again here. A flag on the section rather than a list of titles, so
-    #: renaming a heading cannot quietly bring the repeats back.
+    #: Whether rows already listed under "The diary" are left out here,
+    #: because the shared keys mean the same thing.
     shares_diary_keys: bool = False
 
 
-#: The list's own section, first on the page and the one the others are
-#: read against.
+#: The list's own section, first on the page.
 DIARY = Section("The diary", [EntryListScreen.BINDINGS])
 
-#: What the page covers after the list, in the order you meet it. These sit
-#: side by side under the list's section, one column each.
+#: The sections after the list's, shown side by side, one column each.
 #:
-#: The calendar comes first because it is the other main view, and lists
-#: only what the list has not already said: its lock, help and quit are
-#: the list's own keys doing the list's own things, and saying them twice
-#: cost three rows of a page that has none spare. Not every section does
-#: that: the editor's ctrl+l saves before it locks, which makes it worth
-#: its own line even though it reads the same.
-#:
-#: The last group merges four screens rather than giving each its own
-#: heading: they advertise little beyond "escape goes back", and four
-#: headings over one line each tells the reader less than one heading over
-#: four does. Duplicates collapse, so this stays a merge and not an edit --
-#: every binding any of those screens advertises still appears.
+#: The calendar omits what the list has already said (lock, help, quit).
+#: The editor does not: its ctrl+l saves before it locks. The last section
+#: merges four screens that advertise little beyond "escape goes back";
+#: duplicates collapse, so every binding still appears.
 SECTIONS: list[Section] = [
     Section("The calendar", [CalendarScreen.BINDINGS], shares_diary_keys=True),
     Section("Writing a day", [EditorScreen.BINDINGS]),
@@ -129,12 +96,11 @@ KEY_GAP = "   "
 
 
 def key_width(rows: list[tuple[str, str]]) -> int:
-    """How wide the widest key in `rows` is -- the column they align to."""
+    """How wide the widest key in `rows` is: the column they align to."""
     return max((len(display) for display, _ in rows), default=0)
 
 
-#: The rules no key can express. Kept short: this is a popup, and every
-#: line here is a line of the diary it is covering.
+#: The rules no key can express. Kept short.
 NOTES = [
     "One entry per day — reopening a day continues it.",
     "A phrase between *asterisks* is emphasised as you write it.",
@@ -144,45 +110,33 @@ NOTES = [
 
 
 def documented_bindings(bindings: list[BindingType]) -> list[Binding]:
-    """Every binding a screen declares, in the order it declares them.
+    """Every binding a screen declares, in declaration order.
 
-    Not filtered by `show`: that decides what fits in the footer, and a key
-    left out of eighty columns is still a key. Screens are expected to
-    declare their bindings in the order a reader wants them -- what you do
-    first, then what you do rarely, then how you move around.
+    Not filtered by `show`. Screens declare bindings in reading order.
     """
     return [binding for binding in bindings if isinstance(binding, Binding)]
 
 
 class HelpScreen(ModalScreen[None]):
-    """Every key Zecret answers to, over the diary rather than instead of it."""
+    """Every key Zecret answers to, shown over the diary."""
 
-    #: "Close" for both, as the popup's own hint says: a popup dismisses
-    #: rather than going back. Only escape is on the bar -- one key per
-    #: action there, and escape is the one every other popup shows.
+    #: "Close" for both keys. Only escape is on the bar: one key per
+    #: action there.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Close", priority=True),
         Binding("question_mark", "back", "Close", key_display="?", show=False),
-        # The same chord as everywhere the diary is open -- see
-        # ZecretApp.action_lock.
         Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def __init__(self) -> None:
         super().__init__()
-        # The narrowest terminal two columns of keys can be drawn in, worked
-        # out from the rows themselves while composing them. Nothing here
-        # knows how wide a description is until the bindings are read, and
-        # guessing would either stack columns that fit or squeeze ones that
-        # do not.
+        # The narrowest terminal the page's columns fit side by side in,
+        # measured from the rows while composing them.
         self.min_columns_width = 0
 
     def compose(self) -> ComposeResult:
-        # Its own rather than base.card(), and focusable on purpose: this
-        # is the one panel in the app with no fields in it, so focusing
-        # it is what lets the arrow keys read a page taller than the
-        # terminal. Everywhere else that stop is an empty one -- see
-        # the note on card().
+        # Not base.card(), and focusable on purpose: this panel has no
+        # fields, so focusing it is what the arrow keys scroll with.
         with VerticalScroll(id="help-box"):
             yield Static(LOGO, id="help-logo")
             yield Label(TAGLINE, id="help-tagline")
@@ -191,12 +145,8 @@ class HelpScreen(ModalScreen[None]):
             yield from self.section_keys(DIARY.groups)
             diary_rows = self.key_rows(DIARY.groups)
 
-            # The short sections sit side by side rather than stacking:
-            # between them they are six rows of content under three
-            # headings, and the popup has more width to spend than height.
-            # Measured like any other set of columns, so that a terminal
-            # too narrow for three abreast stacks them instead of wrapping
-            # their rows -- see fit_columns.
+            # The short sections sit side by side, and are measured like
+            # any other set of columns so a narrow terminal stacks them.
             omits = [diary_rows if section.shares_diary_keys else [] for section in SECTIONS]
             self.note_columns_width(
                 [
@@ -217,10 +167,8 @@ class HelpScreen(ModalScreen[None]):
                 yield Label(f"• {note}", classes="help-note")
 
             yield Label(CLOSE_HINT, id="help-close-hint")
-        # A bar of its own, as every popup has. The box used to be trusted
-        # to cover the one underneath, which it does only up to its own
-        # width: on a terminal wider than that, the list's keys showed on
-        # either side of it, every one of them dead while help was open.
+        # Its own bar, as every popup has: the box covers the bar beneath
+        # only up to its own width.
         yield DiaryFooter()
 
     def on_mount(self) -> None:
@@ -241,10 +189,8 @@ class HelpScreen(ModalScreen[None]):
     def fit_columns(self) -> None:
         """Stack the columns where the terminal is too narrow to pair them.
 
-        Same bargain as the logo: two columns squeezed until the
-        descriptions truncate tell the reader less than one column they have
-        to scroll. Stacking preserves reading order, since a stacked column
-        is read after the one that was beside it, not interleaved with it.
+        Stacking keeps reading order: a stacked column follows the one
+        that was beside it.
         """
         stacked = self.size.width < self.min_columns_width
         for row in self.query(".help-columns"):
@@ -253,9 +199,8 @@ class HelpScreen(ModalScreen[None]):
     def key_rows(self, groups: list[list[BindingType]]) -> list[tuple[str, str]]:
         """Every (key, description) row across `groups`, repeats dropped.
 
-        Keys are rendered the way the footer renders them (ctrl+s as ^s,
-        and a binding's own key_display honoured), so a key that does reach
-        the bar reads the same in both places.
+        Keys are rendered as the footer renders them (ctrl+s as ^s, and
+        key_display honoured).
         """
         rows: list[tuple[str, str]] = []
         for bindings in groups:
@@ -270,16 +215,11 @@ class HelpScreen(ModalScreen[None]):
     ) -> ComposeResult:
         """One row per key across `groups`, aligned into a column or two.
 
-        Rows repeated across screens -- "esc  Back" on every one of them --
-        are listed once; two keys doing the same thing are not, so g and
-        home each get a line, which is right, since the reader needs to
-        know both exist. Rows in `omit` are left out: they are on the page
-        already, in a section this one shares its keys with.
+        Identical rows repeated across screens are listed once. Two keys
+        doing the same thing each get a line. Rows in `omit` are left out.
 
-        A long section is split down the middle into two columns, read down
-        and then across. Both halves are aligned to the same key width, so
-        the split reads as one section laid out in two columns rather than
-        as two sections that happen to be adjacent.
+        A long section is split down the middle into two columns, read
+        down then across, both aligned to the same key width.
         """
         rows = self.section_rows(groups, omit)
 
@@ -314,12 +254,10 @@ class HelpScreen(ModalScreen[None]):
     def note_columns_width(self, widths: list[int]) -> None:
         """Record how wide a terminal these columns need to sit side by side.
 
-        `widths` is how wide each column's widest line is. Columns share the
-        row equally (`1fr` each in app.tcss), so every one of them is given
-        room for the widest; then the gaps between them, and the box's own
-        border and padding. Every set of columns on the page is measured --
-        the long sections split in two, and the row of short sections side
-        by side -- and the widest need decides when they all stack.
+        `widths` is each column's widest line. Columns share the row
+        equally (`1fr` in app.tcss), so each needs room for the widest,
+        plus the gaps and the box's border and padding. Every set of
+        columns is measured, and the widest need decides when all stack.
         """
         chrome = 2 + 2 * 2  # border, then padding: 1 2
         needed = len(widths) * max(widths) + (len(widths) - 1) * COLUMN_GAP + chrome

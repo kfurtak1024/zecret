@@ -1,20 +1,14 @@
-"""Full-text search over decrypted entries already held in memory.
+"""Full-text search over the decrypted entries already held in memory.
 
-Since app.diary.entries are already decrypted for the session, search is a
-simple in-memory substring/case-insensitive filter over the entry text as
-the query changes (live filtering, no separate "submit" step needed). No
-plaintext is ever written to disk as part of search.
+A case-insensitive substring filter, live as the query changes. Nothing
+is written to disk.
 
-The entries are casefolded and sorted once, when the screen opens or comes
-back to a diary that changed, and each keystroke only scans that. Folding
-every body on every keystroke copied the whole diary each time a letter
-was typed.
+The entries are casefolded and sorted once, when the screen opens or
+returns to a changed diary, and each keystroke only scans that.
 
-Selecting a result opens it in the editor, so search is a way into an entry
-rather than a dead end; the results refresh on return, since the entry may
-have been edited or its text may no longer match. That refresh keeps the
-cursor on the day it was on where that day is still a result, so coming
-back from an entry does not cost you the one you were reading.
+Selecting a result opens it in the editor. On return the results refresh
+if the diary changed, keeping the cursor on the same day where it is
+still a result.
 """
 
 from __future__ import annotations
@@ -37,8 +31,7 @@ NO_MATCHES = "No entries match."
 
 def searchable(entries: Iterable[Entry]) -> list[tuple[Entry, str]]:
     """The entries newest first, each beside the text a query is matched in."""
-    # casefold() rather than lower(): correct for non-ASCII text, which
-    # diary entries are as likely to contain as anything else.
+    # casefold() rather than lower(): correct for non-ASCII text.
     return [
         (entry, entry.body.casefold())
         for entry in sorted(entries, key=lambda entry: entry.date, reverse=True)
@@ -52,8 +45,6 @@ class SearchScreen(ZecretScreen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Back", priority=True),
-        # The same chord as everywhere the diary is open -- see
-        # ZecretApp.action_lock.
         Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
@@ -61,7 +52,7 @@ class SearchScreen(ZecretScreen):
         super().__init__()
         self.results: list[Entry] = []
         # The diary the results are filtered from, and that diary folded
-        # for matching -- see on_screen_resume.
+        # for matching.
         self.drawn: dict[dt.date, Entry] | None = None
         self.folded: list[tuple[Entry, str]] = []
 
@@ -69,10 +60,7 @@ class SearchScreen(ZecretScreen):
         yield DiaryHeader()
         yield Input(placeholder="Search entries", id="query")
         yield Label(NO_MATCHES, id="search-empty")
-        # An OptionList for the reason the entry list is one: an empty query
-        # lists the whole diary, and a widget per row made opening search on
-        # ten years of entries take eight seconds -- and every keystroke
-        # that still matched most of them take as long again.
+        # An empty query lists the whole diary, hence a DayList.
         yield DayList(id="results")
         yield DiaryFooter()
 
@@ -80,14 +68,9 @@ class SearchScreen(ZecretScreen):
         self.query_one("#query", Input).focus()
 
     def on_screen_resume(self) -> None:
-        """Re-filter on return from the editor: the entry may have changed.
+        """Re-filter on return from the editor, if the diary changed.
 
-        Only if it did. The query cannot have changed while the editor was
-        open, so an unchanged diary is unchanged results -- and a day read
-        and left alone is the usual way back from a search.
-
-        Skipped when the app is locking, which pops this screen too -- see
-        EntryListScreen.
+        Skipped when the app is locking, which pops this screen too.
         """
         if not self.zecret.is_unlocked:
             return
@@ -97,17 +80,12 @@ class SearchScreen(ZecretScreen):
             self.refresh_results()
 
     def take_in(self, entries: Mapping[dt.date, Entry]) -> None:
-        """Note the diary to search, folded once for every keystroke after.
-
-        Here rather than on every refresh: the diary cannot change while
-        this screen is the one in front, only while the editor is, so a
-        keystroke has no reason to copy it.
-        """
+        """Note the diary to search, folded once for every keystroke after."""
         self.drawn = dict(entries)
         self.folded = searchable(entries.values())
 
     def on_input_changed(self, _event: Input.Changed) -> None:
-        """Live filtering -- no submit step."""
+        """Live filtering; there is no submit step."""
         self.refresh_results()
 
     def on_input_submitted(self, _event: Input.Submitted) -> None:
@@ -122,27 +100,19 @@ class SearchScreen(ZecretScreen):
     def refresh_results(self) -> None:
         """Filter the diary by what is in the box now, and redraw.
 
-        Synchronous, start to finish, so a keystroke's rebuild is over
-        before the next keystroke is read: there is no queue of stale
-        queries to work through, and nothing to lock. (Rebuilding a
-        ListView was a sequence of awaits, which serialised behind a lock
-        -- typing four letters over a long diary meant waiting for four
-        full rebuilds one after another.)
+        Synchronous, so a keystroke's rebuild is over before the next key
+        is read.
         """
         if self.drawn is None:
             # A keystroke before the screen's first resume.
             diary, _ = self.zecret.unlocked
             self.take_in(diary.entries)
         query = self.query_one("#query", Input).value.strip().casefold()
-        # An empty query lists everything, so opening search shows the
-        # whole diary rather than a blank screen.
+        # An empty query matches everything.
         found_entries = [entry for entry, text in self.folded if query in text]
 
         results = self.results_list
-        # Read while self.results still describes the rows on screen. Taken
-        # after the swap, it looked the old row number up in the new
-        # results, so narrowing a query left the cursor on whatever day now
-        # sat at that row -- neither the day you were on nor the top.
+        # Read while self.results still describes the rows on screen.
         was_on = self.highlighted_date
         self.results = found_entries
         results.set_options(day_row(entry_summary(entry)) for entry in self.results)
@@ -162,13 +132,8 @@ class SearchScreen(ZecretScreen):
         return self.results[index].date
 
     def row_for(self, date: dt.date | None) -> int:
-        """Where to leave the cursor once the results have been rebuilt.
-
-        On the same day, if it is still a result: returning from the editor
-        should not lose the reader's place, and narrowing a query that still
-        matches what they were reading should not either. Otherwise the top,
-        which is what a new set of results deserves.
-        """
+        """Where to leave the cursor after a rebuild: on the same day if it
+        is still a result, otherwise the top."""
         if date is None:
             return 0
         return next((row for row, entry in enumerate(self.results) if entry.date == date), 0)

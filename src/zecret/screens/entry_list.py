@@ -1,53 +1,19 @@
-"""Main screen: the diary, one row per day, most recent first, grouped
-into months.
+"""Main screen: the diary, one row per day, newest first, grouped by month.
 
-Responsibilities:
-    - Render entries from app.diary.entries, sorted by date descending,
-      under a heading per month ("August 2026 · 12 entries"). Because the
-      heading names the month, the rows under it need only the weekday and
-      day of the month.
-    - Keybindings: 'n' write today -> EditorScreen, 'c' the year laid out
-      -> CalendarScreen, 'a' pick another day -> DatePromptScreen (given
-      the days already written, which its calendar marks) -> EditorScreen,
-      'enter' open selected day -> EditorScreen, 'd' delete selected (with
-      confirmation modal), 'r' re-read the file, '/' -> SearchScreen,
-      's' -> SettingsScreen, ctrl+l lock, '?' help, 'q' quit. Plus getting
-      around a long diary: j/k, g/G, home/end and the page keys, none of
-      which reach the footer.
-    - After returning from EditorScreen/SearchScreen/CalendarScreen,
-      refresh the list from
-      the current in-memory app.diary state (no re-read from disk needed,
-      since app.diary is the source of truth during the session), leaving
-      the cursor on the day it was on -- a refresh is a redraw, not a
-      reason to send a reader of a years-long diary back to the top. After
-      the editor, "the day it was on" is the day just written, even when
-      that day had no row until now. After the calendar, it is the day
-      the calendar's cursor was on, or the nearest older one written.
+- Rows come from app.diary.entries, sorted here, under a heading per month
+  ("August 2026 · 12 entries"). Grouping is presentation only; storage
+  knows nothing of it.
+- Month headings share the DayList with the entries as disabled options.
+  A row index is therefore not an index into the entries: everything that
+  maps a row back to a day goes through self.rows.
+- On return from another screen the list is rebuilt only if the diary
+  changed, and the cursor lands on the day handed back: the day edited,
+  or the calendar's cursor day (or the nearest older one written).
+- 'n' and 'a' hand a date to the editor, which decides whether that means
+  a new entry or the existing one.
 
-'n' and 'a' both land on a date rather than on a new entry: the editor
-opens whatever that day holds, so writing more about today just continues
-today's entry instead of starting a second one.
-
-Grouping is presentation only -- nothing about it reaches models.py or
-storage.py, which know only about individual dated entries. The month
-headings share the OptionList with the entries as disabled options, which
-Textual's cursor navigation steps over and its clicks ignore. That leaves
-one thing to get right: a row index is no longer an index into the
-entries, so everything that maps a selection back to an entry goes through
-self.rows.
-
-An OptionList and not a ListView, because a diary is kept for years. A
-ListView is a widget per row -- a ListItem holding a Label -- and every
-one of them is mounted, styled and laid out on every rebuild, whether or
-not it is anywhere near the screen: ten years of entries was 7,500 widgets
-and eight seconds, on every return to this screen. An OptionList is one
-widget that draws only the lines in view, and rebuilds the same ten years
-in about a tenth of a second.
-
-The delete confirmation uses the shared ConfirmScreen modal (screens/
-confirm.py), as does leaving unsaved edits in the editor. That modal
-offers a third answer, "save first", where there is something to save;
-this question does not take it, since a deletion has no such road.
+An OptionList, not a ListView: a ListView mounts a widget per row whether
+or not it is on screen, which took seconds at ten years of entries.
 """
 
 from __future__ import annotations
@@ -65,6 +31,7 @@ from textual.widgets.option_list import Option
 from zecret.crypto import ZecretDecryptError
 from zecret.models import Entry
 from zecret.screens.base import (
+    REKEYED_ELSEWHERE,
     DayList,
     ZecretScreen,
     count_entries,
@@ -73,6 +40,7 @@ from zecret.screens.base import (
     delete_question,
     format_month,
     plain,
+    reread_error,
     today,
     unchanged,
 )
@@ -87,102 +55,57 @@ from zecret.storage import DiaryFile
 
 EMPTY_MESSAGE = "Nothing written yet. Press 'n' to write about today."
 
-#: A reload that cannot use the key this session holds. The only other
-#: session that could cause it is one that changed the password.
-RELOAD_REKEYED = "The password was changed elsewhere. Quit and unlock again."
 
-
-#: Lines a month heading takes on screen: the blank line that sets it apart,
-#: and the heading. A day takes one. Paging counts these rather than rows --
-#: see EntryListScreen.move_cursor.
+#: Lines a month heading takes on screen: a blank line, then the heading.
+#: A day takes one. Paging counts lines, not rows; see move_cursor.
 HEADING_LINES = 2
 
 
 def heading_option(first_of_month: dt.date, count: int) -> Option:
-    """The row naming a month, with a blank line above it to set it apart.
+    """The row naming a month, with a blank line above it.
 
-    Disabled, so the cursor steps over it and a click on it does nothing --
-    it is a signpost, not somewhere to be. The blank line is part of the
-    option rather than padding around it: an option has no margin of its
-    own, and a separate blank option would be one more row to step over.
+    Disabled, so the cursor steps over it and clicks ignore it. The blank
+    line is part of the option because an option has no margin.
     """
     heading = f"{format_month(first_of_month)} · {count_entries(count)}"
     return Option(plain("\n" * (HEADING_LINES - 1) + heading), disabled=True)
 
 
 def entry_option(entry: Entry) -> Option:
-    """The row for one day, exactly as written -- see base.plain()."""
+    """The row for one day, as plain text."""
     return day_row(day_summary(entry))
 
 
 class EntryListScreen(ZecretScreen):
     """Lists the days written and routes to write/edit/search/settings."""
 
-    #: `show` decides what goes in the footer and nothing else -- the help
-    #: popup lists every binding here regardless. The bar holds about eighty
-    #: columns and these eight fill sixty-nine of them, so the room that was
-    #: spare is spent; everything below them is no less real for being
-    #: found through '?' instead.
+    #: `show` decides only what goes in the footer; the help popup lists
+    #: every binding. The eight shown fill 69 of 80 columns.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("n", "today", "Today"),
         Binding("c", "calendar", "Calendar"),
-        # Out of the bar since the calendar arrived: the calendar answers
-        # the same question -- which day? -- with the whole year to point
-        # at, and the bar had room for one of the two. This stays the
-        # quicker road for a day whose date you already know.
+        # Hidden to make room for the calendar, which answers the same
+        # question.
         Binding("a", "another_day", "Another day", show=False),
         Binding("d", "delete_entry", "Delete"),
         Binding("slash", "search", "Search", key_display="/"),
         Binding("s", "settings", "Settings"),
-        # A chord rather than a letter, and the same chord the editor
-        # carries: locking is the one thing you want to press without first
-        # working out which screen you are on, and a bare letter cannot be
-        # bound where there is text to type into. ctrl+l is what a password
-        # manager locks with, and Textual leaves it free -- no widget in
-        # this app binds it, and the terminal's own clear-screen meaning
-        # belongs to a shell prompt, which is not what is running here.
-        #
-        # Shown, which the rest of this group's weight of use would not
-        # earn it. Whether someone can find this key is a security property
-        # and not a convenience: a writer stepping away who does not know
-        # it either quits, losing where they were, or leaves the diary open
-        # on the screen. That is not true of 'r' or of the movement keys.
+        # Shown because being able to find the lock key is a security
+        # property. The same chord as on every other screen.
         Binding("ctrl+l", "lock", "Lock"),
-        # Bound here rather than app-wide on purpose: a '?' typed into the
-        # editor, the search box or a password field must stay a '?'. The
-        # action is the app's, which the calendar shares -- see
-        # ZecretApp.action_help.
+        # Bound here, not app-wide, so '?' stays typeable in text fields.
         Binding("question_mark", "app.help", "Help", key_display="?"),
-        # "app.quit", not "quit": a binding's action is dispatched on the
-        # node that declares it, and a Screen has no action_quit -- an
-        # unqualified "quit" here silently does nothing. The app's is
-        # Zecret's own override, so this key and ctrl+q ask the same
-        # question about unsaved writing rather than one of them not.
+        # "app.quit", not "quit": an action is dispatched on the node that
+        # declares the binding, and a Screen has no action_quit.
         Binding("q", "app.quit", "Quit"),
-        # --- real, but not worth the width -------------------------------
-        # The OptionList has focus and handles Enter itself, posting
-        # OptionSelected -- which on_option_list_option_selected turns into
-        # the same call. The action behind this binding is a second door
-        # onto the same room rather than the one you walk through, and
-        # guards its own selection accordingly. Hidden because the list's
-        # own enter binding shadows it in the bar anyway: it never rendered
-        # there.
-        # "Edit", as the calendar's 'e' and enter are: both open the chosen
-        # day in the editor.
+        # The DayList handles Enter itself (OptionSelected); this binding
+        # is what documents it in the help popup.
         Binding("enter", "open_entry", "Edit", show=False),
         Binding("r", "reload", "Reload", show=False),
-        # --- getting around ----------------------------------------------
-        # A diary kept for years is a long list, and arrow keys alone make
-        # its far end hundreds of presses away. j/k/g/G are what a terminal
-        # reader will try first; home/end/page are what everyone else will.
-        # j/k/g/G are ours alone. home, end and the page keys are the
-        # OptionList's as well, and its page keys cannot be trusted with a
-        # diary: a page up that lands on the month heading at the top finds
-        # nothing enabled above it and drops the highlight altogether.
-        # `priority` takes all four back so that every jump goes through
-        # move_cursor, which walks off a heading rather than giving up --
-        # safe here because this screen has no text field for them to mean
-        # anything else in.
+        # Getting around. home, end and the page keys are priority so they
+        # go through move_cursor rather than OptionList's own handling,
+        # which drops the highlight when a page up lands on the top
+        # heading.
         Binding("j", "cursor_down", "Down a day", show=False),
         Binding("k", "cursor_up", "Up a day", show=False),
         Binding("pagedown", "page_down", "Down a screenful", show=False, priority=True),
@@ -195,17 +118,14 @@ class EntryListScreen(ZecretScreen):
 
     def __init__(self) -> None:
         super().__init__()
-        # One element per option of the list, in display order: the entry
-        # that row shows, or None where the row is a month heading. This is
-        # the only thing that maps a highlighted row back to a day.
+        # One element per option, in display order: the entry that row
+        # shows, or None for a month heading.
         self.rows: list[Entry | None] = []
-        # The diary the rows were last built from, so that coming back to
-        # an unchanged one does not rebuild it -- see on_screen_resume.
+        # The diary the rows were last built from; see on_screen_resume.
         self.drawn: dict[dt.date, Entry] | None = None
-        # The two screens this one sends the reader to and lands back from:
-        # the day open in the editor, and the calendar while it is open over
-        # this screen. Both are read in on_screen_resume, which is what
-        # decides where the cursor goes on the way back -- see there.
+        # The day open in the editor, and the calendar while it is open
+        # over this screen. Both are read in on_screen_resume to decide
+        # where the cursor lands.
         self.editing: dt.date | None = None
         self.calendar: CalendarScreen | None = None
 
@@ -216,38 +136,20 @@ class EntryListScreen(ZecretScreen):
         yield DiaryFooter()
 
     def on_screen_resume(self) -> None:
-        """Fires when this screen is shown, including after returning from
-        the editor or search -- so the list always reflects app.diary.
+        """Redraw if the diary changed, and land the cursor.
 
-        Rebuilt only when the diary has changed since the rows were drawn.
-        Most returns change nothing -- closing the help, cancelling a
-        question, leaving settings, a calendar visit or a day read and not
-        written -- and a rebuild replaces every row of a list that can be
-        years long. Where nothing changed but there is a day to land on,
-        the cursor goes there over the rows as they are.
+        Fires whenever this screen is shown. The list is rebuilt only when
+        the diary changed since the rows were drawn. Otherwise the cursor
+        just moves, if there is a day to land on.
 
-        Where to land is decided here, for both of the screens that hand a
-        day back, because this is the one place certain to run after the
-        screen has gone and before the list is redrawn. Coming back from
-        the editor lands on the day just written -- including one that had
-        no row until now -- and on nothing new if the day was left
-        unwritten. Coming back from the calendar lands on its cursor's day,
-        or the nearest older one written.
+        Where to land is decided here for both screens that hand a day
+        back, because this is the one place certain to run after that
+        screen has gone and before the redraw. A dismiss callback is not
+        ordered against this handler.
 
-        (The editor's day used to come back through its dismiss callback,
-        which nothing orders against this handler: which of the two ran
-        first depended on the road out of the editor, and the callback had
-        to work out from the rows whether the rebuild had happened yet.)
-
-        Also fires on the way out, as locking pops the screens above this
-        one. There is no diary to draw from by then, and nothing to draw
-        it onto.
-
-        And fires late, sometimes, behind a screen already pushed over this
-        one: the which-day question opens the editor from its dismiss
-        callback, which can run before this handler does. Nothing is
-        decided then -- the editor is still open, and this will be asked
-        again when it closes.
+        Returns early while locking (no diary), and when another screen
+        is already in front: the date prompt opens the editor from its
+        dismiss callback, which can run before this does.
         """
         if not self.zecret.is_unlocked or self.app.screen is not self:
             return
@@ -265,29 +167,21 @@ class EntryListScreen(ZecretScreen):
             self.move_cursor_to(self.row_for(landing))
 
     def refresh_entries(self, landing: dt.date | None = None) -> None:
-        """Rebuild the list from the in-memory diary, most recent day first,
-        with a heading above each month, and put the cursor on `landing` --
-        or, if there is none, back on the day it was on.
+        """Rebuild the list from the in-memory diary and put the cursor on
+        `landing`, or back on the day it was on.
 
-        Synchronous, start to finish: an OptionList takes its options in one
-        call with nothing to await, so no two rebuilds can interleave and
-        nothing else can see the list half-built. (A ListView rebuild was a
-        sequence of awaits, and needed a lock to keep two of them from
-        duplicating rows.)
+        Synchronous: nothing awaits, so rebuilds cannot interleave.
         """
         diary, _ = self.zecret.unlocked
         entries = sorted(diary.entries.values(), key=lambda entry: entry.date, reverse=True)
 
         listing = self.entries_list
-        # Read before clearing: rebuilding is what loses the reader's place,
-        # so where they were has to be taken down first. A day to land on
-        # may have no entry at all -- the calendar's often does not -- and
-        # row_for then finds the nearest that does.
+        # Read before clearing, since rebuilding loses the highlight.
         was_on = landing if landing is not None else self.highlighted_date
         self.drawn = dict(diary.entries)
         self.rows = []
         options: list[Option] = []
-        # Sorted by date, so each month's entries are already adjacent.
+        # Sorted by date, so each month's entries are adjacent.
         for first_of_month, group in groupby(entries, key=lambda entry: entry.date.replace(day=1)):
             month = list(group)
             self.rows.append(None)
@@ -303,9 +197,8 @@ class EntryListScreen(ZecretScreen):
         self.query_one("#entries-empty", Label).display = not has_entries
         listing.display = has_entries
         if has_entries:
-            # Never left at 0: that is a month heading, and assigning a
-            # highlight is not filtered by the skip-disabled rule that
-            # cursor movement follows -- Enter would then open nothing.
+            # Never row 0, which is a heading: assigning a highlight is
+            # not filtered by the skip-disabled rule.
             listing.highlighted = self.row_for(was_on)
             listing.focus()
 
@@ -332,18 +225,13 @@ class EntryListScreen(ZecretScreen):
         return None if entry is None else entry.date
 
     def row_for(self, date: dt.date | None) -> int | None:
-        """The row to put the cursor on to leave the reader where they were.
+        """The row to put the cursor on for `date`.
 
-        `date` is the day highlighted before the rebuild, or a day handed
-        over to land on. Usually it has a row and the cursor simply lands
-        on it -- returning from the editor should not cost someone their
-        place halfway down a diary of years. When it has none, the nearest
-        older day is the one to land on, and that holds for both ways a day
-        can be missing: one just deleted, whose next older day has moved up
-        into the space it left, which is where the eye already is; and a
-        day the calendar was left on that was never written, whose nearest
-        written neighbour is the row that stands in for it. Rows run newest
-        first, so that is the first row not newer than `date`.
+        The day's own row if it has one. Otherwise the nearest older day:
+        after a deletion that is the row that moved up into its place, and
+        for an unwritten day from the calendar it is the closest stand-in.
+        Rows run newest first, so that is the first row not newer than
+        `date`. With nothing that old, the last row.
         """
         if date is None:
             return self.first_entry_row
@@ -355,8 +243,6 @@ class EntryListScreen(ZecretScreen):
             ),
             None,
         )
-        # Nothing that old is left: the deleted day was the oldest one, so
-        # the cursor was at the foot of the list and belongs there still.
         return self.last_entry_row if same_or_older is None else same_or_older
 
     def entry_at(self, row: int | None) -> Entry | None:
@@ -387,23 +273,13 @@ class EntryListScreen(ZecretScreen):
         self.open_day(today())
 
     def action_another_day(self) -> None:
-        """Write about a day other than today -- one you missed, or one you
-        want to add to.
-
-        The days already written go with the question: the modal marks
-        them on its calendar, and it is this screen that has the diary
-        open to be asked. A frozenset of the keys, so what the modal holds
-        cannot drift from the diary or be changed by it.
-        """
+        """Ask which day to write about, marking the days already written."""
         self.app.push_screen(DatePromptScreen(written=self.written_days), self.open_chosen_day)
 
     def action_calendar(self) -> None:
-        """Lay out the year, opening on the day the cursor is on here.
+        """Open the year, on the day the cursor is on here.
 
-        The calendar is kept so that coming back lands on the day its own
-        cursor was left on -- read in on_screen_resume, which is the one
-        thing certain to run after it has gone and before the list is
-        rebuilt.
+        The screen is kept so on_screen_resume can read its cursor's day.
         """
         self.calendar = CalendarScreen(self.highlighted_date)
         self.app.push_screen(self.calendar)
@@ -419,26 +295,21 @@ class EntryListScreen(ZecretScreen):
         self.zecret.lock()
 
     def action_reload(self) -> None:
-        """Pick up what another Zecret wrote.
+        """Re-read the file, to pick up what another Zecret wrote.
 
-        The way out of a refused save: once the file has changed underneath
-        this session, every save is a conflict until the diary in memory is
-        the one on disk again. Nothing is lost by doing it -- every save
-        here is immediate, so there is no unsaved state to overwrite.
+        The way out of a refused save from this screen. Nothing is lost:
+        every save is immediate, so there is no unsaved state here.
         """
         diary, key = self.zecret.unlocked
         try:
             reopened = DiaryFile.reopen(diary.path, key)
         except ZecretDecryptError:
-            # A re-key elsewhere. The session's key opens nothing in the
-            # file now, and the password to derive a new one was not kept.
-            self.notify(RELOAD_REKEYED, severity="error")
+            # Re-keyed elsewhere: this session's key opens nothing now.
+            self.notify(REKEYED_ELSEWHERE, severity="error")
             return
         except (OSError, ValueError) as error:
-            detail = error.strerror if isinstance(error, OSError) and error.strerror else error
-            # Not markup: the detail can quote the file, which is the very
-            # thing this is reporting as damaged.
-            self.notify(f"Could not re-read the diary: {detail}.", severity="error", markup=False)
+            # Not markup: the detail can quote the damaged file.
+            self.notify(reread_error(error), severity="error", markup=False)
             return
 
         self.zecret.diary = reopened
@@ -454,7 +325,6 @@ class EntryListScreen(ZecretScreen):
     # --- getting around ----------------------------------------------------
 
     def action_cursor_down(self) -> None:
-        """j, handed to the list, which already steps over headings."""
         self.entries_list.action_cursor_down()
 
     def action_cursor_up(self) -> None:
@@ -474,7 +344,7 @@ class EntryListScreen(ZecretScreen):
 
     @property
     def page_rows(self) -> int:
-        """A screenful of lines, less one, so the jump keeps something in view."""
+        """A screenful of lines, less one, so a jump keeps something in view."""
         return max(1, self.entries_list.scrollable_content_region.height - 1)
 
     def lines_of(self, row: int) -> int:
@@ -482,18 +352,14 @@ class EntryListScreen(ZecretScreen):
         return HEADING_LINES if self.rows[row] is None else 1
 
     def move_cursor(self, lines: int) -> None:
-        """Move the highlight about `lines` lines of the screen, landing on a day.
+        """Move the highlight about `lines` screen lines, landing on a day.
 
-        Lines and not rows: a month heading is two lines tall, so a jump of
-        a screenful of rows went further than a screenful -- and in a diary
-        with a few days a month, where every third row is a heading, page
-        down stepped clean over days that never once reached the screen.
-        At least one row is always crossed, so a page key is never dead.
+        Lines, not rows: a heading is two lines, so a screenful of rows
+        would overshoot and skip days in a sparse diary. At least one row
+        is always crossed.
 
-        Assigning an index is not filtered by the skip-disabled rule that
-        arrow keys follow, so a jump that lands on a month heading has to
-        walk off it -- onwards first, since that is the way the reader was
-        already going.
+        A jump that lands on a heading walks off it, onwards first and
+        back if the list ends that way.
         """
         here = self.entries_list.highlighted
         if here is None:
@@ -508,8 +374,6 @@ class EntryListScreen(ZecretScreen):
             travelled += step
         landing = self.entry_row_from(target, onwards)
         if landing is None:
-            # Ran out of list that way: the top of the diary is always a
-            # heading, so paging up lands on one with nothing above it.
             landing = self.entry_row_from(target, -onwards)
         self.move_cursor_to(landing)
 
@@ -529,10 +393,8 @@ class EntryListScreen(ZecretScreen):
     # --- helpers -----------------------------------------------------------
 
     def open_day(self, date: dt.date) -> None:
-        """Open a day for writing. The editor decides whether that means a
-        new entry or the existing one, and the list refreshes on resume to
-        pick up the change -- and lands on the day, see on_screen_resume.
-        """
+        """Open a day in the editor, noting it so the cursor lands there
+        on return."""
         self.editing = date
         self.app.push_screen(EditorScreen(date))
 
@@ -542,12 +404,7 @@ class EntryListScreen(ZecretScreen):
             self.open_day(date)
 
     def confirm_delete(self, entry: Entry) -> Callable[[Choice | None], None]:
-        """Build the callback ConfirmScreen dismisses into.
-
-        Two answers here, not three: the modal offers to save where there
-        is something to save, and a deletion has no third road between
-        going through with it and leaving the day alone.
-        """
+        """Build the callback ConfirmScreen dismisses into."""
 
         def on_answered(choice: Choice | None) -> None:
             if choice is Choice.CONFIRM:
