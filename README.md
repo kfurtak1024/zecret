@@ -288,16 +288,23 @@ here what they mean in every other editor.
   every word you write is inside the ciphertext.
 - **Integrity** — tampering with a stored entry, or a wrong password, fails
   the AEAD authentication check and is reported as an error, never as an
-  empty or partial diary. The header carries an encrypted verifier, so this
+  empty or partial diary. Zecret says which it was: a wrong password, a
+  file the password opens but that is damaged, or a diary written by a
+  newer Zecret. The header carries an encrypted verifier, so this
   holds even for a diary with no entries yet.
 - **Durability** — saves are atomic (temp file → `fsync` → `os.replace`),
   so an interrupted save can never leave a half-written diary. Creating a
   diary instead claims the path with `O_EXCL`, so two first runs racing each
   other cannot end with one written over the other; a creation that fails
   removes what it started. The file is created `0600`.
+- **Two sessions** — a second Zecret on the same file is caught before
+  anything is written over it. Saving a day then re-reads the file and
+  keeps what both sessions wrote; if both changed the same day, Zecret asks
+  whose version to keep.
 
 Plaintext is never written to disk — not as temp files, not as logs, not
-for crash recovery.
+for crash recovery. Nor to the terminal: if Zecret ever crashes, the report
+it leaves says where, never what it was holding.
 
 ## Security
 
@@ -314,6 +321,10 @@ than one that does not try:
 - **The file reveals which days you wrote on.** Dates sit outside the
   ciphertext so a day can be named without decrypting it. It leaks the
   shape of the habit, never a word of the content.
+- **Someone who can write to the file can remove a day, or put an older
+  version of one back.** Each day is encrypted and checked on its own, so
+  they cannot read, alter or forge an entry — but nothing seals the file
+  as a whole. Keep a backup.
 - **An unlocked Zecret is unlocked.** While the diary is open its entries
   are decrypted in memory, and anyone at that terminal can read them.
   Locking shortens that window; it does not close it.

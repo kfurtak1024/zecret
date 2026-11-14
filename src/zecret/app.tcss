@@ -1,28 +1,25 @@
 /* Zecret Textual stylesheet.
 
-   Conventions, so the screens stay consistent as they grow:
+   Conventions:
 
    - Colors come from Textual's theme variables ($surface, $accent, $error,
-     $text-muted, ...), never hard-coded. The app then follows whichever
-     theme the user picks, light or dark, with no second palette to keep in
-     sync.
-   - $accent frames anything you are working in; $error is reserved for
-     errors and destructive actions and is used nowhere else.
-   - Spacing is 1 cell vertically, 2 horizontally. Terminal cells are about
-     twice as tall as they are wide, so that pair reads as even.
+     $text-muted, ...), never hard-coded, so every theme in the picker
+     works.
+   - $accent frames anything you are working in. $error is reserved for
+     errors, destructive actions, and the two places a master password is
+     chosen or reached (.caution, #change-password).
+   - Spacing is 1 cell vertically, 2 horizontally.
    - Rules are grouped by the role a widget plays (panel, title, hint,
-     error, list), not by the screen it happens to live on -- which is why
-     selectors here list several ids at once.
-   - One exception to that grouping, at the foot of the file: what the
-     light themes need, which cuts across every role and is explained
-     where it is written.
+     error, list), not by screen, so selectors list several ids at once.
+   - The exception is the light-theme section at the foot of the file,
+     which cuts across every role.
+   - A component class does not answer to `:light`; the pseudo-class has to
+     sit on the widget.
 */
 
 /* --- Title bar ---------------------------------------------------------- */
 
-/* Zecret's own header, not Textual's: one line, no icon, nothing to click.
-   $panel keeps it distinct from the screen behind it without competing with
-   $accent, which is reserved for what you are working in. */
+/* Zecret's own header: one line, no icon, nothing to click. */
 DiaryHeader {
     dock: top;
     width: 100%;
@@ -46,8 +43,7 @@ PasswordScreen {
 #settings-box {
     width: 62;
     height: auto;
-    /* Never taller than the terminal: settings scrolls inside its border
-       rather than running off the bottom of a short window. */
+    /* Scrolls inside its border on a short terminal. */
     max-height: 100%;
     padding: 1 2;
     border: round $accent;
@@ -75,17 +71,14 @@ PasswordScreen {
 #unlock-box Input,
 #password-box Input,
 #settings-box Input,
-/* The gap under the theme picker is what separates the two sections of
-   the settings screen; they need no rule of their own. */
+/* The gap under a picker is what separates the settings sections. */
 #settings-box Select {
     margin-bottom: 1;
 }
 
-/* The password dialog, at the width the confirm modal uses rather than
-   the 62 of the other cards. Those eight columns are what bring the
-   warning down from three lines to two, and that row is the difference
-   between the dialog fitting a 24-row terminal and being scrolled -- see
-   PasswordScreen.compose. */
+/* 70 columns, not the 62 of the other cards: the extra eight bring the
+   warning down from three lines to two, which is what lets the dialog fit
+   a 24-row terminal without scrolling. See PasswordScreen.compose. */
 #password-box {
     width: 70;
     max-width: 100%;
@@ -96,22 +89,18 @@ PasswordScreen {
     background: $surface;
 }
 
-/* The one button outside a modal. Full width, so it sits in the column the
-   two dropdowns above it make rather than floating at one end of it, and
-   red (variant="error") because of where it leads: everything else on the
-   settings screen is a preference that can be chosen again, and this is
-   the only control on it that opens something there is no way back from.
-   Red for the road to an irreversible thing, not only for the step that
-   takes it -- the same reading that puts `.caution` in red on a screen
-   where nothing has gone wrong. */
+/* Full width, to sit in the column the dropdowns make. Its red comes from
+   variant="error": it is the one control on settings that leads to
+   something irreversible. */
 #change-password {
     width: 100%;
 }
 
 /* --- Error lines -------------------------------------------------------- */
 
-/* Reserve the row whether or not there is a message, so showing one never
-   shifts the fields under the user's cursor. */
+/* The row is reserved whether or not there is a message, so showing one
+   never shifts the fields. Fixed at one line: the password dialog's fit in
+   24 rows depends on it. */
 #unlock-error,
 #password-error,
 #editor-error,
@@ -121,52 +110,34 @@ PasswordScreen {
     color: $text-error;
 }
 
-/* The same row carrying a reading rather than a complaint: how strong the
-   password being chosen is. Amber rather than red -- nothing has gone
-   wrong, nothing is being refused, and the form will submit on the next
-   keypress whatever this says. Spending $error on it would put it in the
-   company of the two things that genuinely cannot be undone, and would
-   also make it the loudest thing on a screen where the warning about a
-   forgotten password is supposed to be. */
+/* The same row carrying a password-strength reading. Amber, not red:
+   nothing has gone wrong and nothing is refused. */
 #unlock-error.-advice,
 #password-error.-advice {
     color: $text-warning;
 }
 
-/* And green once the password needs nothing said about it, so the bar
-   filling up is answered by the colour settling rather than by the same
-   amber all the way. The third use of this green in the app, after the
-   editor's emphasis and the Save button; none of the three can be on
-   screen with another, since this one belongs to a screen that has no
-   diary open behind it or to a modal that covers the one that has. */
+/* Green once the password needs nothing said about it. */
 #unlock-error.-advice.-advice-strong,
 #password-error.-advice.-advice-strong {
     color: $text-success;
 }
 
-/* And what the password dialog is doing while its fields are greyed out:
-   a second or two of Argon2id, twice over. Muted, because it is neither a
-   complaint nor advice -- just the reason nothing seems to be happening. */
-#password-error.-status {
+/* What the screen is doing while its fields are disabled for Argon2id.
+   Muted: neither a complaint nor advice. */
+#password-error.-status,
+#unlock-error.-status {
     color: $text-muted;
 }
 
 /* --- The warning about a forgotten password ----------------------------- */
 
-/* $error, which is otherwise reserved for errors and destructive actions.
-   This is the second of those rather than an exception to the rule:
-   choosing a password is the step that makes losing the diary possible,
-   and there is no recovery to soften it afterwards.
+/* $error, because choosing a password is the step that makes losing the
+   diary possible. Bordered on the left rather than bare red text, which in
+   a form reads as a complaint about what was just typed.
 
-   Bordered on one side rather than left as a bare row of red text. It sits
-   on the screen before anything has gone wrong, and red prose in the flow
-   of a form reads as a complaint about what you have just typed -- a rule
-   down the left says "read this" instead, and keeps the error line below
-   it as the only thing that speaks about the last keypress.
-
-   Named `.caution` and not `.warning` because Textual's own Label reserves
-   that class for a variant of its own and paints $warning-muted behind it,
-   which quietly turned this one amber. */
+   Named `.caution`, not `.warning`: Textual's Label reserves `.warning`
+   for a variant of its own and paints $warning-muted behind it. */
 .caution {
     width: 100%;
     color: $text-error;
@@ -178,47 +149,37 @@ PasswordScreen {
 
 /* --- Lists: entry list and search results ------------------------------- */
 
-/* Both are OptionLists: one widget that draws only the rows in view, rather
-   than a widget per row -- see EntryListScreen for what a decade of rows
-   cost the other way. Its parts are component classes rather than child
-   widgets, which is why everything below is spelled `.option-list--*`. */
+/* Both are OptionLists, whose parts are component classes rather than
+   child widgets, hence the `.option-list--*` selectors. */
 #entries,
 #results {
     height: 1fr;
-    /* Same 2-cell gutter as the search box above it and the editor's
-       fields, so text lines up down the left edge of every screen. */
+    /* The 2-cell gutter every full-width screen shares. */
     margin: 0 2;
     padding: 0;
     background: $surface;
     border: none;
 
-    /* A row shows as much of the entry's first line as the window has room
-       for, and trims what will not fit with an ellipsis. Done here rather
-       than by measuring the text in Python: the widget already knows how
-       wide it is at render time, so a resize costs nothing, where
-       recomputing the rows would mean rebuilding every one of them on
-       every event of a window drag. Rows must not wrap either -- a row is
-       a day, and a day that took two lines would break the alignment the
-       whole list is read by. */
+    /* A row holds the entry's whole first line and is trimmed here, at
+       render time, so a resize costs nothing. Never trim by measuring in
+       Python: that means rebuilding every row on resize. Rows must not
+       wrap: a row is a day. */
     text-wrap: nowrap;
     text-overflow: ellipsis;
 
-    /* Inside the row rather than around the list, so the highlight still
-       runs the full width of the panel while the text starts two cells in. */
+    /* Padding inside the row, so the highlight still runs full width. */
     & > .option-list--option {
         padding: 0 2;
     }
 
-    /* The selected row is the one thing the eye should find instantly. */
     & > .option-list--option-highlighted {
         color: $foreground;
         background: $accent-muted;
         text-style: bold;
     }
 
-    /* OptionList tints its whole background while focused. The list is
-       focused nearly all the time it is on screen, so the tint would only
-       make the panel a different grey from every other panel. */
+    /* OptionList tints its background while focused, which here is nearly
+       always. Switched off so the panel matches the others. */
     &:focus {
         background-tint: $foreground 0%;
     }
@@ -229,10 +190,8 @@ PasswordScreen {
         text-style: bold;
     }
 
-    /* Month headings, with the blank line above them that is part of the
-       option. Disabled so the cursor skips them, which is a navigation
-       decision, not a visual one -- they read as headings, not as
-       something unavailable. Only headings are ever disabled. */
+    /* Month headings. Disabled only so the cursor skips them; they are
+       styled as headings. Only headings are ever disabled. */
     & > .option-list--option-disabled {
         color: $text-accent;
         text-style: bold;
@@ -251,12 +210,9 @@ PasswordScreen {
 
 /* --- SearchScreen ------------------------------------------------------- */
 
-/* The 1-cell padding is TextArea's, not Input's. Input pads by 2 inside
-   its border and TextArea by 1, so with both bordered at the same column
-   the query sat one cell right of the results listed directly under it --
-   and one cell right of the editor, which is the other full-width field
-   in the app. The margin lines the borders up; this lines the text up,
-   which is the part anyone actually reads down. */
+/* Padding of 1, which is TextArea's, not Input's default 2. The margin
+   lines the borders up with the other screens; this lines the text up.
+   tests/test_chrome.py checks it. */
 #query {
     margin: 0 2;
     padding: 0 1;
@@ -286,53 +242,26 @@ PasswordScreen {
 
 /* A phrase written *between asterisks*, and the asterisks around it.
 
-   Colour first, and bold as well. Bold on its own is the one text
-   attribute a terminal cannot be relied on to have -- several render it as
-   a brighter shade of the same ink, which is a colour change by another
-   name and a worse one, and some fonts have no bold face at all -- so it
-   cannot be what carries the emphasis. What it can do is cover the cases
-   colour does not: the two are independent parameters of one escape
-   sequence (`1;38;2;r;g;b`), so a terminal that ignores bold still applies
-   the colour byte for byte, and at sixteen colours, where this green
-   degrades to plain white, or under NO_COLOR, where it is dropped
-   entirely, bold is the only thing left saying the phrase is a phrase.
-   Neither can undo the other; each covers where the other thins out.
+   Colour and bold together, never one. Bold is unreliable across terminals
+   and fonts; colour is absent at sixteen colours and under NO_COLOR. They
+   are independent parameters of one escape sequence, so each covers where
+   the other gives out.
 
-   Which colour was measured rather than chosen, because the test that
-   matters is not contrast against the page -- it is distance from the
-   words on either side, which is what makes a phrase read as emphasised.
-   Over the eight themes in the picker, $text-success sits furthest from
-   the prose (ΔE 21.3 at worst, in Nord, whose whole palette is
-   deliberately washed out) and never falls below 4.2:1 against the page.
-   $text-accent, the obvious pick, is behind on both. $text-primary is the
-   trap: it has the best page contrast of any of them and the worst
-   distance from the prose, because in the light themes it resolves to a
-   navy sitting in near-black text -- legible, and invisible as emphasis.
+   $text-success was measured, not chosen. The test is distance from the
+   prose on either side, not contrast against the page. Across the eight
+   themes it sits furthest from the prose (ΔE 21.3 at worst, in Nord) and
+   never falls below 4.2:1 against the page. $text-accent is behind on
+   both. $text-primary has the best page contrast and the worst distance
+   from the prose: in light themes it is a navy next to near-black text.
+   Never $accent, which is a surface colour and already the editor's
+   border.
 
-   Not $accent itself under any circumstances: that is a surface colour,
-   reserved above for the frame around what you are working in, and the
-   editor is already wearing it as a border while you type.
+   No `:light` twin: the text-* variables resolve against each theme's own
+   page.
 
-   The green is shared with the Save button on the confirm dialog, which
-   is the one place the two can be on screen together -- a filled button
-   on a modal against inked words on the page behind it. They do not read
-   as the same thing, and no other screen puts them near each other.
-
-   No `:light` twin, unusually for this file: the text-* variables are
-   resolved against each theme's own page, so this is already tuned for
-   paper as well as for a dark terminal.
-
-   The marks take the same colour and not the weight. They have to stay on
-   the screen -- one character fewer drawn than the document holds would
-   put the cursor a cell out for the rest of the paragraph -- so the
-   question is only how they are dressed, and sharing the phrase's colour
-   is what makes `*phrase*` read as one thing rather than as a word with
-   punctuation stuck to it. Dressing them *down* was tried and measured
-   first: the same green at 70% opacity comes out at 2.6:1 in the plain
-   Light theme, worse than the muted grey it would replace, and it only
-   gets worse from there. There is no dim setting of this colour worth
-   having, so the hierarchy is carried by weight instead -- bold on what
-   was written, plain on what marks it. */
+   The marks take the colour without the weight, so `*phrase*` reads as one
+   thing while the writing outranks its marks. Dimming them instead does
+   not work: this green at 70% opacity is 2.6:1 in the Light theme. */
 DiaryTextArea > .diary-text-area--strong {
     color: $text-success;
     text-style: bold;
@@ -343,52 +272,37 @@ DiaryTextArea > .diary-text-area--strong-marker {
 }
 
 /* The ink a masked word is drawn in (ctrl+r). Each covered character is
-   swapped for a three-quarter block, so this is the colour of the bars
-   themselves against the ordinary page behind them -- no background here,
-   because the quarter of the cell the bar does not fill is what puts a
-   gap between one line of redaction and the next.
+   swapped for a three-quarter block, so this is the colour of the bars. No
+   background: the unfilled quarter of the cell is the gap between lines of
+   redaction.
 
-   The colour still has to be opaque, since the handful of characters too
-   wide to swap are covered by painting them in ink the colour of their
-   own background instead (DiaryTextArea.get_line). That rules out
-   $text-muted and the other `auto` shades, which a background cannot
-   take at all, and anything with a percentage: those blend against
-   different grounds for text than for background, so the two come out a
-   shade apart and the character is legible again.
+   The colour must be opaque. Characters too wide to swap are covered by
+   painting them in ink the colour of their own background
+   (DiaryTextArea.get_line), which rules out `auto` shades such as
+   $text-muted and anything with a percentage: those blend differently for
+   text than for background, and the character shows through.
 
-   Two rules rather than one because a bar is a different problem on a
-   dark page than on a pale one, and no single variable is right for both
-   -- the same reason the `:light` section at the foot of this file
-   exists. Note that the pseudo-class has to sit on the *widget*: a
-   component class does not answer to `:light` itself.
+   The dark and light rules are a matched pair and stay together here, not
+   at the foot of the file: for the wide-character path each must be
+   identical for text and background.
 
-   Slate on dark, at 2.7:1 against the page. Full-strength ink there is a
-   wall of light to sit in front of, and brighter than anything else in
-   the app -- the point is to cover the writing, not to shout. */
+   Dark: slate, 2.7:1 against the page. Full-strength ink would be the
+   brightest thing in the app. */
 DiaryTextArea > .diary-text-area--mask {
     color: $panel-lighten-3;
 }
 
-/* Charcoal on a pale page, at 7.4:1. Pure black is what a censor's marker
-   actually leaves and it is tempting for that reason, but a screenful of
-   it is harsh to write behind, and a diary is not a document being
-   released. Dark enough that nothing shows through, quiet enough to sit
-   with. */
+/* Light: charcoal, 7.4:1. Dark enough that nothing shows through, without
+   the harshness of pure black. */
 DiaryTextArea:light > .diary-text-area--mask {
     color: $foreground-lighten-2;
 }
 
 /* Selecting text while it is masked. TextArea paints the selection after
-   the mask and sets both colours, which back when every character was
-   hidden by colour alone meant ctrl+a laid the whole entry bare on a
-   screen that was supposed to be covered. Swapping the glyphs closed that
-   -- a character that is not there cannot be revealed -- but the wide
-   characters are still hidden by colour, so the selection gets a bar of
-   its own and the hole stays shut for them too.
-   $accent, which is the colour this app already selects with: the
-   highlighted row in the entry list wears it too. It is legible against
-   the mask in either theme, which $foreground-darken-1 is not -- on a
-   pale theme the two come out a hair apart. */
+   the mask and sets both colours, which would reveal the wide characters
+   that are hidden by colour alone. So the selection gets a solid bar of
+   its own. $accent is what the app selects with elsewhere, and is distinct
+   from the mask in both light and dark. */
 DiaryTextArea.-masked > .text-area--selection {
     color: $accent;
     background: $accent;
@@ -396,12 +310,8 @@ DiaryTextArea.-masked > .text-area--selection {
 
 /* --- HelpScreen (modal) ------------------------------------------------- */
 
-/* Wide enough for two columns of keys side by side, and never taller than
-   the terminal: the help scrolls inside its own border rather than off the
-   bottom of the screen. The width is spent to buy height back -- eighteen
-   keys in one column is a page you scroll, and the same eighteen in two is
-   most of a page you do not. It still lands inside eighty columns, which
-   is the width the rest of the app is built to. */
+/* Wide enough for two columns of keys, inside 80 columns, and scrolling
+   inside its border if taller than the terminal. */
 #help-box {
     width: 76;
     max-width: 100%;
@@ -415,8 +325,7 @@ DiaryTextArea.-masked > .text-area--selection {
 #help-logo {
     width: auto;
     color: $text-accent;
-    /* The art is drawn, not written: wrapping it would make nonsense of
-       it. Narrow terminals hide it instead -- see HelpScreen.fit_logo. */
+    /* Never wrapped. Narrow terminals hide it; see HelpScreen.fit_logo. */
     text-wrap: nowrap;
 }
 
@@ -426,25 +335,22 @@ DiaryTextArea.-masked > .text-area--selection {
     padding-bottom: 1;
 }
 
-/* Section titles are centred where they head a narrow card; here they head
-   a list, so they read as headings only if they sit at the left edge of
-   what they introduce, with air above rather than below. */
+/* Here section titles head a list, so they sit at its left edge with the
+   space above rather than below. */
 #help-box .section-title {
     content-align: left middle;
     text-align: left;
     padding: 1 0 0 0;
 }
 
-/* The key rows are aligned into columns by the screen itself, since only
-   it knows how wide the widest key in a section is. */
+/* Key rows are aligned into columns by the screen, which knows the widest
+   key. */
 .help-key {
     width: 100%;
 }
 
-/* Two columns side by side. `layout` is switched to vertical by
-   HelpScreen.fit_columns when the terminal is too narrow to pair them,
-   which is why the height must be auto rather than a fraction: stacked,
-   these have to grow to whatever they hold. */
+/* Columns side by side. HelpScreen.fit_columns switches `layout` to
+   vertical on a narrow terminal, which is why the height is auto. */
 .help-columns {
     width: 100%;
     height: auto;
@@ -455,15 +361,11 @@ DiaryTextArea.-masked > .text-area--selection {
     height: auto;
 }
 
-/* A tight list, like the key rows above: each note is one line, and the
-   section heading already gives the group its air. */
 .help-note {
     width: 100%;
     color: $text-muted;
 }
 
-/* No padding above it: this is the one line someone who feels stuck needs
-   to see, so it earns its place inside the fold rather than a row of air. */
 #help-close-hint {
     width: 100%;
     content-align: right middle;
@@ -473,8 +375,7 @@ DiaryTextArea.-masked > .text-area--selection {
 
 /* --- Modals: confirm, date prompt and help ------------------------------ */
 
-/* Dim what is behind them: the question is the only thing to answer, and
-   help sits over the diary rather than replacing it. */
+/* Dim what is behind them. */
 ConfirmScreen,
 DatePromptScreen,
 HelpScreen {
@@ -482,20 +383,15 @@ HelpScreen {
     background: $background 60%;
 }
 
-/* Wide enough for three buttons side by side, which is what the
-   questions about unsaved writing ask. Still inside an eighty-column
-   terminal with room to spare -- the help popup is wider than this -- and
-   it keeps the delete question, the longest sentence this modal carries,
+/* Wide enough for three buttons side by side, and for the delete question
    on one line. */
 #confirm-box {
     width: 70;
     max-width: 100%;
     height: auto;
     padding: 1 2;
-    /* Red framing: this modal is only ever raised because something is
-       about to be lost. That two of its three answers now keep the
-       writing is the buttons' business -- the frame is about why you are
-       being stopped, not about which way out you take. */
+    /* Red: this modal is only raised because something is about to be
+       lost. */
     border: round $error;
     background: $surface;
 }
@@ -510,55 +406,31 @@ HelpScreen {
     align-horizontal: right;
 }
 
-/* One width for every answer, wide enough for the longest label this
-   modal carries ("Save and go back") plus the frame focus draws around
-   it. Textual sizes a button to its own text against a floor of sixteen
-   cells, which left three answers to one question at three different
-   widths -- and made "Cancel" almost as wide as "Save and go back", so
-   the row read as a near-miss rather than as a set. Widen this and
-   #confirm-box together, and leave a cell clear at each end for the frame
-   focus draws over them. */
+/* One width for every answer, fitting the longest label ("Save and go
+   back") plus the focus outline. Textual would size each to its own text.
+   Widen this and #confirm-box together. */
 #confirm-buttons Button {
     width: 20;
     margin-left: 2;
 }
 
-/* The gap goes *between* the answers, so the row needs exactly as much
-   room as the buttons and the gaps between them -- three of these and two
-   gaps is 64, which is what #confirm-box holds. A margin on the first one
-   as well put the row two cells over that, and since it is aligned right
-   it was the last button that hung off the end: Cancel lost the right
-   edge of its focus frame to the clip, and only Cancel, only when
-   focused, which is a thing you see rather than a thing that fails. */
+/* The gap goes between the answers only: three buttons and two gaps are
+   64, exactly what #confirm-box holds. A margin on the first as well
+   pushes the right-aligned row two cells over and clips Cancel's focus
+   outline. */
 #confirm-buttons Button:first-of-type {
     margin-left: 0;
 }
 
-/* Focus draws a frame right round the button.
-   Textual's own answer is to reverse the label, which on a filled button
-   swaps its fill for the page behind it: the answer being offered was the
-   one that looked switched off, and the two beside it looked chosen.
-   Marking the top and bottom edges in $accent instead fixed the reading
-   but not the seeing -- an accent bar against the green of Save measures
-   1.16:1, against the 1.7-2.1:1 that the unfocused buttons' own shading
-   already has, so the cue was fainter than the decoration it competed
-   with, and it was carried by hue alone on the one pairing (orange on
-   green) that colour blindness takes away.
-   A closed frame is a change of shape, which survives both: its outer
-   edge sits against the modal's own background wherever the fill is too
-   close in tone to read against. $accent because that is what marks the
-   focused thing everywhere else here -- the search box, the page you
-   write on.
-   `outline` rather than `border`, which is the whole reason this rule can
-   exist at all: a Textual border is drawn inside the widget and takes its
-   two columns out of the content, so a button visibly narrowed by two
-   cells as you tabbed onto it -- and a label one cell longer would have
-   wrapped rather than shrunk. An outline is painted over the edge it sits
-   on, so the answer stays exactly the size it was and only the two cells
-   at its ends change colour. The elsewhere-in-this-file version of the
-   same trick is a border that is always there and only changes colour on
-   focus; a Button already spends its border on the shading that makes it
-   look like a button, so there is none spare to recolour. */
+/* Focus draws a closed frame round the button, in $accent as everywhere
+   else. Textual's default reverses the label, which on a filled button
+   makes the focused answer look switched off. A frame is a change of
+   shape, so it does not depend on hue (an accent bar on the green Save
+   button measures 1.16:1).
+
+   `outline`, not `border`: a border is drawn inside the widget and takes
+   two columns from the content, so the button would narrow on focus. An
+   outline is painted over the edge. */
 #confirm-buttons Button:focus {
     text-style: bold;
     outline: tall $accent;
@@ -566,14 +438,12 @@ HelpScreen {
 
 /* --- DatePromptScreen (modal) ------------------------------------------- */
 
-/* $accent, not $error: picking a day is where you start writing, not a
-   destructive step. */
+/* $accent, not $error: picking a day is not destructive. */
 #date-box {
     width: 44;
     height: auto;
-    /* Never taller than the terminal, and scrolling inside its border if
-       it would be: what a short window should cost is the bottom of the
-       calendar, not the field the answer is typed into. */
+    /* Scrolls inside its border on a short terminal, costing the bottom of
+       the calendar rather than the field. */
     max-height: 100%;
     padding: 1 2;
     border: round $accent;
@@ -607,11 +477,9 @@ HelpScreen {
 
 /* --- The month grid (the which-day modal, and every month of the year) -- */
 
-/* Full width with the month centred in it, rather than a 28-column widget
-   nudged into place with a margin: the grid is a fixed 28 columns wide and
-   the card it sits in is not obliged to stay 44. Six rows of days plus the
-   two headings, always -- a month drawn to its own height would resize the
-   card under the reader on every page. */
+/* Full width with the 28-column month centred in it
+   (MonthCalendar.grid_left reads this alignment for clicks). Always eight
+   rows: two headings and six weeks. */
 MonthCalendar {
     width: 100%;
     height: 8;
@@ -635,37 +503,31 @@ MonthGrid > .month-calendar--day {
     color: $foreground;
 }
 
-/* The mark is a glyph as well as a colour, so this says "written" twice
-   over -- on purpose, since which days are marked is what the grid is
-   read for. */
+/* A written day also carries a glyph, so the mark does not rest on colour
+   alone. */
 MonthCalendar > .month-calendar--written,
 MonthGrid > .month-calendar--written {
     color: $text-accent;
     text-style: bold;
 }
 
-/* Today. Painted over whichever of the rules above the day already
-   answers to, so it must set nothing but the style it adds: today is
-   usually a written day and always where the cursor starts, and a colour
-   here would take that day's own colour away from it. Underlined, because
-   an underline is the one thing none of the others use. The legend under
-   each calendar draws its sample of today from this same rule. */
+/* Today. Laid over whichever rule the day already answers to, so it must
+   set only the style it adds and no colour. The legend draws its sample
+   from this same rule. */
 MonthCalendar > .month-calendar--today,
 MonthGrid > .month-calendar--today,
 CalendarLegend > .month-calendar--today {
     text-style: underline;
 }
 
-/* A day that has not happened. Zecret files no future entries, and the
-   cursor will not go there either. */
+/* A day that has not happened; the cursor will not go there. */
 MonthCalendar > .month-calendar--unavailable,
 MonthGrid > .month-calendar--unavailable {
     color: $text-disabled;
 }
 
-/* Where the cursor is, drawn the way the entry list draws its selected
-   row -- soft while the grid is not focused, solid while it is, which is
-   the only signal the grid gives that the keys now belong to it. */
+/* The cursor, drawn as the entry list draws its selected row: soft while
+   the grid is unfocused, solid while focused. */
 MonthCalendar > .month-calendar--cursor,
 MonthGrid > .month-calendar--cursor {
     background: $accent-muted;
@@ -680,20 +542,15 @@ YearCalendar:focus > MonthGrid > .month-calendar--cursor {
 
 /* --- CalendarScreen: the year laid out ---------------------------------- */
 
-/* The same panel as the entry list -- this is the list's other face, so it
-   sits in the same place on the same surface, with the same 2-cell gutter
-   down the left. The year is centred inside it (CalendarScreen.compose
-   says how), because the year is a fixed shape and the window is not:
-   left-aligned, a wide terminal put all the spare room on one side. */
+/* The same panel and gutter as the entry list. The year is centred inside
+   it; see CalendarScreen.compose. */
 #year-box {
     height: 1fr;
     margin: 0 2;
     padding: 1 2;
     background: $surface;
-    /* The scrollbar's columns are kept whether or not the year needs
-       them, so how many months fit across depends on the width alone --
-       which is all CalendarScreen.fit_months looks at -- and the year
-       does not shift sideways when a resize brings the bar in. */
+    /* Always reserved, so how many months fit across depends on width
+       alone, which is all CalendarScreen.fit_months looks at. */
     scrollbar-gutter: stable;
 }
 
@@ -712,13 +569,8 @@ YearCalendar:focus > MonthGrid > .month-calendar--cursor {
     padding-top: 1;
 }
 
-/* Twelve months in a grid, as many across as the window holds. Each is a
-   fixed 21 columns -- seven days of three -- and eight rows, always six
-   weeks deep for the reason MonthCalendar is: a month drawn to its own
-   height would make every row of the year a different height. The gutter
-   is the one CalendarScreen counts months across with (MONTH_GAP), and
-   the row gap is what keeps one month's last week off the next month's
-   name. */
+/* Twelve months in a grid. Each is 21 columns (seven days of three) and
+   eight rows. The column gutter is CalendarScreen's MONTH_GAP. */
 YearCalendar {
     layout: grid;
     grid-size: 3;
@@ -734,13 +586,10 @@ MonthGrid {
     height: 8;
 }
 
-/* How many months across, from the class CalendarScreen wears for the
-   terminal's width (fit_months). Five is left out on purpose -- see ACROSS
-   there. Only the count: the grid's width follows from it (width: auto
-   above), so no width is written here to fall out of step. The sizes that
-   are written twice -- the month's 21 columns, the gutter, the card's
-   margin, padding and scrollbar -- are held to calendar_view.py's
-   constants by tests/test_calendar_screen.py. */
+/* How many months across, from the class CalendarScreen.fit_months sets.
+   No five; see ACROSS there. Only the count is set: the width follows
+   from it. The sizes written both here and in calendar_view.py are held
+   together by tests/test_calendar_screen.py. */
 CalendarScreen.-months-1 YearCalendar {
     grid-size: 1;
 }
@@ -763,40 +612,30 @@ CalendarScreen.-months-6 YearCalendar {
 
 /* --- Light themes ------------------------------------------------------- */
 
-/* Everything above is written in theme variables, and that is what lets
-   all eight themes in the picker work from one stylesheet. What a variable
-   cannot express is that light and dark stack depth in opposite
-   directions.
+/* Light and dark stack depth in opposite directions, and no theme variable
+   can say so.
 
    On a dark page a raised thing is lighter than what is behind it, and
-   Textual's dark palette spaces its three greys far enough apart to show
-   that: $background #121212, $surface #1E1E1E, $panel #242F38. Its light
-   palette does not -- #E0E0E0, #D8D8D8 and #D0D0D0, eight steps apart
-   each. Drawn the same way, every card in the app dissolves into the page
-   behind it and the title bar stops reading as a bar at all; the editor
-   became one flat wash of grey with a floating orange rectangle in it.
+   Textual's dark greys are far enough apart to show it ($background
+   #121212, $surface #1E1E1E, $panel #242F38). Its light greys are not
+   (#E0E0E0, #D8D8D8, #D0D0D0): drawn the same way, every card dissolves
+   into the page.
 
-   So the light half inverts the model rather than repeating it: cards are
-   paper, lighter than the page they sit on, and the bars are darker than
-   it. `:light` is one of Textual's own pseudo-classes, so this stays a
-   single stylesheet in theme variables -- not a second palette to keep in
-   sync, and still not a hard-coded color anywhere. The derived shades keep
-   each theme's hue, which is why Solarized stays cream and Latte stays
-   cool rather than both flattening to white.
+   So in light themes the model is inverted: cards are paper, lighter than
+   the page, and bars are darker than it. Still theme variables only, and
+   the derived shades keep each theme's hue.
 
-   Not quite everything the light themes change is here: the mask's bar
-   colour (ctrl+r, up with the editor) keeps its `:light` rule beside the
-   rule it overrides, because the two have to hold identical colours for a
-   word to stay covered and splitting them across the file is how one of
-   them gets changed alone. */
+   A new card must be added to the selector lists below.
 
-/* Darker than the page, not lighter, so the bar has an edge to it. */
+   The mask's `:light` rule is not here but beside the rule it overrides;
+   see the editor section. */
+
+/* Darker than the page, so the bar has an edge. */
 DiaryHeader:light {
     background: $panel-darken-1;
 }
 
-/* Paper on a desk. Every card in the app is one selector list because
-   they are all the same idea -- see the panel rules above. */
+/* Every card: paper on a desk. */
 #unlock-box:light,
 #settings-box:light,
 #password-box:light,
@@ -809,44 +648,32 @@ DiaryHeader:light {
     background: $surface-lighten-1;
 }
 
-/* The page you write on, most of all. A TextArea takes no background from
-   the theme's surface, so on a light theme the editor came out the same
-   grey as everything around it -- the one screen in the app that should
-   look like something to write on. */
+/* A TextArea takes no background from the theme's surface, so it is given
+   the cards' one. */
 #editor-box #body:light {
     background: $surface-lighten-1;
 }
 
-/* $accent is the same #FEA62B in Textual's light theme as in its dark one
-   -- it is not re-tuned for a pale background, and a full-width row of it
-   is a fluorescent slab rather than a highlight. $block-cursor-* is what
-   Textual selects a row with everywhere else, so the list now agrees with
-   the Select on the settings screen instead of shouting over it. Dark
-   keeps the orange: on a dark page it reads as warmth. The pseudo-class
-   sits on the widget, since a component class cannot answer to it. */
+/* $accent is the same orange in Textual's light theme as in its dark one
+   and is too loud as a full-width row on a pale page. $block-cursor-* is
+   what Textual itself selects with, so the list matches the Select on the
+   settings screen. */
 #entries:focus:light > .option-list--option-highlighted,
 #results:focus:light > .option-list--option-highlighted {
     background: $block-cursor-background;
     color: $block-cursor-foreground;
 }
 
-/* The same substitution for the calendar's cursor, which is the same idea
-   drawn at four columns instead of a whole row. The pseudo-class sits on
-   the widget rather than on the component class, which cannot answer to
-   it -- see the note about the mask above. */
+/* The same substitution for the calendar's cursor. */
 MonthCalendar:focus:light > .month-calendar--cursor,
 YearCalendar:focus:light > MonthGrid > .month-calendar--cursor {
     background: $block-cursor-background;
     color: $block-cursor-foreground;
 }
 
-/* Textual's light themes point their footer keys at $primary and leave
-   $accent at the dark theme's orange, so a card framed in $accent sat next
-   to a blue key bar with nothing relating the two. In light the frame
-   follows $border -- which is $primary, and so is the selected row above
-   -- and the app reads in one hue instead of three. $accent is still the
-   heading color, where the light palette resolves it to a brown that sits
-   quietly on paper. Dark is untouched: there, $accent is the whole point. */
+/* Textual's light themes colour footer keys with $primary. In light the
+   card frames follow $border (which is $primary) so the app reads in one
+   hue. $accent stays the heading colour. */
 #unlock-box:light,
 #settings-box:light,
 #password-box:light,

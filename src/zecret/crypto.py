@@ -1,27 +1,14 @@
 """Key derivation and authenticated encryption primitives for Zecret.
 
-Security model:
-    - The master key is derived from the user's password via Argon2id.
-    - Each entry is encrypted independently with its own random nonce,
-      using an AEAD cipher. XChaCha20-Poly1305 is the preferred choice,
-      but `cryptography` does not expose it, so this module uses the
-      documented fallback: AES-256-GCM with a fresh 96-bit random nonce
-      per call. This means editing one entry never requires decrypting
-      or re-encrypting any other entry.
-    - The cipher is fixed, not negotiated: the on-disk format records no
-      cipher identifier, so switching ciphers here would silently make
-      existing diary files undecryptable. Any change needs a format
-      version bump and a migration (see storage.py).
-    - Plaintext must never be written to disk. Callers are responsible
-      for keeping decrypted data in memory only.
-    - The derived key should be treated as sensitive: avoid copying it
-      more than necessary, and let it go out of scope when no longer
-      needed.
+The master key is derived from the password with Argon2id. Each entry is
+encrypted on its own with AES-256-GCM and a fresh random 96-bit nonce.
+(`cryptography` does not expose XChaCha20-Poly1305, the preferred choice.)
 
-This module has no knowledge of the on-disk file format (see
-storage.py) or of entry semantics (see models.py). It only knows how
-to turn a password into a key, and how to encrypt/decrypt bytes with
-that key.
+The cipher is fixed, not negotiated: the file format records no cipher id,
+so changing it here needs a format version bump and a migration.
+
+This module knows nothing about files (storage.py) or entries (models.py):
+bytes in, bytes out. Callers keep plaintext and the key in memory only.
 """
 
 from __future__ import annotations
@@ -32,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from argon2.exceptions import Argon2Error
-from argon2.low_level import Type, hash_secret_raw
+from argon2.low_level import Type, error_to_str, hash_secret_raw
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -41,23 +28,23 @@ SALT_SIZE = 16
 KEY_SIZE = 32
 NONCE_SIZE = 12
 
+#: How argon2-cffi words a failed allocation. It raises one exception type
+#: for every failure, told apart only by this text, so the text is asked of
+#: the library. -22 is ARGON2_MEMORY_ALLOCATION_ERROR in argon2.h.
+_OUT_OF_MEMORY = error_to_str(-22)
+
 
 class ZecretDecryptError(Exception):
-    """Raised when decryption fails: wrong password or corrupted/tampered data.
-
-    Callers (e.g. the unlock screen) should catch this specifically to show
-    a user-friendly "incorrect password" message rather than a raw
-    cryptography traceback.
-    """
+    """Decryption failed: wrong key, or corrupted or tampered data."""
 
 
 @dataclass(frozen=True, slots=True)
 class KdfParams:
-    """Argon2id parameters, stored alongside the diary so it can be
-    re-derived deterministically on unlock.
+    """Argon2id parameters, stored in the diary header so the key can be
+    re-derived on unlock.
 
     Attributes:
-        salt: Random salt, generated once per diary file, stored as raw bytes.
+        salt: Random salt, generated once per diary file.
         time_cost: Argon2 iteration count.
         memory_cost: Argon2 memory usage in KiB.
         parallelism: Argon2 parallelism degree.
@@ -70,10 +57,7 @@ class KdfParams:
 
     @classmethod
     def generate(cls) -> Self:
-        """Generate fresh KdfParams with a new random salt and sane defaults.
-
-        Used when creating a brand new diary file.
-        """
+        """Fresh params with a new random salt and the default costs."""
         return cls(salt=os.urandom(SALT_SIZE))
 
     def to_dict(self) -> dict[str, Any]:
@@ -91,54 +75,43 @@ class KdfParams:
         """Reconstruct KdfParams from the file header's JSON dict.
 
         Raises:
-            ValueError: if the header names a KDF other than Argon2id, or
-                if a required field is missing or malformed. Unknown
-                algorithms are rejected rather than assumed — a diary we
-                cannot derive the right key for must fail loudly.
+            ValueError: if the header names no KDF or one other than
+                Argon2id, or a field is missing or malformed.
         """
-        algo = data.get("algo", KDF_ALGO)
+        algo = data.get("algo")
         if algo != KDF_ALGO:
             raise ValueError(f"unsupported KDF algorithm: {algo!r}")
         try:
             return cls(
                 salt=base64.b64decode(data["salt"], validate=True),
-                time_cost=int(data["time_cost"]),
-                memory_cost=int(data["memory_cost"]),
-                parallelism=int(data["parallelism"]),
+                time_cost=_whole_number(data["time_cost"]),
+                memory_cost=_whole_number(data["memory_cost"]),
+                parallelism=_whole_number(data["parallelism"]),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"malformed KDF header: {exc}") from exc
 
 
+def _whole_number(value: object) -> int:
+    """`value` if it is an int, with nothing coerced: `int()` would accept
+    "3", 3.9 and True."""
+    if type(value) is not int:
+        raise TypeError(f"expected a whole number, got {value!r}")
+    return value
+
+
 def derive_key(password: str, params: KdfParams) -> bytes:
-    """Derive a symmetric key from a password using Argon2id.
+    """Derive a 32-byte key from a password using Argon2id.
 
-    Args:
-        password: The user's master password (plaintext, in memory only).
-        params: KDF parameters (salt + cost factors) from the diary header.
-
-    Returns:
-        A 32-byte key suitable for use with encrypt()/decrypt().
+    The params come from the diary's own header, so a corrupted one reaches
+    here. Argon2 owns the rules for what is usable; its refusals are
+    converted rather than the rules restated in from_dict().
 
     Raises:
-        ValueError: if Argon2 will not accept these parameters -- a cost
-            factor of zero, a negative one, one too large for the 32-bit
-            field it goes in, a salt too short to use.
-
-    The params come off the diary's own header, and KdfParams.from_dict()
-    checks that they are whole numbers without knowing what Argon2 will do
-    with them. A file corrupted into "memory_cost": 0 therefore parsed
-    cleanly and then came apart down here, as an argon2 HashingError or a
-    cffi OverflowError -- neither of which is what the screens catch, so a
-    diary with one mangled digit in its header met the user as a traceback
-    instead of as a file that could not be read.
-
-    Converted here rather than checked in from_dict() because Argon2 owns
-    those rules: restating them there would be a second copy to drift, and
-    this stays right if they ever change. ValueError specifically, because
-    that is what unlock() already documents for a file it cannot parse,
-    and it is not a ZecretDecryptError -- the password was never the
-    problem.
+        ValueError: if Argon2 will not accept these parameters. Not a
+            ZecretDecryptError: the password was never the problem.
+        MemoryError: if the parameters are usable and the memory they ask
+            for could not be allocated.
     """
     try:
         return hash_secret_raw(
@@ -151,28 +124,21 @@ def derive_key(password: str, params: KdfParams) -> bytes:
             type=Type.ID,
         )
     except (Argon2Error, OverflowError, TypeError) as exc:
+        if str(exc) == _OUT_OF_MEMORY:
+            raise MemoryError(
+                f"Argon2id needs {params.memory_cost // 1024} MiB and could not get it"
+            ) from exc
         raise ValueError(f"unusable KDF parameters: {exc}") from exc
 
 
 def encrypt(key: bytes, plaintext: bytes) -> tuple[bytes, bytes]:
-    """Encrypt plaintext under the given key using an AEAD cipher.
+    """Encrypt `plaintext` under `key`, returning (nonce, ciphertext).
 
-    A fresh random nonce is generated internally for every call — callers
-    must never reuse a nonce with the same key.
-
-    Args:
-        key: 32-byte symmetric key, as returned by derive_key().
-        plaintext: The serialized entry data to encrypt (UTF-8 JSON bytes).
-
-    Returns:
-        A (nonce, ciphertext) tuple, both raw bytes, to be stored
-        alongside each other in the entry record. The ciphertext includes
-        the AEAD authentication tag.
+    The nonce is generated here, fresh for every call, and is never taken
+    from the caller. The ciphertext includes the authentication tag.
 
     Raises:
-        ValueError: if `key` is not KEY_SIZE bytes. This is a programming
-            error, not a decryption failure, so it is not wrapped in
-            ZecretDecryptError.
+        ValueError: if `key` is not KEY_SIZE bytes (a programming error).
     """
     _validate_key(key)
     nonce = os.urandom(NONCE_SIZE)
@@ -181,25 +147,13 @@ def encrypt(key: bytes, plaintext: bytes) -> tuple[bytes, bytes]:
 
 
 def decrypt(key: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
-    """Decrypt a ciphertext previously produced by encrypt().
-
-    Args:
-        key: 32-byte symmetric key.
-        nonce: The nonce that was generated for this specific ciphertext.
-        ciphertext: The encrypted bytes.
-
-    Returns:
-        The original plaintext bytes.
+    """Decrypt a ciphertext produced by encrypt().
 
     Raises:
         ZecretDecryptError: if the key is wrong, the nonce is the wrong
-            size, or the nonce/ciphertext has been tampered with or
-            truncated. Every authentication failure surfaces as this one
-            exception — decryption fails closed and never returns
-            unauthenticated bytes. This is also how wrong-password
-            detection works on unlock.
-        ValueError: if `key` is not KEY_SIZE bytes (a programming error,
-            deliberately distinct from a decryption failure).
+            size, or the data was tampered with or truncated. Never
+            returns unauthenticated bytes.
+        ValueError: if `key` is not KEY_SIZE bytes (a programming error).
     """
     _validate_key(key)
     if len(nonce) != NONCE_SIZE:
@@ -211,6 +165,5 @@ def decrypt(key: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
 
 
 def _validate_key(key: bytes) -> None:
-    """Guard against a mis-sized key reaching the cipher."""
     if len(key) != KEY_SIZE:
         raise ValueError(f"key must be {KEY_SIZE} bytes, got {len(key)}")

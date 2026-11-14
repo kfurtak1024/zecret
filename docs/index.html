@@ -534,7 +534,7 @@ footer p.right { margin-left: auto; }
       </div>
       <div>
         <dt>Integrity</dt>
-        <dd>Tampering with a stored entry, or a wrong password, fails authentication and is reported as an error — never as an empty or partial diary. The header carries an encrypted verifier, so that holds even for a diary with no entries yet.</dd>
+        <dd>Tampering with a stored entry, or a wrong password, fails authentication and is reported as an error — never as an empty or partial diary — and Zecret says which: a wrong password, a damaged file, or a diary from a newer version. The header carries an encrypted verifier, so that holds even for a diary with no entries yet.</dd>
       </div>
       <div>
         <dt>Durability</dt>
@@ -542,7 +542,7 @@ footer p.right { margin-left: auto; }
       </div>
       <div>
         <dt>Two windows open</dt>
-        <dd>A second Zecret on the same file is detected before anything is written, so one session cannot silently overwrite what the other just saved. Creating a diary claims the path in the same indivisible step that writes it, so two first runs cannot land on top of each other either.</dd>
+        <dd>A second Zecret on the same file is detected before anything is written, so one session cannot silently overwrite what the other just saved. Saving a day then picks up what the other wrote and keeps both; if you both changed the same day, Zecret asks whose to keep. Creating a diary claims the path in the same indivisible step that writes it, so two first runs cannot land on top of each other either.</dd>
       </div>
       <div>
         <dt>Plaintext</dt>

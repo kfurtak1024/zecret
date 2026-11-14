@@ -1,31 +1,22 @@
 """Password entry screen: unlocks an existing diary or creates a new one.
 
-In the create flow it asks for a password and a confirmation and calls
-DiaryFile.create_new(). In the unlock flow it asks for the password and
-calls DiaryFile.unlock(), reporting ZecretDecryptError and a malformed
-file identically -- an inline "incorrect password" -- so that nothing here
-tells an attacker whether a given path holds a real, intact diary.
+Creating asks for a password and a confirmation and calls
+DiaryFile.create_new(). Unlocking calls DiaryFile.unlock() and says which
+thing went wrong: the password, damage to a file the password does open,
+a file from a newer Zecret, or a file that is no diary. Telling these
+apart gives an attacker nothing the file does not, and a writer with one
+damaged record must not be told they forgot their password.
 
-The create flow also says, in the colour the rest of the app keeps for
-what cannot be undone, that a forgotten password is a lost diary. This is
-the screen where that becomes true, and no later screen can offer a way
-back: an app with no recovery mechanism owes the reader that sentence
-before they choose, not after.
+Key derivation runs off the event loop, with a status line and the fields
+disabled while it does. Every failed attempt pauses for
+FAILED_ATTEMPT_DELAY before the fields come back.
 
-Every failed attempt pauses for FAILED_ATTEMPT_DELAY before the fields
-come back, which takes the edge off interactive brute-forcing. Key
-derivation itself runs off the event loop: Argon2id is deliberately slow,
-and the UI would otherwise freeze for the length of every attempt.
-
-Which of the two flows to present is decided by ZecretApp and passed in as
-`creating`, keeping the "does the file exist" question with the app that
-owns the path (and letting tests drive either flow directly). Because that
-decision is made when the screen is built, the file can still turn out to
-be missing or already there by the time the password is submitted. A diary
-already there turns the screen into the unlock screen for it; a diary gone
-missing is reported, and the screen stays as it is -- offering to create a
-new diary where one has just vanished would invite writing an empty diary
-in the place of one that may only be on an unmounted disk.
+ZecretApp decides which flow to show and passes it as `creating`, so the
+file can still appear or vanish before the password is submitted. A diary
+that appeared turns this into the unlock screen for it. A diary that
+vanished is reported and the screen stays as it is: offering to create
+one there could write an empty diary where the real one is only on an
+unmounted disk.
 """
 
 from __future__ import annotations
@@ -40,16 +31,24 @@ from textual.widgets import Input, Label
 from zecret.crypto import ZecretDecryptError
 from zecret.screens.base import NO_RECOVERY, FormScreen, card, plain
 from zecret.screens.header import DiaryFooter, DiaryHeader
-from zecret.storage import DiaryFile
+from zecret.storage import DiaryFile, ZecretDamagedError, ZecretVersionError
 
-# Deliberately the same message for a wrong password and for an unreadable
-# file: distinguishing them would tell an attacker that a given path holds a
-# real, intact diary.
+# Every line below must fit the create card's 54 columns, the narrower of
+# the two cards this row sits in.
 UNLOCK_FAILED = "Incorrect password."
+DIARY_DAMAGED = "The password is right, but the diary file is damaged."
+DIARY_TOO_NEW = "A newer Zecret wrote this diary. Upgrade to open it."
+NOT_A_DIARY = "This file is not a diary Zecret can read."
 
-#: Said when the diary being created turned out to exist by the time the
-#: password was submitted -- another Zecret made it in between. The screen
-#: has become the unlock screen by then, so this asks for that password.
+#: Argon2id could not get the memory the diary's header asks for.
+OUT_OF_MEMORY = "Not enough free memory to open the diary."
+
+#: Said while the key is being derived, which takes about a second.
+UNLOCKING = "Unlocking…"
+CREATING = "Creating your diary…"
+
+#: Another Zecret created the diary while a password was being chosen
+#: here. The screen has become the unlock screen by the time this shows.
 DIARY_APPEARED = "A diary appeared here meanwhile. Enter its password."
 
 #: The confirmation field's placeholder when creating a diary.
@@ -61,55 +60,48 @@ class UnlockScreen(FormScreen):
 
     ERROR_ID = "unlock-error"
 
-    # ctrl+q already quits app-wide, but it is hidden by default. Someone
-    # who cannot get in needs an obvious way out, so show it here.
-    # "app.quit" rather than "quit": the action is dispatched on this
-    # screen, which has no action_quit, and would fall through to the app's
-    # own ctrl+q binding by luck alone.
+    # Shown here because someone who cannot get in needs an obvious way
+    # out. "app.quit", not "quit": the action is dispatched on this screen,
+    # which has no action_quit.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+q", "app.quit", "Quit", show=True, priority=True)
     ]
 
-    #: Pause after a failed attempt, to take the edge off interactive
-    #: brute-forcing. Lowered in tests to keep them fast.
+    #: Pause after a failed attempt, against interactive brute-forcing.
+    #: Lowered in tests.
     FAILED_ATTEMPT_DELAY = 0.4
 
     def __init__(self, *, creating: bool) -> None:
         """Args:
-        creating: True to run the "set a new password" flow, False to
-            prompt for an existing diary's password.
+        creating: True to set a new password for a new diary, False to
+            ask for an existing diary's password.
         """
         super().__init__()
         self.creating = creating
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
-        # Scrolls rather than running off the bottom: the caution below
-        # is three rows this card did not used to spend, and the field it
-        # would push out of sight on a short terminal is the one that
-        # confirms the password.
+        # A scrolling card, so a short terminal does not lose the
+        # confirmation field off the bottom.
         with card("unlock-box"):
             if self.creating:
                 yield Label("Create a new diary", id="unlock-title")
-                # Plain: the path is the user's, and a directory named with a
-                # stray closing tag raised MarkupError before the diary could
-                # be created at all -- see base.plain().
+                # Plain: the path is the user's.
                 yield Label(
                     plain(
                         f"No diary at {self.zecret.diary_path}. Choose a master password for it."
                     ),
                     id="unlock-hint",
                 )
-                # Above the fields rather than below them: it is the thing
-                # to know before choosing a password, not a footnote to
-                # having chosen one.
+                # Above the fields: it is the thing to know before
+                # choosing a password.
                 yield Label(NO_RECOVERY, classes="caution")
             else:
                 yield Label("Unlock your diary", id="unlock-title")
             yield Input(placeholder="Master password", password=True, id="password")
             if self.creating:
-                # Says how the form finishes, as the password dialog's does:
-                # neither has a button to say it for them.
+                # The placeholder says how the form finishes; there is no
+                # button to say it.
                 yield Input(placeholder=CONFIRM_HINT, password=True, id="confirm")
             yield Label("", id="unlock-error")
         yield DiaryFooter()
@@ -119,12 +111,11 @@ class UnlockScreen(FormScreen):
         self.query_one("#password", Input).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Mention a short password while it is being chosen.
+        """Rate a password while it is being chosen.
 
-        Only while creating, and only for the password field itself: on an
-        existing diary the password is whatever it already is, and saying
-        anything about its length would be advice nobody can act on and a
-        remark about the diary to whoever is watching the screen.
+        Only when creating: an existing password is recalled, not chosen,
+        and rating it would be a remark about the diary to anyone
+        watching.
         """
         if self.creating and event.input.id == "password":
             self.advise_on_password(event.value)
@@ -148,17 +139,32 @@ class UnlockScreen(FormScreen):
                 await self.fail("Passwords do not match.")
                 return
 
-        self.set_error("")
+        # Argon2id is slow on purpose. Say so and disable the fields until
+        # it answers, so the wait does not read as a dead screen and a
+        # second Enter has nowhere to go.
+        self.set_status(CREATING if self.creating else UNLOCKING)
+        for widget in self.query(Input):
+            widget.disabled = True
         path = self.zecret.diary_path
         try:
-            # Argon2id is intentionally slow; run it off the event loop so
-            # the UI does not freeze while the key is derived.
+            # Off the event loop, so the UI stays alive meanwhile.
             open_diary = DiaryFile.create_new if self.creating else DiaryFile.unlock
             diary, key = await asyncio.to_thread(open_diary, path, password)
-        except (ZecretDecryptError, ValueError):
-            # ValueError covers a malformed or unsupported file; reported
-            # identically to a bad password, on purpose.
+        except ZecretDecryptError:
             await self.fail(UNLOCK_FAILED)
+            return
+        except ZecretDamagedError:
+            await self.fail(DIARY_DAMAGED)
+            return
+        except ZecretVersionError:
+            await self.fail(DIARY_TOO_NEW)
+            return
+        except ValueError:
+            # Anything else that will not parse: no password could open it.
+            await self.fail(NOT_A_DIARY)
+            return
+        except MemoryError:
+            await self.fail(OUT_OF_MEMORY)
             return
         except FileExistsError:
             await self.become_unlock()
@@ -179,20 +185,11 @@ class UnlockScreen(FormScreen):
     async def become_unlock(self) -> None:
         """Turn from creating a diary into unlocking the one now there.
 
-        Which flow to show is decided when the screen is built, so a diary
-        another Zecret creates while this one is choosing a password is
-        only found by the create itself -- which refuses, rightly, rather
-        than write over a file whose password nobody here has checked. It
-        used to stop there, and every retry was refused the same way: the
-        screen went on asking for a new password and a confirmation for a
-        diary that could only be unlocked, and quitting was the only way
-        on. Now it becomes the unlock screen, and says why.
-
-        Rebuilt rather than edited in place, so that the title, the hint,
-        the warning and the confirmation field all follow `creating` from
-        the one compose() that decides them. The password typed goes with
-        the old fields: it was chosen for a new diary, and is not this
-        one's.
+        Another Zecret created the diary while this one was choosing a
+        password, and the create rightly refused to write over it.
+        Recomposed rather than edited in place, so everything follows
+        `creating` from the one compose(). The password typed goes with
+        the old fields: it was chosen for a new diary, not this one.
         """
         self.creating = False
         await self.recompose()

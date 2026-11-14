@@ -19,6 +19,42 @@ file matters as much as that does.
   that report stays in the terminal's scrollback. It still says where the
   error happened, which is what a bug report needs, and nothing more.
 
+- **The diary no longer stays open after a suspend if a key is pressed
+  first.** Closing the lid overnight is supposed to lock the diary, but
+  the check only ran on a timer, and the first key, click or scroll after
+  waking was counted as you still being there -- so whoever opened the
+  laptop kept the diary open. That first touch now locks it, and is not
+  passed on to whatever was on the screen.
+
+### Fixed
+
+- **Unlocking says it is working.** Opening or creating a diary takes about
+  a second, on purpose, and the screen showed nothing while it did. It now
+  says "Unlocking…" and holds the fields until it has an answer.
+- **Running out of memory is said as that.** If the machine cannot spare
+  the memory the password check needs, the unlock screen and the password
+  dialog now say so, instead of calling the password wrong or the file
+  unreadable.
+- **Leftovers from an interrupted save are cleaned up.** If Zecret was
+  killed in the middle of saving, a hidden temporary file (encrypted, like
+  the diary) stayed beside it for good. The next save now removes any that
+  are more than a minute old.
+- **Saving a day no longer gets stuck when another Zecret has saved the
+  diary meanwhile.** The save used to be refused, and the only way to pick
+  up the other session's writing was the list's reload -- which meant
+  leaving the day, and with it whatever you had written. Now the save
+  re-reads the diary and files your day alongside everything the other
+  session wrote, so neither loses anything. If you both changed the same
+  day, nothing is written until you say whose version to keep: press
+  <kbd>ctrl+s</kbd> and choose **Save mine**, **Take theirs**, or Cancel.
+- **A damaged diary is no longer called a wrong password.** Every reason a
+  diary would not open read "Incorrect password." -- including a file the
+  password had just opened, with one record damaged after it, which sent
+  you back to retyping the right password or to doubting it. The unlock
+  screen now says which it is: a wrong password, a damaged file, a diary
+  written by a newer Zecret, or a file that is not a diary at all. A
+  damaged diary still does not open.
+
 ### Changed
 
 - **Zecret now stays on Textual 8.x.** It relies on a few details of

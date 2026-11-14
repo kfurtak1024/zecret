@@ -16,8 +16,11 @@ Required coverage:
       confirmation's placeholder says Enter is how the form finishes,
       since there is no button to, and fits its field unclipped at 80x24.
     - The correct password unlocks and exposes the decrypted entries.
-    - A wrong password shows an inline error, leaves app.diary as None, and
-      does not leak whether the file was wrong-password vs. corrupted.
+    - A wrong password shows an inline error and leaves app.diary as None.
+    - Every other refusal says what it is instead: a diary the password
+      opens but that is damaged, a diary from a newer Zecret, a file that
+      is no diary. All four used to read "Incorrect password." -- wrong for
+      three of them -- and each fits the create card's row at 80x24.
     - The typed password is cleared from the widget after any attempt.
     - Choosing a password says, in as many words, that forgetting it loses
       the diary. Only where one is being chosen: the unlock screen asks
@@ -32,11 +35,19 @@ Required coverage:
     - An error line shows its message as given. Some quote the operating
       system or a path, and a stray closing tag in one was read as markup
       -- and raised, taking the app down while it reported a failure.
+    - While the key is derived the screen says so and its fields are
+      disabled, so a second of Argon2id does not read as a dead screen
+      and a second Enter cannot start a second attempt.
+    - Argon2 failing to get its memory is said as that, not as a wrong
+      password or a broken file.
 """
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -45,7 +56,18 @@ from textual.widgets import Input, Label
 from zecret.app import ZecretApp
 from zecret.models import Entry
 from zecret.screens.base import NO_RECOVERY
-from zecret.screens.unlock import CONFIRM_HINT, DIARY_APPEARED, UNLOCK_FAILED, UnlockScreen
+from zecret.screens.unlock import (
+    CONFIRM_HINT,
+    CREATING,
+    DIARY_APPEARED,
+    DIARY_DAMAGED,
+    DIARY_TOO_NEW,
+    NOT_A_DIARY,
+    OUT_OF_MEMORY,
+    UNLOCK_FAILED,
+    UNLOCKING,
+    UnlockScreen,
+)
 from zecret.storage import DiaryFile
 from zecret.strength import FILLED, HOLLOW
 
@@ -279,8 +301,9 @@ async def test_wrong_password_never_falls_back_to_an_empty_diary(diary_path):
         assert error_text(app) == UNLOCK_FAILED
 
 
-async def test_corrupted_file_is_indistinguishable_from_a_wrong_password(diary_path):
-    """The message must not reveal that the file itself is damaged."""
+async def test_a_file_that_is_no_diary_says_so(diary_path):
+    """No password could open it, so calling the password wrong would be
+    the one message certain to mislead."""
     existing_diary(diary_path)
     diary_path.write_text("this is not a diary")
 
@@ -288,7 +311,50 @@ async def test_corrupted_file_is_indistinguishable_from_a_wrong_password(diary_p
     async with app.run_test() as pilot:
         await submit(pilot, PASSWORD)
         assert app.diary is None
-        assert error_text(app) == UNLOCK_FAILED
+        assert error_text(app) == NOT_A_DIARY
+
+
+async def test_a_damaged_diary_says_the_password_was_right(diary_path):
+    """Used to read "Incorrect password." -- and send someone with one
+    damaged record back to retyping the right one."""
+    existing_diary(diary_path, Entry.new(TODAY, "A body"))
+    document = json.loads(diary_path.read_text())
+    document["entries"][0]["ciphertext"] = base64.b64encode(b"x" * 40).decode()
+    diary_path.write_text(json.dumps(document))
+
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, PASSWORD)
+        assert app.diary is None, "damage is still a refusal"
+        assert app.key is None
+        assert error_text(app) == DIARY_DAMAGED
+        await submit(pilot, WRONG_PASSWORD)
+        assert error_text(app) == UNLOCK_FAILED, "a wrong password is still one"
+
+
+async def test_a_diary_from_a_newer_zecret_says_to_upgrade(diary_path):
+    existing_diary(diary_path)
+    document = json.loads(diary_path.read_text())
+    document["version"] += 1
+    diary_path.write_text(json.dumps(document))
+
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, PASSWORD)
+        assert app.diary is None
+        assert error_text(app) == DIARY_TOO_NEW
+
+
+@pytest.mark.parametrize("message", [DIARY_DAMAGED, DIARY_TOO_NEW, NOT_A_DIARY])
+async def test_every_refusal_fits_the_narrower_card(diary_path, message):
+    """The row is one line and cuts off what does not fit; the create card
+    is the narrower of the two it sits in."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        assert app.screen.creating
+        line = app.screen.query_one("#unlock-error", Label)
+        assert len(message) <= line.content_region.width
 
 
 async def test_retry_after_a_wrong_password_succeeds(diary_path):
@@ -301,7 +367,8 @@ async def test_retry_after_a_wrong_password_succeeds(diary_path):
         assert str(error_label.content) == UNLOCK_FAILED
         await submit(pilot, PASSWORD)
         assert app.diary is not None
-        assert str(error_label.content) == "", "stale error left on screen"
+        assert str(error_label.content) == UNLOCKING, "stale error left on screen"
+        assert error_label.has_class("-status")
 
 
 # --- handling of the typed password ----------------------------------------
@@ -527,3 +594,97 @@ async def test_a_path_that_looks_like_markup_is_shown_as_given(tmp_path):
         assert app.screen.creating
         hint = str(app.screen.query_one("#unlock-hint", Label).render())
         assert "[/bold]" in hint
+
+
+# --- while the key is being derived -----------------------------------------
+
+
+async def test_the_screen_says_it_is_working_and_takes_the_fields_away(diary_path, monkeypatch):
+    existing_diary(diary_path)
+    release = threading.Event()
+    real = DiaryFile.unlock
+
+    def slow(path, password):
+        release.wait(5)
+        return real(path, password)
+
+    monkeypatch.setattr(DiaryFile, "unlock", slow)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        screen = app.screen
+        line = screen.query_one("#unlock-error", Label)
+        field = screen.query_one("#password", Input)
+        field.value = PASSWORD
+        field.post_message(Input.Submitted(field, PASSWORD))
+        await pilot.pause()
+
+        assert str(line.content) == UNLOCKING
+        assert line.has_class("-status")
+        assert field.disabled
+
+        release.set()
+        await pilot.pause(0.2)
+        assert app.diary is not None
+
+
+async def test_creating_says_so_while_it_works(diary_path, monkeypatch):
+    release = threading.Event()
+    real = DiaryFile.create_new
+
+    def slow(path, password):
+        release.wait(5)
+        return real(path, password)
+
+    monkeypatch.setattr(DiaryFile, "create_new", slow)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        screen = app.screen
+        line = screen.query_one("#unlock-error", Label)
+        screen.query_one("#password", Input).value = PASSWORD
+        confirm = screen.query_one("#confirm", Input)
+        confirm.value = PASSWORD
+        confirm.post_message(Input.Submitted(confirm, PASSWORD))
+        await pilot.pause()
+
+        assert str(line.content) == CREATING
+        assert all(widget.disabled for widget in screen.query(Input))
+
+        release.set()
+        await pilot.pause(0.2)
+        assert app.diary is not None
+
+
+async def test_the_fields_come_back_after_a_wrong_password(diary_path):
+    existing_diary(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, WRONG_PASSWORD)
+        await pilot.pause()
+
+        field = app.screen.query_one("#password", Input)
+        line = app.screen.query_one("#unlock-error", Label)
+        assert not field.disabled
+        assert str(line.content) == UNLOCK_FAILED
+        assert not line.has_class("-status")
+
+
+async def test_running_out_of_memory_is_said_as_that(diary_path, monkeypatch):
+    existing_diary(diary_path)
+
+    def refuse(path, password):
+        raise MemoryError("Argon2id needs 64 MiB and could not get it")
+
+    monkeypatch.setattr(DiaryFile, "unlock", refuse)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await submit(pilot, PASSWORD)
+        await pilot.pause()
+
+        assert str(app.screen.query_one("#unlock-error", Label).content) == OUT_OF_MEMORY
+        assert app.diary is None
+
+
+@pytest.mark.parametrize("message", [UNLOCKING, CREATING, OUT_OF_MEMORY])
+def test_the_new_lines_fit_the_create_card(message):
+    """54 columns is the narrower of the two cards this row sits in."""
+    assert len(message) <= 54

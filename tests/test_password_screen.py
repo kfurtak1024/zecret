@@ -34,6 +34,8 @@ Required coverage:
       so the warning about a forgotten password never needs scrolling to
       on a 24-row terminal, and that row is fixed at one line, so anything
       too wide is cut off rather than wrapped. Both cards are measured.
+    - Argon2 failing to get its memory, checking the old password or
+      deriving the new key, changes nothing and is said as that.
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ from zecret.screens.password import (
     CONFIRM_HINT,
     EMPTY_NEW,
     MISMATCH,
+    OUT_OF_MEMORY,
     WRONG_CURRENT,
     PasswordScreen,
 )
@@ -551,3 +554,28 @@ async def test_the_rating_fits_the_narrower_card_too(diary_path):
         width = line.content_region.width
         assert widest_line(width) <= width, "the rating can overrun the create screen's row"
         assert len(WIDEST_LABEL) + 6 <= width, "the row cannot even hold a bar and a label"
+
+
+# --- running out of memory --------------------------------------------------
+
+
+@pytest.mark.parametrize("step", ["verify_password", "change_password"])
+async def test_running_out_of_memory_changes_nothing_and_says_so(diary_path, monkeypatch, step):
+    """Argon2 runs twice here. Failing to get its memory at either must
+    leave the old password in force and say why, not escape as a traceback."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await open_dialog(pilot)
+        old_key = app.key
+
+        def refuse(self, *args):
+            raise MemoryError("no room")
+
+        monkeypatch.setattr(DiaryFile, step, refuse)
+        await submit_change(pilot, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
+
+        assert isinstance(app.screen, PasswordScreen)
+        assert str(app.screen.query_one("#password-error", Label).content) == OUT_OF_MEMORY
+        assert app.key == old_key
+    DiaryFile.unlock(diary_path, PASSWORD)

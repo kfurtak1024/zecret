@@ -1,37 +1,23 @@
 """The dialog that changes the master password.
 
-A dialog rather than a third section of the settings form, because this is
-the one thing in Zecret that cannot be undone. Three password fields
-sitting under two dropdowns were something you could scroll past, or tab
-into by accident, and the warning that goes with them was read as the
-small print at the bottom of a form. Opened deliberately from a button,
-the warning is the first thing on the screen and the fields are the only
-other thing on it.
+A dialog rather than fields on the settings form, because this is the one
+thing in Zecret that cannot be undone: the warning is the first thing on
+the screen and the fields are the only other thing on it.
 
-The flow is unchanged and still the important part: the current password
-is re-verified through DiaryFile.verify_password() rather than derive_key(),
-which screens may not call. Without that check, anyone at an unattended
-unlocked terminal could re-key the diary without knowing the old password,
-and there is no recovery mechanism by design.
+The current password is re-verified through DiaryFile.verify_password(),
+so nobody at an unattended unlocked terminal can re-key the diary without
+it. If the save fails after re-keying, DiaryFile.change_password() rolls
+the KDF params back itself.
 
-If the save fails after re-keying, DiaryFile.change_password() rolls the
-new KDF params back itself. They would otherwise be left describing a key
-that never reached disk, and the next save under the old key would write
-new params over old ciphertext, leaving the file unopenable by either
-password.
+While the re-key runs the screen is `working`: escape, ctrl+l, ctrl+q and
+the idle timer all wait for it, and a lock or quit asked for meanwhile
+happens when it ends, saying how it ended.
 
-On the class: ModalScreen comes first and FormScreen second, and the order
-is load-bearing both ways round. FormScreen is what a screen with fields
-and an error line inherits -- the typed app, the error line, and emptying
-the fields after a rejected attempt, which is a security behaviour and not
-a convenience, so it must not be a second copy here. ModalScreen has to
-come first because Textual builds a widget's styling by walking the class
-hierarchy, and behind FormScreen stands a plain Screen whose opaque
-background would otherwise win over the translucent one that makes a modal
-read as a dialog over the settings rather than instead of them. This is
-only possible because this dialog dismisses nothing: a modal that returns
-a value is a Screen of a different type and cannot inherit FormScreen at
-all -- see the note in base.py, and DatePromptScreen, which is one.
+Class order: ModalScreen first, FormScreen second, and both matter.
+FormScreen supplies the error line and clear_inputs. ModalScreen must come
+first because Textual builds styling by walking the class hierarchy, and
+the plain Screen behind FormScreen would otherwise give this an opaque
+background. This only works because the dialog dismisses nothing.
 """
 
 from __future__ import annotations
@@ -56,36 +42,36 @@ MISMATCH = "The new passwords do not match."
 CHANGED = "Master password changed."
 
 #: The last field's placeholder, which is also how the form says it is
-#: submitted -- see compose.
+#: submitted.
 CONFIRM_HINT = "Confirm new password, then press Enter"
 NOT_CHANGED = "Your password was not changed."
+#: Argon2id could not get the memory it needs to check or derive a key.
+OUT_OF_MEMORY = "Not enough free memory to change the password."
 
-#: Said on the error row while the fields are greyed out, so a second or
-#: two of Argon2id does not look like a dialog that has stopped answering.
+#: Said on the error row while the fields are disabled.
 CHECKING = "Checking your current password…"
 REKEYING = "Re-encrypting the diary under the new password…"
 
 
 class Outcome(Enum):
-    """How a change of password ended: in a new password, or in none."""
+    """How a change of password ended."""
 
     CHANGED = auto()
-    #: The current password was wrong. Said on the error row.
+    #: The current password was wrong.
     REFUSED = auto()
-    #: The re-keyed diary could not be saved. Said on the error row, and
-    #: in a notification by whoever is left to say it.
+    #: The change could not be made or saved.
     FAILED = auto()
 
 
-#: What a quit that waited for the change leaves in the terminal. Printed
-#: after the app has gone, so it names itself.
+#: What a quit that waited for the change leaves in the terminal, printed
+#: after the app has gone.
 QUIT_AFTER = {
     Outcome.CHANGED: "Zecret: master password changed.",
     Outcome.REFUSED: "Zecret: your password was not changed.",
     Outcome.FAILED: "Zecret: your password was not changed.",
 }
 
-#: What a lock that waited for the change says, by how the change ended.
+#: What a lock that waited for the change says.
 LOCKED_AFTER = {
     Outcome.CHANGED: "Master password changed, and locked.",
     Outcome.REFUSED: "Locked. Your password was not changed.",
@@ -100,33 +86,22 @@ class PasswordScreen(ModalScreen[None], FormScreen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", show=True),
-        # The same chord as everywhere the diary is open -- see
-        # ZecretApp.action_lock.
         Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
-        # The title, the warning and the three fields come to exactly the
-        # eighteen rows a twenty-four-row terminal leaves inside this
-        # card, which is deliberate: the warning is the reason this dialog
-        # exists, and a warning you have to scroll to reach is the thing
-        # it was moved out of the settings form to stop being. It still
-        # scrolls, for the terminal that is shorter still.
+        # Title, warning and three fields come to exactly the eighteen
+        # rows a 24-row terminal leaves inside this card, so the warning
+        # never needs scrolling to. Adding a row here breaks that.
         with card("password-box"):
             yield Label(TITLE, id="password-title")
-            # Above the fields: it is the thing to know before choosing a
-            # password, not a footnote to having chosen one.
             yield Label(NO_RECOVERY, classes="caution")
             yield Input(placeholder="Current password", password=True, id="current")
             yield Input(placeholder="New password", password=True, id="new")
-            # The one place the dialog says how it finishes. It has no
-            # button, because a button's three rows are what would push the
-            # warning above off a 24-row terminal -- and Enter is the
-            # answer, but nothing else on the screen says so.
+            # No button (its three rows would push the warning off a
+            # 24-row terminal), so the placeholder says Enter submits.
             yield Input(placeholder=CONFIRM_HINT, password=True, id="confirm")
             yield Label("", id="password-error")
-        # The screen underneath keeps rendering its own bar, and every key
-        # on it is dead while this dialog has focus. See CLAUDE.md.
         yield DiaryFooter()
 
     def on_mount(self) -> None:
@@ -136,25 +111,14 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         return self.query_one(f"#{field}", Input).value
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Mention a short password while it is being chosen.
-
-        The new one only. The current password is being recalled rather
-        than chosen, and the confirmation is a copy of a field that has
-        already been spoken about.
-        """
+        """Rate the new password as it is typed. Only that field: the
+        current one is recalled, and the confirmation is a copy."""
         if event.input.id == "new":
             self.advise_on_password(event.value)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Enter submits the change once every field after this one is
-        filled, and until then moves on to the next empty one (see
-        FormScreen.advance).
-
-        The same as the unlock screen, and the reason this dialog carries
-        no buttons of its own: a question with two or three answers needs
-        them (see ConfirmScreen), and a form has one answer -- what you
-        typed -- with escape for the way out.
-        """
+        """Enter submits once no field is empty, and until then moves to
+        the next empty one (see FormScreen.advance)."""
         if self.advance(event.input):
             return
         await self.change_password()
@@ -162,13 +126,8 @@ class PasswordScreen(ModalScreen[None], FormScreen):
     async def change_password(self) -> None:
         current, new, confirm = (self.value_of(f) for f in ("current", "new", "confirm"))
 
-        # Every failure here clears the fields, as on the unlock screen: a
-        # rejected attempt should not leave a password sitting in a widget
-        # on an unattended terminal. It costs retyping a password you got
-        # wrong anyway.
-        # And puts the cursor back at the top, which is where retyping
-        # starts: left in the field Enter was pressed in, it sat in an
-        # empty Confirm under two empty fields above it.
+        # Every failure clears the fields and puts the cursor back in the
+        # first one, where retyping starts.
         if not new:
             self.refuse(EMPTY_NEW)
             return
@@ -187,27 +146,25 @@ class PasswordScreen(ModalScreen[None], FormScreen):
             for widget in inputs:
                 widget.disabled = False
         if self.zecret.quit_pending:
-            # ctrl+q was pressed while this ran, and has waited for it. The
-            # app is going, so the outcome is said where it will still be
-            # read: in the terminal it leaves behind.
+            # ctrl+q waited for this. The app is going, so the outcome is
+            # left in the terminal.
             self.zecret.exit(message=QUIT_AFTER[outcome])
             return
         if not self.zecret.is_unlocked:
-            # Locked anyway, by a road that did not wait. Say what became of
-            # the password over the lock screen, which now wants the new one.
+            # Locked by a road that did not wait. Say what became of the
+            # password over the lock screen, which now wants the new one.
             if outcome is Outcome.CHANGED:
                 self.notify(CHANGED)
             return
         if self.zecret.lock_pending:
-            # ctrl+l was pressed while this ran, and has waited for it. One
-            # message for both, since locking clears whatever was said.
+            # ctrl+l waited for this. One message for both, since locking
+            # clears whatever was said before it.
             self.zecret.lock_pending = False
             self.zecret.lock(LOCKED_AFTER[outcome])
             return
         if outcome is Outcome.CHANGED:
-            # Said before leaving and outliving the dialog: a notification
-            # belongs to the app, so this one is still there to be read
-            # over the settings screen underneath.
+            # Notified before the dismiss; it outlives the dialog and is
+            # read over the settings screen.
             self.notify(CHANGED)
             self.dismiss()
             return
@@ -218,18 +175,22 @@ class PasswordScreen(ModalScreen[None], FormScreen):
     async def rekey(self, current: str, new: str) -> Outcome:
         """Check the current password, then re-key the diary under the new one.
 
-        Argon2id, off the event loop -- once to check the old password and
-        again inside change_password() to derive the new key, which it then
-        saves under. Run with self.working set, which holds ctrl+l and the
-        idle timer off until this returns. A lock that landed part way
-        through used to let this carry on regardless and hand the new key
-        to an app that had just forgotten its old one -- a key left in
-        memory behind the lock screen. The check before handing it over
-        stays, for any lock that does not go through action_lock.
+        Argon2id runs twice, off the event loop: once to check the old
+        password and once inside change_password(). Run with self.working
+        set, which holds ctrl+l and the idle timer off until this returns.
+        The is_unlocked check before the new key is handed over guards any
+        lock that does not go through action_lock: a new key must not be
+        given to an app that has just forgotten its old one.
         """
         diary, key = self.zecret.unlocked
         self.set_status(CHECKING)
-        if not await asyncio.to_thread(diary.verify_password, current, key):
+        try:
+            verified = await asyncio.to_thread(diary.verify_password, current, key)
+        except MemoryError:
+            self.set_error(OUT_OF_MEMORY)
+            self.clear_inputs()
+            return Outcome.FAILED
+        if not verified:
             self.set_error(WRONG_CURRENT)
             self.clear_inputs()
             return Outcome.REFUSED
@@ -237,12 +198,13 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         self.set_status(REKEYING)
         try:
             new_key = await asyncio.to_thread(diary.change_password, new)
+        except MemoryError:
+            self.set_error(OUT_OF_MEMORY)
+            self.clear_inputs()
+            return Outcome.FAILED
         except (OSError, ZecretConflictError) as error:
             # change_password() has put the old KDF params back, so memory
-            # and disk agree again; app.key is still the old key. The fields
-            # are emptied as after every other refusal: a password must not
-            # sit in a widget, and retrying a conflict needs a reload first
-            # anyway.
+            # and disk agree and app.key is still the old key.
             self.set_error(save_error(error))
             self.clear_inputs()
             return Outcome.FAILED
@@ -258,26 +220,11 @@ class PasswordScreen(ModalScreen[None], FormScreen):
         self.clear_inputs()
         self.query_one("#current", Input).focus()
 
-    def set_status(self, message: str) -> None:
-        """Say what the dialog is busy with, on the row errors use.
-
-        Its own class rather than an error's colour: nothing has gone wrong.
-        set_error() takes the row back from it.
-        """
-        line = self.query_one(f"#{self.ERROR_ID}", Label)
-        line.remove_class("-advice", "-advice-strong")
-        line.add_class("-status")
-        line.update(message)
-
     def action_cancel(self) -> None:
         """Escape closes the dialog, changing nothing.
 
-        The fields go with it -- the screen is discarded on dismissal --
-        so a password typed here and thought better of does not sit in a
-        widget behind the settings form.
-
-        Not while the diary is being re-encrypted: closing the dialog then
-        would not stop the change, only the telling of it -- see rekey.
+        Not while the diary is being re-encrypted: closing then would not
+        stop the change, only the telling of it.
         """
         if not self.working:
             self.dismiss()

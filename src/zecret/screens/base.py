@@ -1,31 +1,15 @@
-"""Shared base classes and formatting helpers for Zecret's screens.
+"""Shared base classes, wording and formatting for Zecret's screens.
 
-Textual types `self.app` as the generic `App`, so every screen would
-otherwise repeat the same cast to reach `diary_path`, `diary` and `key`.
-ZecretScreen keeps that in one place, and with it the rule from CLAUDE.md
-that screens reach the diary only through the app -- never through
-crypto.py or the filesystem directly. FormScreen adds what the screens
-with fields to fill in all need: one error line, and a way to empty the
-fields after a rejected attempt.
-
-The date helpers live here too: a diary is one entry per day, so how a day
-is worded is a decision every screen shares, and "which day is today" is a
-question only this layer asks (models.py takes the date it is given).
-
-And the warning about a forgotten password, which the two screens that
-set one both carry, and which must say the same thing on both.
-
-And DayList, the list both the entry list and search show days in.
-
-And the wording for a save that did not happen, which is the same wherever
-a save is attempted -- three screens attempt one, and none of them should
-be deciding for itself how to describe a diary that changed underneath it.
-
-And deleting a day, which the entry list and the calendar both offer: the
-question asked first (delete_question) and the deletion itself
-(ZecretScreen.delete_day), so the two ask the same thing and fail the same
-way. Each screen pushes the question itself -- confirm.py imports this
-module, so this one cannot import the modal back.
+- ZecretScreen: typed access to the app, and with it the rule that screens
+  reach the diary only through the app. Also deleting a day, which the
+  list and the calendar both offer.
+- FormScreen: one error line, password advice, and emptying the fields
+  after a rejected attempt.
+- DayList: the list of days the entry list and search both use.
+- card(), plain(), day_row(): how a panel is built and how text Zecret did
+  not write is handed to Textual.
+- Date and snippet formatting, and the wording every screen shares for a
+  refused save, a failed re-read, unsaved changes and a forgotten password.
 """
 
 from __future__ import annotations
@@ -49,58 +33,34 @@ if TYPE_CHECKING:
 
 EMPTY_BODY = "(empty)"
 
-#: Shared wording for a refused save: the cause is the same wherever it
-#: happens, and each screen adds what it means for what you were doing.
+#: A save refused because the file changed underneath this session.
 DIARY_CHANGED = "The diary changed on disk — another Zecret may have it open."
 
-#: Said wherever a password is being chosen: creating the diary, and
-#: changing it later. One sentence rather than two, because it is one fact
-#: and someone meeting it the second time should recognise it from the
-#: first -- which is also why it lives here rather than being worded twice.
-#:
-#: It was already on both screens, in the muted grey the hints are written
-#: in, where the one line with no way back read like the rest of the small
-#: print. What changed is the weight it is given, not what it says.
+#: Said wherever a password is chosen: creating the diary, and changing it.
 NO_RECOVERY = (
     "Forget your master password and the diary is gone — there is no "
     "recovery and no back door, not even for you."
 )
 
-#: Said when leaving would lose what is on the screen. One sentence for
-#: both ways of leaving -- backing out of the day and quitting the app --
-#: because it is one situation, and the buttons underneath are where the
-#: two differ. Stated rather than asked: with three answers on offer, a
-#: question would be pulling for one of them.
+#: Said when leaving would lose what is on the screen, whether by backing
+#: out of the day or by quitting. A statement rather than a question: with
+#: three answers on offer, a question would pull for one of them.
 UNSAVED_CHANGES = "Your changes to this day are not saved."
 
-#: The most of an entry's first line a row will ever carry. Not a display
-#: width: how much of a row is shown is the terminal's business, decided at
-#: render time by `text-overflow: ellipsis` in app.tcss, so a wide window
-#: shows more of the line and a narrow one trims it with no work here and
-#: nothing to recompute when the window changes size.
-#:
-#: This is the cap behind that -- what stops one pasted paragraph with no
-#: newline in it from putting fifty kilobytes into a label that then throws
-#: nearly all of it away. Far past any terminal's width, so it never cuts a
-#: line someone could otherwise have read.
+#: The most of an entry's first line a row will carry. Not a display width:
+#: the terminal trims rows at render time (`text-overflow: ellipsis` in
+#: app.tcss). This only guards against one huge pasted line.
 SNIPPET_CAP = 500
 
 
 def today() -> dt.date:
-    """The local calendar day, which is the day a diary entry means.
-
-    Local rather than UTC: an entry written at 23:50 belongs to the day
-    the writer would name, not to tomorrow.
-    """
+    """The local calendar day: an entry written at 23:50 belongs to the day
+    the writer would name."""
     return dt.datetime.now().date()
 
 
 def format_day(date: dt.date) -> str:
-    """A day in full: 'Thu 13 Aug 2026'.
-
-    Fixed width, so the dates line up as a column. Used where a row stands
-    on its own -- search results, which are not grouped by month.
-    """
+    """A day in full, fixed width: 'Thu 13 Aug 2026'."""
     return f"{date:%a %d %b %Y}"
 
 
@@ -110,16 +70,12 @@ def format_day_short(date: dt.date) -> str:
 
 
 def format_month(date: dt.date) -> str:
-    """The month a day falls in: 'August 2026'.
-
-    Carries the year, so grouping the diary by month needs only one level
-    of heading rather than a year above a month.
-    """
+    """The month a day falls in, with its year: 'August 2026'."""
     return f"{date:%B %Y}"
 
 
 def count_entries(count: int) -> str:
-    """'1 entry' / '12 entries', for headings and the header's subtitle."""
+    """'1 entry' / '12 entries'."""
     return f"{count} entr{'y' if count == 1 else 'ies'}"
 
 
@@ -131,17 +87,9 @@ def format_day_long(date: dt.date) -> str:
 def body_snippet(body: str, length: int = SNIPPET_CAP) -> str:
     """The entry's first non-blank line, capped at `length`.
 
-    With no titles, this is what tells one day apart from another in a
-    list -- the diary equivalent of a subject line. The row is given the
-    whole line and the terminal decides how much of it fits; `length` is a
-    guard against a pathological line, not the width of anything.
-
-    Scanned a line at a time rather than with splitlines(), which copies
-    the entire body to get at its first line. That costs about six
-    microseconds an entry on a long one against a tenth of that here --
-    real, but a rounding error next to the cost of mounting the rows, so
-    this is written the cheap way because there is no reason to write it
-    the expensive way, not because it was ever the slow part.
+    What tells one day from another in a list, there being no titles.
+    Scanned a line at a time rather than with splitlines(), which would
+    copy the whole body to reach its first line.
     """
     start = 0
     while start < len(body):
@@ -158,27 +106,22 @@ def body_snippet(body: str, length: int = SNIPPET_CAP) -> str:
 
 
 def entry_summary(entry: Entry) -> str:
-    """One-line label for an entry standing on its own: full day, then a
-    glimpse of the text. Used by search, whose results are ungrouped."""
+    """One-line label for an entry standing on its own (search results)."""
     return f"{format_day(entry.date)}   {body_snippet(entry.body)}"
 
 
 def day_summary(entry: Entry) -> str:
-    """One-line label for an entry under a month heading, which already
-    says which month and year this is."""
+    """One-line label for an entry under a month heading."""
     return f"{format_day_short(entry.date)}   {body_snippet(entry.body)}"
 
 
 def unchanged(drawn: Mapping[dt.date, Entry] | None, entries: Mapping[dt.date, Entry]) -> bool:
     """Whether `entries` is still exactly the diary a list was drawn from.
 
-    By identity, not by value: Entry is frozen and every edit makes a new
-    one (see Entry.edited), so the same objects under the same dates is the
-    same diary, and the check never reads an entry's text. A reload builds
-    new objects for every day, so it always counts as a change -- which is
-    right, since another Zecret may have written anything.
-
-    `drawn` is None until a list has been drawn at all.
+    By identity, not value: Entry is frozen and every edit makes a new
+    one, so the check never reads an entry's text. A reload builds new
+    objects and always counts as a change. `drawn` is None until a list
+    has been drawn.
     """
     if drawn is None or drawn.keys() != entries.keys():
         return False
@@ -186,19 +129,26 @@ def unchanged(drawn: Mapping[dt.date, Entry] | None, entries: Mapping[dt.date, E
 
 
 def save_error(error: OSError | ZecretConflictError) -> str:
-    """What to tell the user about a save that did not happen.
-
-    Every screen that saves catches the same two things and has to say the
-    same two things about them, so the wording lives here rather than in
-    three copies that would drift. What each screen adds around this is
-    what the failure cost *there* -- an entry not written, a password not
-    changed -- which is the part that genuinely differs.
-    """
+    """What to tell the user about a save that did not happen."""
     if isinstance(error, ZecretConflictError):
         return DIARY_CHANGED
-    # strerror is None for an OSError raised without an errno, which the
-    # tests do; falling back to the exception keeps the message readable.
+    # strerror is None for an OSError raised without an errno.
     return f"Could not save: {error.strerror or error}."
+
+
+def reread_error(error: OSError | ValueError) -> str:
+    """What to tell the user about a re-read of the diary that failed.
+
+    A re-read that fails for the key (ZecretDecryptError) is
+    REKEYED_ELSEWHERE instead.
+    """
+    detail = error.strerror if isinstance(error, OSError) and error.strerror else error
+    return f"Could not re-read the diary: {detail}."
+
+
+#: The diary on disk no longer opens with this session's key: another
+#: Zecret changed the password.
+REKEYED_ELSEWHERE = "The password was changed elsewhere. Quit and unlock again."
 
 
 def delete_question(date: dt.date) -> str:
@@ -209,24 +159,13 @@ def delete_question(date: dt.date) -> str:
 def card(id: str) -> VerticalScroll:
     """The scrolling panel a screen's content sits in, out of the tab order.
 
-    Textual makes a scrollable container focusable, so that someone can
-    scroll it from the keyboard when nothing inside it takes focus. On a
-    screen that *is* a form, that leaves an extra stop on the tab ring with
-    nothing to see: tab past the last field and the focus ring vanishes,
-    because it has landed on the panel rather than on anything in it, and
-    only the next tab brings it back to the first field. It read exactly
-    like focus being dropped, which is what it was reported as.
+    Textual makes a scrollable container focusable. On a form that is an
+    empty stop on the tab ring: tab past the last field and the focus ring
+    disappears. Scrolling is not lost, since Textual keeps the focused
+    field in view.
 
-    Every card in the app is a form -- the fields are the point, and each
-    one is reachable by tab -- so `can_focus=False` is right for all of
-    them, and putting it here rather than at each `VerticalScroll(...)`
-    makes it the default for the next card somebody adds. Scrolling is not
-    lost: Textual keeps the focused field in view as tab moves between
-    them, which is the only reason these scroll at all.
-
-    HelpScreen is the exception and builds its own: it holds no fields, so
-    the panel is the only thing there is to focus, and focusing it is what
-    lets the arrow keys read a page taller than the terminal.
+    HelpScreen builds its own panel and keeps it focusable: it has no
+    fields, and focusing the panel is what the arrow keys scroll with.
     """
     return VerticalScroll(id=id, can_focus=False)
 
@@ -234,42 +173,32 @@ def card(id: str) -> VerticalScroll:
 def plain(text: str) -> Content:
     """`text` exactly as it is, never read as markup.
 
-    Textual reads a plain string handed to a Label, an Option or a
-    notification as markup. That is right for text Zecret writes and
-    wrong for anything it does not: a diary's first line holding `[bold]`
-    lost its brackets and turned bold, and one holding a stray `[/bold]`
-    raised MarkupError and took the app down every time the list was
-    drawn. The same went for an error message quoting a damaged file, a
-    path, or the operating system. Whatever was not typed into this
-    source file goes through here on its way to the screen.
+    Textual parses a plain string handed to a Label, an Option or a
+    notification as markup, and a stray closing tag raises MarkupError.
+    Anything Zecret did not write (entry text, paths, OS errors, text
+    quoting the diary file) goes through here.
     """
     return Content(text)
 
 
 def day_row(text: str) -> Option:
-    """One row of a DayList -- see plain() for why it is not a string."""
+    """One row of a DayList, as plain text."""
     return Option(plain(text))
 
 
 class DayList(OptionList):
-    """A list of days -- the entry list's, and search's -- that stops at its ends.
+    """A list of days that stops at its ends instead of wrapping.
 
-    Textual's OptionList wraps around: down on the last option goes to the
-    first. In a list of years of entries that is a jump from 2016 to today
-    for one keypress too many, and the reader does not see it happen --
-    the ListView these lists used to be stopped at the end, and so does
-    this. Up and down are the only keys that wrapped; the screens handle
-    the page keys and the ends themselves (see EntryListScreen).
+    Textual's OptionList wraps: down on the last option goes to the first,
+    which in a diary of years is an unannounced jump across all of them.
+    The screens handle the page keys and the ends themselves.
     """
 
     def scroll_to_highlight(self, top: bool = False) -> None:
-        """Bring the highlight into view -- and on the first day, the top.
+        """Bring the highlight into view, and on the first day, the top.
 
-        Textual scrolls just far enough to show the highlighted row, which
-        on the newest entry leaves the month heading above it, and the
-        blank line above that, out of sight: 'g' went to the top of the
-        diary without ever showing it. Where nothing but headings comes
-        before the highlight, the top of the list is the place to be.
+        Textual scrolls just far enough to show the row, which on the
+        newest entry leaves its month heading out of sight.
         """
         highlighted = self.highlighted
         if highlighted is not None and all(
@@ -286,11 +215,7 @@ class DayList(OptionList):
         self._step(1)
 
     def _step(self, direction: int) -> None:
-        """The next enabled option that way, or stay put at the end.
-
-        Written out rather than borrowed from Textual's own navigation
-        helpers, which live in a private module.
-        """
+        """Highlight the next enabled option that way, or stay put."""
         if self.highlighted is None:
             return
         index = self.highlighted + direction
@@ -304,88 +229,55 @@ class DayList(OptionList):
 class ZecretScreen(Screen[None]):
     """A screen with typed access to the running Zecret app."""
 
-    #: Textual's own first-focusable guess, switched off. Every screen here
-    #: says what it opens focused on, in its on_mount -- and the guess
-    #: arrives *first*, so on a card that scrolls it was the guess that
-    #: decided where the view sat. Settings opened one section down:
-    #: focusing a widget asks Textual to bring it into view, and bringing
-    #: the first field into view means scrolling the heading above it off
-    #: the top. It went unnoticed while the panel itself was the first
-    #: focusable thing, because focusing a panel scrolls nothing; taking
-    #: the panel off the tab ring (see card()) put the field first and the
-    #: guess started moving the page.
-    #:
-    #: HelpScreen is a ModalScreen rather than one of these and keeps the
-    #: guess, which is what focuses its panel and lets the arrow keys read
-    #: a page taller than the terminal.
-    #:
-    #: Empty string rather than None: Textual reads None as "ask the app",
-    #: and the app's own default is "*" -- so None is how you inherit the
-    #: guess, not how you turn it off.
+    #: Textual's first-focusable guess, switched off: every screen says
+    #: what it opens focused on in on_mount. The guess runs first and
+    #: focusing scrolls the widget into view, which opened Settings one
+    #: section down. Empty string rather than None, which Textual reads as
+    #: "ask the app" (whose default is "*").
     AUTO_FOCUS: ClassVar[str | None] = ""
 
     @property
     def zecret(self) -> ZecretApp:
-        """The running app, typed -- `self.app` is only known as App here."""
+        """The running app, typed."""
         return cast("ZecretApp", self.app)
 
     @property
     def written_days(self) -> frozenset[dt.date]:
         """Every day the diary holds an entry for, as of now.
 
-        What the calendars mark. A frozenset of the keys, so what a calendar
-        holds cannot drift from the diary or be changed by it -- and handed
-        to the calendar, never looked up by it: a widget that reached for
-        storage would be the one place outside a screen that does.
+        What the calendars mark. Handed to a calendar, never looked up by
+        it: widgets do not reach for storage.
         """
         diary, _ = self.zecret.unlocked
         return frozenset(diary.entries)
 
     #: Whether this screen is part way through something that must finish
-    #: before the diary can lock -- re-encrypting it under a new password,
-    #: which is the one thing that does. Unlike blocks_lock this is not
-    #: unsaved work to ask about: it is seconds long, and a lock asked for
-    #: meanwhile waits for it rather than being refused (see
-    #: ZecretApp.action_lock).
+    #: before the diary can lock (re-encrypting under a new password). A
+    #: lock asked for meanwhile waits; see ZecretApp.action_lock.
     working = False
 
     @property
     def blocks_lock(self) -> bool:
         """Whether locking now would throw away something not yet saved.
 
-        Almost nothing does: every save in Zecret is immediate, so most
-        screens have nothing to lose. The editor is the exception, and says
-        so by overriding this. The idle timer asks every screen on the
-        stack before it locks.
+        Only the editor overrides this. The idle timer asks every screen
+        on the stack before it locks.
         """
         return False
 
     def save_pending(self) -> bool:
         """Persist what blocks_lock is holding, and say whether it landed.
 
-        The other half of blocks_lock: a screen that claims to be holding
-        something unsaved has to be able to save it on request, which is
-        what answering "save first" to the quit question calls. False
-        means the save did not happen and whoever asked should stay put --
-        the screen has already said why on its own error line.
-
-        A screen with nothing to lose has nothing to do here, and saying
-        it succeeded is the truth for it.
+        False means the save did not happen and the caller should stay
+        put; the screen has said why on its own error line.
         """
         return True
 
     def delete_day(self, date: dt.date) -> None:
-        """Remove the day's entry and save at once, and say which happened.
+        """Remove the day's entry, save at once, and say which happened.
 
-        The file still holds the entry if the save fails, and saving() puts
-        it back in memory too, so the deletion is not shown as having
-        stuck. Whatever the screen draws from the diary is its own to
-        redraw afterwards, either way.
-
-        A deletion that worked is said too, as a save, a lock and a change
-        of password are: otherwise the only sign is a row closing up, or in
-        the calendar one small mark going out, and the day named is the
-        check that it was the one meant.
+        If the save fails, saving() puts the entry back in memory. The
+        calling screen redraws afterwards either way.
         """
         diary, key = self.zecret.unlocked
         try:
@@ -400,20 +292,9 @@ class ZecretScreen(Screen[None]):
 class FormScreen(ZecretScreen):
     """A screen with fields to fill in and one line to say what went wrong.
 
-    Names the error label rather than each screen repeating the query for
-    it. Deliberately not extended to DatePromptScreen, which has an error
-    line of its own shape: it is a ModalScreen returning a date, so it
-    cannot inherit Screen[None], and reaching it would need a mixin that
-    fights both the type system and Textual's widget hierarchy for the sake
-    of one two-line method.
-
-    A modal that dismisses *nothing* is a different case, and PasswordScreen
-    is one: `ModalScreen[None]` and `Screen[None]` agree, so it inherits
-    this class outright and shares one copy of clear_inputs -- which matters,
-    because emptying the fields after a rejected attempt is a security
-    behaviour rather than a convenience. It lists ModalScreen first so that
-    Textual's styling gives it the translucent background of a dialog
-    instead of the opaque one behind this class.
+    PasswordScreen inherits this together with ModalScreen[None], which
+    only works because it dismisses nothing. A modal that returns a value
+    (DatePromptScreen) is a Screen of another type and cannot.
     """
 
     #: The id of the Label this screen writes its errors into.
@@ -422,39 +303,33 @@ class FormScreen(ZecretScreen):
     def set_error(self, message: str) -> None:
         """Show `message` on the error line, or clear it when empty.
 
-        Takes the line back from any advice sitting on it: something that
-        has gone wrong outranks something that merely might.
+        Takes the line back from any advice or status on it.
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
         line.remove_class("-advice", "-advice-strong", "-status")
-        # Plain: an error can quote the operating system, or a path.
         line.update(plain(message))
+
+    def set_status(self, message: str) -> None:
+        """Say what the screen is busy with, on the row errors use.
+
+        Styled by its own class: nothing has gone wrong.
+        """
+        line = self.query_one(f"#{self.ERROR_ID}", Label)
+        line.remove_class("-advice", "-advice-strong")
+        line.add_class("-status")
+        line.update(message)
 
     def advise_on_password(self, password: str) -> None:
         """Show how strong a password being chosen is, without refusing it.
 
-        Written on the error row rather than a row of its own, which is
-        what keeps this free: the password dialog is sized so that the
-        warning about a forgotten password never needs scrolling to, and
-        a row added anywhere inside it would be a row taken off that.
-        The row is also the right home for it -- it is the line that
-        speaks about the last keypress, and this is about the last
-        keypress.
+        Written on the error row, which is one fixed line: the password
+        dialog is sized to fit a 24-row terminal and has no row to spare.
+        The row's measured width goes to rate(), so advice that would be
+        cut off is shortened instead.
 
-        The row's own width is measured and handed to rate(), because the
-        two screens that call this have cards of different widths and the
-        row is fixed at one line: what does not fit is cut off rather than
-        wrapped. A width of zero -- a row not laid out yet -- costs the
-        advice and keeps the bar, which is the part worth having.
-
-        The `-advice` class is both the styling and the bookkeeping. It
-        marks the line as carrying something that can be withdrawn
-        silently, so this can clear its own message without clearing an
-        error that was put there instead -- which matters because a
-        rejected attempt empties the fields, and emptying a field is a
-        change like any other, arriving here a moment after the error did.
-        `-advice-strong` rides along with it to colour a password that
-        needs nothing said about it.
+        The `-advice` class is styling and bookkeeping at once. It marks
+        the line as withdrawable, so clearing the reading cannot clear an
+        error put there just before a rejected attempt emptied the fields.
         """
         line = self.query_one(f"#{self.ERROR_ID}", Label)
         strength = rate(password, max(line.content_region.width, 0))
@@ -468,29 +343,18 @@ class FormScreen(ZecretScreen):
         line.update(plain(strength.line()))
 
     def clear_inputs(self) -> None:
-        """Empty every text field.
-
-        Used after a rejected attempt: a password left sitting in a widget
-        on an unattended terminal costs more than retyping one does.
-        """
+        """Empty every text field, so a rejected password does not sit in
+        a widget on an unattended terminal."""
         for widget in self.query(Input):
             widget.value = ""
 
     def advance(self, submitted: Input) -> bool:
-        """On to a field still empty, if Enter came early; say if so.
+        """Move to a field still empty, if Enter came early; say if so.
 
-        For a form whose answer is spread over several fields. Enter is
-        what most forms take as "next", and here it submitted the whole
-        form from the first field: the confirmation was empty, so the
-        attempt failed as a mismatch, and failing clears every field --
-        the password just typed with it. Now Enter in a filled field
-        moves to the next empty one, and submits only once there is none.
-
-        The next after this one, then the first before it: a field
-        skipped by clicking past it is as empty as one not reached yet,
-        and submitting over it would clear everything typed after it. An
-        empty field itself submits as before, so the error says what is
-        missing rather than Enter doing nothing.
+        Enter in a filled field moves to the next empty one, looking after
+        this field and then before it, and the form submits only once none
+        is empty. An empty field itself submits, so the error says what is
+        missing.
         """
         if not submitted.value:
             return False

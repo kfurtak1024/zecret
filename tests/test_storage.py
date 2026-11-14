@@ -52,6 +52,20 @@ Required coverage:
       rejected as a ValueError, not as whatever argon2 raises. The screens
       catch ValueError; anything else reaches the user as a traceback over
       their diary.
+    - Once the key verifier has decrypted, the password is known to be
+      right, so a record that will not decrypt or parse, is filed under
+      the wrong day, or repeats a day is ZecretDamagedError -- never
+      ZecretDecryptError, which the unlock screen calls a wrong password.
+      A wrong password on a damaged file is still a wrong password: the
+      verifier is checked first. Damaged is still a ValueError and still
+      a refusal.
+    - A format version above this build's is ZecretVersionError, so the
+      writer is told to upgrade rather than that the file is broken. Any
+      other version that is not exactly 1 is a plain ValueError.
+    - A save removes temp files a killed save left beside the diary, and
+      only old ones: a young one may be another Zecret's write in flight.
+      Another file's temps are not touched, and a sweep that cannot run
+      does not fail the save.
 """
 
 from __future__ import annotations
@@ -73,6 +87,8 @@ from zecret.storage import (
     FORMAT_VERSION,
     DiaryFile,
     ZecretConflictError,
+    ZecretDamagedError,
+    ZecretVersionError,
 )
 
 PASSWORD = "correct horse battery staple"
@@ -365,8 +381,12 @@ def test_unlock_rejects_any_other_format_version(diary_path, version):
     document = read_document(diary_path)
     document["version"] = version
     diary_path.write_text(json.dumps(document))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as raised:
         DiaryFile.unlock(diary_path, PASSWORD)
+    newer = type(version) is int and version > FORMAT_VERSION
+    assert isinstance(raised.value, ZecretVersionError) == newer, (
+        "only a whole number above this build's is a newer Zecret's file"
+    )
 
 
 def test_unlock_rejects_a_file_with_no_version_at_all(diary_path):
@@ -394,8 +414,43 @@ def test_unlock_rejects_tampered_ciphertext(diary_path):
     document["entries"][1]["ciphertext"] = base64.b64encode(bytes(raw)).decode()
     diary_path.write_text(json.dumps(document))
 
-    with pytest.raises(ZecretDecryptError):
+    with pytest.raises(ZecretDamagedError):
         DiaryFile.unlock(diary_path, PASSWORD)
+
+
+def test_a_damaged_record_is_damage_not_a_wrong_password(diary_path):
+    """The verifier decrypted, so the password is right. Calling the record
+    that fails after it a wrong password sent the writer back to retyping
+    the right one."""
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["entries"][1]["ciphertext"] = base64.b64encode(b"x" * 40).decode()
+    diary_path.write_text(json.dumps(document))
+
+    with pytest.raises(ZecretDamagedError) as raised:
+        DiaryFile.unlock(diary_path, PASSWORD)
+    assert not isinstance(raised.value, ZecretDecryptError)
+    assert isinstance(raised.value, ValueError), "still caught as an unreadable file"
+
+
+def test_a_wrong_password_on_a_damaged_file_is_still_a_wrong_password(diary_path):
+    populated(diary_path)
+    document = read_document(diary_path)
+    document["entries"][1]["ciphertext"] = base64.b64encode(b"x" * 40).decode()
+    diary_path.write_text(json.dumps(document))
+
+    with pytest.raises(ZecretDecryptError):
+        DiaryFile.unlock(diary_path, WRONG_PASSWORD)
+
+
+def test_reopen_reports_damage_the_same_way(diary_path):
+    _, key, _ = populated(diary_path)
+    document = read_document(diary_path)
+    del document["entries"][0]["nonce"]
+    diary_path.write_text(json.dumps(document))
+
+    with pytest.raises(ZecretDamagedError):
+        DiaryFile.reopen(diary_path, key)
 
 
 def test_unlock_rejects_record_date_that_disagrees_with_ciphertext(diary_path):
@@ -406,7 +461,7 @@ def test_unlock_rejects_record_date_that_disagrees_with_ciphertext(diary_path):
     document["entries"][0]["date"] = UNWRITTEN_DAY.isoformat()
     diary_path.write_text(json.dumps(document))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ZecretDamagedError):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
@@ -416,7 +471,7 @@ def test_unlock_rejects_duplicated_record(diary_path):
     document["entries"].append(document["entries"][0])
     diary_path.write_text(json.dumps(document))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ZecretDamagedError):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
@@ -426,7 +481,7 @@ def test_unlock_rejects_malformed_record(diary_path):
     del document["entries"][0]["nonce"]
     diary_path.write_text(json.dumps(document))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ZecretDamagedError):
         DiaryFile.unlock(diary_path, PASSWORD)
 
 
@@ -1414,3 +1469,61 @@ def test_reopen_raises_when_the_diary_has_gone(diary_path):
     diary_path.unlink()
     with pytest.raises(FileNotFoundError):
         DiaryFile.reopen(diary_path, key)
+
+
+# --- leftover temp files ----------------------------------------------------
+
+
+def _age(path: Path, seconds: float) -> None:
+    then = path.stat().st_mtime - seconds
+    os.utime(path, (then, then))
+
+
+def test_save_removes_a_stale_temp_file_left_by_a_killed_save(diary_path):
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+    leftover = diary_path.with_name(f".{diary_path.name}.abc123.tmp")
+    leftover.write_bytes(b"ciphertext")
+    _age(leftover, storage.STALE_TEMP_SECONDS + 5)
+
+    diary.add_entry(Entry.new(DAYS[0], "text"))
+    diary.save(key)
+
+    assert not leftover.exists()
+    assert sorted(p.name for p in diary_path.parent.iterdir()) == [diary_path.name]
+
+
+def test_save_leaves_a_young_temp_file_alone(diary_path):
+    """It may be another Zecret's save, between its write and its rename."""
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+    in_flight = diary_path.with_name(f".{diary_path.name}.abc123.tmp")
+    in_flight.write_bytes(b"ciphertext")
+
+    diary.add_entry(Entry.new(DAYS[0], "text"))
+    diary.save(key)
+
+    assert in_flight.exists()
+
+
+def test_save_leaves_other_files_temps_alone(diary_path):
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+    other = diary_path.with_name(".other.enc.abc123.tmp")
+    other.write_bytes(b"not ours")
+    _age(other, storage.STALE_TEMP_SECONDS + 5)
+
+    diary.add_entry(Entry.new(DAYS[0], "text"))
+    diary.save(key)
+
+    assert other.exists()
+
+
+def test_a_sweep_that_cannot_run_does_not_fail_the_save(diary_path, monkeypatch):
+    diary, key = DiaryFile.create_new(diary_path, PASSWORD)
+
+    def refuse(self, pattern):
+        raise PermissionError("no listing")
+
+    monkeypatch.setattr(Path, "glob", refuse)
+    diary.add_entry(Entry.new(DAYS[0], "text"))
+    diary.save(key)
+
+    assert DAYS[0] in DiaryFile.unlock(diary_path, PASSWORD)[0].entries

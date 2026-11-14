@@ -17,6 +17,12 @@ Required coverage (fill in as crypto.py is implemented):
       a corrupted one reaches this function; anything but a ValueError
       escapes what the screens catch and meets the user as a traceback
       over their diary.
+    - KdfParams.from_dict() takes whole numbers and a named algorithm and
+      nothing coerced into either: "3", 3.9 and true are not cost factors,
+      and a header naming no KDF is not assumed to mean Argon2id.
+    - An allocation Argon2 could not make is a MemoryError, not the
+      ValueError of an unusable header: the file and the password are
+      both fine, and the screens say something different for each.
 """
 
 from __future__ import annotations
@@ -387,3 +393,45 @@ def test_derive_key_still_works_with_the_real_parameters():
     """The guard must not have narrowed what the diary actually uses."""
     params = KdfParams(salt=os.urandom(SALT_SIZE))
     assert len(derive_key("correct horse battery staple", params)) == KEY_SIZE
+
+
+# --- strict header parsing --------------------------------------------------
+
+
+@pytest.mark.parametrize("field", ["time_cost", "memory_cost", "parallelism"])
+@pytest.mark.parametrize("value", ["3", 3.9, 3.0, True, None])
+def test_from_dict_rejects_a_cost_factor_that_is_not_a_whole_number(field, value):
+    data = KdfParams.generate().to_dict()
+    data[field] = value
+    with pytest.raises(ValueError, match="malformed KDF header"):
+        KdfParams.from_dict(data)
+
+
+def test_from_dict_rejects_a_header_naming_no_algorithm():
+    data = KdfParams.generate().to_dict()
+    del data["algo"]
+    with pytest.raises(ValueError, match="unsupported KDF algorithm"):
+        KdfParams.from_dict(data)
+
+
+# --- running out of memory --------------------------------------------------
+
+
+def test_derive_key_reports_a_failed_allocation_as_memory_error(monkeypatch, cheap_params):
+    from argon2.exceptions import HashingError
+
+    import zecret.crypto
+
+    def refuse(**_kwargs):
+        raise HashingError(zecret.crypto._OUT_OF_MEMORY)
+
+    monkeypatch.setattr(zecret.crypto, "hash_secret_raw", refuse)
+    with pytest.raises(MemoryError):
+        derive_key("password", cheap_params)
+
+
+def test_the_out_of_memory_wording_is_the_library_s_own():
+    """Guards the error code the wording is looked up by."""
+    import zecret.crypto
+
+    assert "emory allocation" in zecret.crypto._OUT_OF_MEMORY
