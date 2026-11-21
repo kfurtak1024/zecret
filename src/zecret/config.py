@@ -1,27 +1,18 @@
 """User preferences: small, non-secret, and kept out of the diary.
 
-The diary file is for what you wrote. A theme is neither secret nor
-writing, and it has to be known *before* the diary is unlocked -- the lock
-screen is themed too -- so it cannot live inside a file that needs a
-password to read. The same goes for how long the diary waits before
-locking itself: the timer has to be running before anything is unlocked.
-Both get their own plaintext JSON file instead:
+The theme and the idle-lock wait both have to be known before the diary is
+unlocked, so they live in their own plaintext JSON file:
 
     {"theme": "gruvbox", "lock_after_minutes": 15}
 
-This is the one place besides storage.py that touches the filesystem, and
-the one file Zecret writes in the clear. It may hold preferences and
-nothing else: no entry text, no dates, no password, nothing derived from
-the key. Anything that would tell a reader of this file something about
-the diary's contents belongs in the diary.
+This is the one file Zecret writes in the clear. It may hold preferences
+and nothing else: no entry text, no dates, no password, nothing derived
+from the key.
 
-Preferences are regenerable, so this module is forgiving where storage.py
-is strict. A missing, unreadable, or malformed config falls back to
-defaults rather than raising: a mangled preference must never be the
-reason you cannot get to your diary. For the same reason the write is a
-plain write rather than the atomic dance storage.py performs -- the worst
-outcome is a file that fails to parse next launch and is replaced by
-defaults.
+Forgiving where storage.py is strict. A missing or malformed config falls
+back to defaults, because a mangled preference must never be why someone
+cannot reach their diary. The write is a plain one for the same reason:
+the worst outcome is defaults at the next launch.
 """
 
 from __future__ import annotations
@@ -33,15 +24,10 @@ from typing import Any, Self
 
 DEFAULT_CONFIG_PATH = Path.home() / ".zecret" / "config.json"
 
-#: What the app uses until told otherwise, and the fallback for anything
-#: unreadable. Matches Textual's own default theme.
+#: The fallback for anything unreadable. Matches Textual's own default.
 DEFAULT_THEME = "textual-dark"
 
-#: Minutes of no typing before the diary locks itself. Long enough not to
-#: interrupt someone thinking about what to write, short enough that a
-#: walked-away-from terminal does not stay open all afternoon. Zero turns
-#: it off, which is a choice the settings screen offers rather than the
-#: default it ships.
+#: Minutes of no activity before the diary locks itself. Zero turns it off.
 DEFAULT_LOCK_AFTER_MINUTES = 15
 
 DIR_MODE = 0o700
@@ -53,14 +39,10 @@ class Config:
 
     Attributes:
         path: The file these were read from, and where save() writes back.
-        theme: Name of the Textual theme to use. Not validated here --
-            config.py has no opinion on which themes exist; the app checks
-            the name against the themes actually registered and falls back
-            if it does not know it.
-        lock_after_minutes: Minutes of inactivity before the diary locks
-            itself, or 0 to never lock. How long a minute is and what
-            counts as inactivity are the app's business; this only
-            remembers the number, and only a whole non-negative one.
+        theme: Name of the Textual theme. Not validated here; the app
+            checks it against the themes actually registered.
+        lock_after_minutes: Minutes of inactivity before the diary locks,
+            or 0 to never lock. Always a whole non-negative number.
     """
 
     path: Path
@@ -71,9 +53,8 @@ class Config:
     def load(cls, path: Path) -> Self:
         """Read preferences from `path`, falling back to defaults.
 
-        Never raises: a missing file is the normal first-run case, and a
-        corrupt or unreadable one is treated the same way, since the diary
-        must stay reachable regardless.
+        Never raises: a missing, corrupt or unreadable file all mean
+        defaults.
         """
         config = cls(path=path)
         try:
@@ -88,10 +69,8 @@ class Config:
             config.theme = theme
 
         lock_after = document.get("lock_after_minutes")
-        # bool is an int in Python, and `true` in the file is not a number
-        # of minutes. A negative one would lock the diary the instant it
-        # opened, so it falls back rather than being clamped -- the file is
-        # not saying anything we can act on.
+        # bool is an int in Python. A negative wait would lock the diary the
+        # instant it opened, so it falls back rather than being clamped.
         if isinstance(lock_after, int) and not isinstance(lock_after, bool) and lock_after >= 0:
             config.lock_after_minutes = lock_after
         return config
@@ -100,9 +79,8 @@ class Config:
         """Write preferences back to self.path, creating the directory.
 
         Raises:
-            OSError: if the file cannot be written. The caller decides what
-                to say about it -- the setting still applies to this
-                session, it just will not outlive it.
+            OSError: if the file cannot be written. The setting still
+                applies to this session.
         """
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
         self.path.write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")

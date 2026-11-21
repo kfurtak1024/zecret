@@ -51,7 +51,9 @@ from textual.widgets import Input
 
 from zecret.app import ZecretApp
 from zecret.models import Entry
-from zecret.screens.editor import DiaryTextArea, EditorScreen, strong_spans
+from zecret.screens.editor import EditorScreen
+from zecret.screens.prose import strong_spans
+from zecret.screens.text_area import DiaryTextArea
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"

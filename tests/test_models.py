@@ -11,6 +11,8 @@ Required coverage:
       including datetime precision and the date as a date (not a datetime).
     - body_snippet() picks the first line worth showing and trims it, since
       it is what stands in for a title everywhere an entry is listed.
+    - from_json_bytes() refuses a body that is not text, rather than
+      building an Entry the screens would fail on later.
 """
 
 from __future__ import annotations
@@ -280,3 +282,11 @@ def test_snippet_skips_leading_blank_lines():
 def test_snippet_of_an_empty_body_is_labelled():
     assert body_snippet("") == EMPTY_BODY
     assert body_snippet("   \n\n  ") == EMPTY_BODY
+
+
+@pytest.mark.parametrize("body", [None, 7, ["a"], {"text": "a"}])
+def test_from_json_bytes_rejects_a_body_that_is_not_text(body):
+    payload = json.loads(Entry.new(DAY, "text").to_json_bytes())
+    payload["body"] = body
+    with pytest.raises(ValueError, match="malformed entry payload"):
+        Entry.from_json_bytes(json.dumps(payload).encode("utf-8"))

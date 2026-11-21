@@ -164,7 +164,7 @@ async def masked(pilot: Pilot[None]) -> None:
     at 0,0 on the first word would look like the mask had simply failed
     to cover the beginning.
     """
-    from zecret.screens.editor import DiaryTextArea
+    from zecret.screens.text_area import DiaryTextArea
 
     await pilot.press("enter")
     await pilot.pause()

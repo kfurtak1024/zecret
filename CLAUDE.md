@@ -1,905 +1,484 @@
 # CLAUDE.md — Zecret
 
-This file guides Claude Code when working in this repository. Read it in
-full before implementing anything.
+Guidance for Claude Code in this repository. Read it in full before
+implementing anything.
+
+This file states the rules as they are. Why a rule exists is given in one
+line where it constrains future changes; the story of how it was found
+belongs in the commit history.
 
 ## What this project is
 
-Zecret is an encrypted terminal diary. A single user, locally, protects
-their diary entries with a master password. The app is a Textual-based TUI
-— no web server, no sync, no multi-user concerns.
+Zecret is an encrypted terminal diary: one user, local, protected by a
+master password. A Textual TUI. No server, no sync, no multi-user.
 
-**One entry per calendar day.** The date is the entry's identity: there is
-no id and no title, a day holds at most one entry, and opening a day means
-writing it or continuing what is already there. The date is the *local*
-day, so an entry written at 23:50 belongs to the day the writer would name.
-Screens ask for a date and hand it to the editor, which looks up whether
-that day has been written — nothing in the UI decides between "new" and
-"edit" for itself.
+**One entry per calendar day.** The date is the entry's identity: no id,
+no title, at most one entry per day. The date is the *local* day. Screens
+ask for a date and hand it to the editor, which looks up whether that day
+is written. Nothing in the UI decides between "new" and "edit".
 
-The repository is **implemented and tested**. Keep the public interfaces
-as they are unless you find a concrete reason to change one; if you do,
-update this file to match.
+The repository is **implemented and tested**. Keep public interfaces as
+they are unless there is a concrete reason to change one; if you do,
+update this file.
 
 ## Tech stack (fixed — do not substitute)
 
-- Python 3.13, managed with `uv` (`uv sync`, `uv run`, `uv add <pkg>`) and
-  pinned in `.python-version`. `requires-python` is `>=3.13` — a floor, not
-  a pin, so newer interpreters are permitted — but 3.13 is the only one
-  developed and tested on, and a mistake that only a later version forgives
-  is meant to fail here rather than on a user's machine. The floor is not
-  higher because Zecret is published to PyPI: a `pip`/`pipx` user gets
-  whatever interpreter their system ships, and a floor above that is a
-  resolver error rather than an install. `requires-python`, mypy's
-  `python_version`, ruff's `target-version` and the CI job all name 3.13,
-  and move together if it ever rises.
-- **Textual** for the TUI — use widgets/screens/CSS idiomatically; don't
-  hand-roll ANSI escape codes or use `curses` directly
-- **argon2-cffi** for key derivation (Argon2id specifically, not Argon2i/d)
-- **zxcvbn** for rating a password being chosen — see `strength.py` and the
-  convention below. Pure Python, no native code; it is advisory only and
-  nothing in the crypto or storage path depends on it.
-- **cryptography** for AEAD encryption
-- **pytest** (+ `pytest-asyncio` for Textual screen tests) for testing
-- **ruff** for linting and formatting (`uv run ruff check .`,
-  `uv run ruff format .`) — config lives in `pyproject.toml`
-- **mypy** in strict mode over `src/` (`uv run mypy`)
+- **Python 3.13**, managed with `uv`, pinned in `.python-version`.
+  `requires-python` is `>=3.13`: a floor, because Zecret is on PyPI and a
+  `pip` user gets whatever interpreter their system ships. 3.13 is the
+  only version developed and tested on. `requires-python`, mypy's
+  `python_version`, ruff's `target-version` and CI all name 3.13 and move
+  together.
+- **Textual** for the TUI. Use widgets, screens and CSS idiomatically; no
+  hand-rolled ANSI, no `curses`.
+- **argon2-cffi** for key derivation (Argon2id only).
+- **cryptography** for AEAD encryption.
+- **zxcvbn** for rating a password being chosen. Advisory only; nothing in
+  the crypto or storage path depends on it.
+- **pytest** (+ `pytest-asyncio`, `pytest-xdist`, `hypothesis`).
+- **ruff** for lint and format; **mypy** strict over `src/` and `tools/`.
 
-Dependency floors track current releases rather than the oldest version
-that happens to work; `cryptography` in particular should not be allowed to
-drift onto an unpatched release. Dev-only tools live in the PEP 735
-`[dependency-groups]` table, which `uv sync` installs by default — so a
-bare checkout can run `uv run pytest` with no extra flags.
+Dependency floors track current releases; `cryptography` in particular
+must not drift onto an unpatched release. **Textual has a ceiling below
+its next major**, because Zecret relies on a few internals with no public
+equivalent: `ZecretApp` overrides `_fatal_error` and uses `_notifications`
+/ `_unnotify` in `pop_screen`, and the editor depends on the order
+TextArea paints in. Do not add another internal where a public hook
+exists (`notify_style_update()` is how the mask clears TextArea's line
+cache). Dev tools live in the PEP 735 `[dependency-groups]` table, which
+`uv sync` installs by default.
 
 ## Architecture
 
 ```
 src/zecret/
-├── crypto.py     # KDF (Argon2id) + AEAD encrypt/decrypt. No file I/O, no entry semantics.
-├── models.py     # Entry dataclass (date + body) + JSON (de)serialization. No crypto, no file I/O.
-├── storage.py    # DiaryFile: owns the on-disk format, atomic writes, ties crypto+models together.
-├── config.py     # Preferences (the theme) in a plaintext file. Never diary content — see below.
-├── strength.py   # How strong a chosen password is (zxcvbn). The only place the password reaches third-party code.
-├── app.py        # ZecretApp (Textual App subclass): screen routing, session state, idle lock, guarded quit.
-├── screens/      # One file per screen: unlock, entry_list, calendar_view, editor, search,
-│                 # settings, help.
-│                 # Plus shared pieces: base.py (ZecretScreen for typed
-│                 # access to the app, FormScreen for the screens with
-│                 # fields and an error line, card() for the scrolling
-│                 # panel they sit in, the date/snippet formatting every
-│                 # screen shares, the warning about a forgotten
-│                 # password, the wording for a refused save, and
-│                 # deleting a day, which the list and the calendar
-│                 # both offer),
-│                 # header.py (both bars -- the title above and the keys
-│                 # below, which every screen wears including the modals),
-│                 # confirm.py (yes/no modal), date_prompt.py (which-day
-│                 # modal), calendar.py (the month grids -- one inside that
-│                 # modal, twelve in the calendar view -- which are widgets
-│                 # rather than screens) and password.py (the
-│                 # change-password dialog).
-└── __main__.py   # CLI entry point (`zecret` command): arg parsing, launches ZecretApp.
+├── crypto.py     # KDF (Argon2id) + AEAD. Bytes in, bytes out.
+├── models.py     # Entry dataclass + JSON (de)serialization.
+├── storage.py    # DiaryFile: on-disk format, atomic writes, crypto + models.
+├── config.py     # Preferences in a plaintext file. Never diary content.
+├── strength.py   # Password rating (zxcvbn). The only place the password
+│                 # reaches third-party code.
+├── app.py        # ZecretApp: routing, session state, idle lock, guarded quit.
+├── screens/
+│   ├── base.py           # ZecretScreen, FormScreen, DayList, card(), plain(),
+│   │                     # shared formatting and wording, delete_day().
+│   ├── header.py         # DiaryHeader and DiaryFooter (every screen, modals too).
+│   ├── unlock.py, entry_list.py, calendar_view.py, editor.py, search.py,
+│   │   settings.py, help.py          # one screen each
+│   ├── confirm.py, date_prompt.py, password.py   # modals
+│   ├── calendar.py       # MonthCalendar / YearCalendar widgets
+│   ├── text_area.py      # DiaryTextArea: editing keys, mask, emphasis
+│   └── prose.py          # pure text rules: word runs, emphasis spans
+└── __main__.py   # CLI entry point.
 ```
 
-Keep this layering strict:
-- `crypto.py` knows nothing about entries or files — just bytes in, bytes out.
-- `models.py` knows nothing about encryption or file paths.
-- `storage.py` is the only place that touches the filesystem or combines
-  crypto + models — with one bounded exception, `config.py`.
-- `config.py` owns `~/.zecret/config.json`, the only file Zecret writes in
-  the clear. It exists because the theme has to be known before the diary
-  is unlocked -- as does how long the diary may sit idle, since that timer
-  runs from launch -- and a preference is neither secret nor writing. **It may
-  hold preferences and nothing else** — no entry text, no dates, no
-  password, nothing derived from the key. Anything that would tell a reader
-  of that file something about the diary's contents belongs in the diary,
-  behind the password. Security requirement 4 below is about entry content
-  and passwords; a theme name is neither, which is why this is an exception
-  and not a violation. It is also forgiving where `storage.py` is strict: a
-  missing or corrupt config falls back to defaults, because a mangled
-  preference must never be why someone cannot reach their diary. The path
-  is the default rather than a constant: `--config` / `ZECRET_CONFIG_PATH`
-  redirects it, which is what lets a development build run without writing
-  the preferences someone actually uses. `ZecretApp` resolves the fallback
-  when it is constructed, not at import time, so tests can redirect it —
-  `__main__.py` passes `None` for "you decide" rather than naming the
-  default itself, and `conftest.py`'s autouse `isolated_config` fixture
-  depends on that.
-- `screens/*.py` never call `crypto.py` or the filesystem directly — they
-  only go through `app.diary` (a `DiaryFile`) and `app.key`. Where a screen
-  needs something crypto-shaped, storage grows the method: this is why
-  `DiaryFile.verify_password()` exists, for the password dialog's re-check
-  of the current password, and why `change_password()` saves the re-keyed
-  diary itself rather than leaving the screen to save it and undo the
-  re-key if that fails.
-- Presentation belongs to the screens, and stays there. The entry list
-  groups days under a month heading; `DiaryFile.entries` is an unordered
-  mapping and knows nothing about it. Sorting, grouping and wording are the
-  screen's business — don't push them down into storage to save the screen
-  a `sorted()`.
-- **How wide a row is belongs to the terminal, not to Python.** A list row
-  carries the entry's whole first line and `app.tcss` trims it at render
-  time (`text-wrap: nowrap` + `text-overflow: ellipsis`), so a wide window
-  shows more of a day for free. Never compute the trim from a measured
-  width: that makes the row text depend on the size, which means rebuilding
-  on resize, and `refresh_entries()` replaces every row of the list —
-  tenths of a second at ten years, on every event of a window drag.
-  `SNIPPET_CAP` in `screens/base.py` is a guard against one pasted
-  paragraph with no newline in it, not a display width; it is far past any
-  terminal, and shortening it back into a width would undo this. It is
-  also, now, most of what a rebuild costs: an OptionList measures every
-  row up front, and an ellipsised row is measured across its whole
-  snippet.
-- **Text Zecret did not write never reaches Textual as markup.** A plain
-  string handed to a `Label`, an `Option` or `notify()` is parsed as
-  markup, and a stray closing tag in it raises `MarkupError` — taking the
-  app down at the moment it was trying to show something. Entry text is the
-  obvious case, but not the only one: an error can quote the diary file
-  (which is exactly when it is damaged), a path, or the operating system.
-  So entry text, error lines (`FormScreen.set_error`, the date prompt's),
-  the confirm question and the help's key rows all go through `plain()` in
-  `screens/base.py`, and a notification carrying anything but a constant
-  passes `markup=False`. A test drives each with `[/bold]`. Headless tests
-  mount no toasts, so a notification is checked by rendering a `Toast`
-  from it — that is how this hid from the suite.
-- **A list of days is an `OptionList`, never a `ListView`.** Both lists —
-  the entry list and search — are `DayList` (`screens/base.py`), an
-  `OptionList` that stops at its ends instead of wrapping. A `ListView` is
-  a widget per row, each mounted, styled and laid out whether or not it is
-  on screen: ten years of entries was 7,500 widgets and eight seconds on
-  every return to the list, and every keystroke in search that still
-  matched most of the diary. An `OptionList` is one widget that draws the
-  rows in view, and builds the same ten years in well under a second.
-  Three things come with it. A row is built with `day_row()`, whose text
-  is `Content` and never a plain string: Textual reads a string as markup,
-  so a first line holding `[bold]` changed style and one holding a stray
-  `[/bold]` raised `MarkupError` and took the app down whenever the list
-  was drawn. A
-  rebuild is synchronous and needs no lock, since nothing in it awaits —
-  and it happens on resume only when the diary has changed since the rows
-  were drawn (`unchanged()` in `screens/base.py`, which compares entries by
-  identity: `Entry` is frozen, so an edit is always a new object).
-  And the page keys stay with the screen (`priority=True`):
-  `OptionList`'s own page up finds nothing enabled above the month heading
-  at the top and drops the highlight. They count screen *lines*, not rows
-  (`HEADING_LINES`): a heading is two lines, and a jump of a screenful of
-  rows stepped over days in a sparse diary without ever showing them. `tests/test_scale.py` holds the
-  rebuild to a ceiling at ten years.
+Layering, kept strict:
 
-Interface note: `DiaryFile.create_new()` and `DiaryFile.unlock()` return
-`(DiaryFile, key)`, not just the `DiaryFile`. The derived key has to reach
-`app.key`, and screens may not call `derive_key()` themselves under the
-layering rule above — so storage hands it back, the same way
-`change_password()` already returns the new key.
+- `crypto.py` knows nothing about entries or files.
+- `models.py` knows nothing about encryption or paths.
+- `storage.py` is the only place that touches the filesystem or combines
+  crypto and models, with one bounded exception: `config.py`.
+- `config.py` owns `~/.zecret/config.json`, the only file written in the
+  clear. **Preferences and nothing else**: no entry text, no dates, no
+  password, nothing derived from the key. It is forgiving where storage is
+  strict: a missing or corrupt config means defaults. The path is
+  redirectable (`--config` / `ZECRET_CONFIG_PATH`). `ZecretApp` resolves
+  the default when constructed, not at import, so tests can redirect it:
+  `__main__.py` passes `None`, and `conftest.py`'s autouse
+  `isolated_config` depends on that.
+- `screens/*.py` never call `crypto.py` or the filesystem. They go through
+  `app.diary` and `app.key`. Where a screen needs something crypto-shaped,
+  storage grows the method (`verify_password()`, `change_password()`).
+- `DiaryFile.create_new()` and `unlock()` return `(DiaryFile, key)`,
+  because screens may not call `derive_key()`.
+- **Presentation belongs to the screens.** `DiaryFile.entries` is an
+  unordered mapping. Sorting, grouping and wording stay in the screen.
+- `screens/prose.py` is pure functions on strings, with no Textual. Rules
+  about where words and phrases are go there; drawing goes in
+  `text_area.py`; anything about the diary goes in `editor.py`.
+
+### Rules the screens follow
+
+- **Row width belongs to the terminal.** A list row carries the entry's
+  whole first line and `app.tcss` trims it at render time. Never compute
+  the trim from a measured width: that means rebuilding every row on
+  resize. `SNIPPET_CAP` is a guard against one huge pasted line, not a
+  display width.
+- **Text Zecret did not write never reaches Textual as markup.** A string
+  handed to a `Label`, an `Option` or `notify()` is parsed as markup and a
+  stray closing tag raises `MarkupError`. Entry text, error lines, paths,
+  OS errors and anything quoting the diary file go through `plain()`, and
+  a notification carrying anything but a constant passes `markup=False`.
+  Headless tests mount no toasts, so a notification is tested by rendering
+  a `Toast` from it.
+- **A list of days is a `DayList` (an `OptionList`), never a `ListView`.**
+  A ListView mounts a widget per row. Rows are built with `day_row()`. A
+  rebuild is synchronous and happens on resume only when the diary changed
+  (`unchanged()`, by identity). The page keys stay with the screen
+  (`priority=True`) and count screen lines, not rows (`HEADING_LINES`).
+  `tests/test_scale.py` holds the rebuild to a ceiling at ten years.
+- **A card is built with `card()`**, a `VerticalScroll` with
+  `can_focus=False`, so the panel is not an empty stop on the tab ring.
+  `HelpScreen` builds its own and stays focusable. `ZecretScreen.AUTO_FOCUS`
+  is `""` (not `None`): every screen says what it opens focused on in
+  `on_mount`. `tests/test_chrome.py` checks both.
+- **Every screen carries a `DiaryFooter`, modals included.** A modal
+  without one shows the bar of the screen beneath, with every key dead.
+- **Notifications belong to the app.** `ZecretApp.push_screen` clears them
+  (pushing starts something new). `pop_screen` carries a message across
+  one pop only, judged by `raised_at`. Anything that pushes a screen and
+  then notifies must do it in that order; see `lock()`.
 
 ## Security requirements (non-negotiable)
 
-These are the properties the test suite and any code review should verify.
-Do not weaken any of these for convenience:
+Do not weaken any of these for convenience.
 
-1. **Argon2id only**, with the parameters already stubbed in
-   `KdfParams` (`time_cost=3, memory_cost=65536, parallelism=4` — roughly
-   OWASP-recommended interactive settings). Do not drop to PBKDF2 or
-   lower these defaults.
-2. **Unique nonce per encryption call, always.** Never let a nonce be
-   reused with the same key. Generate it fresh inside `encrypt()` — never
-   pass one in from outside.
-3. **AEAD only** (authenticated encryption) — never plain CBC or CTR mode
-   without a MAC. Wrong-password / tampered-data detection depends on this:
-   decryption must fail loudly (`ZecretDecryptError`) rather than silently
-   returning garbage. The cipher is **AES-256-GCM**: `cryptography` still
-   does not expose XChaCha20-Poly1305 (checked against 50.0.0), so the
-   documented fallback is what ships. It is fixed rather than negotiated —
-   the file format records no cipher id, so changing it needs a format
-   version bump and a migration.
-4. **No plaintext ever touches disk.** No temp files containing decrypted
-   entry content, no debug logging of entry text or password, no writing
-   plaintext for "crash recovery" purposes.
-5. **Atomic writes only.** `DiaryFile.save()` must write to a temp file in
-   the same directory, `fsync()`, then `os.replace()` over the real path.
-   Never write directly to the live diary file in place. Creating a diary
-   is the one exception, and guards a different failure: it writes to the
-   target directly under `O_CREAT|O_EXCL` (`_create_exclusively()`), because
-   the temp-and-rename dance protects a diary that is already there, and
-   the rename is itself the step that would flatten one another process had
-   just created. There is no live file to damage at that point, and a
-   failed creation unlinks what it started.
-6. **Per-entry independent encryption.** Editing or deleting one day's
-   entry must never require decrypting or re-encrypting any other entry's
-   ciphertext. This is what the storage tests check for explicitly.
-7. **Fail closed.** Any decryption failure surfaces as
-   `ZecretDecryptError` and is caught at the UI layer to show "incorrect
-   password" — never swallowed, never defaults to an empty diary.
-8. **Never overwrite a diary this session did not last write.** A
-   `DiaryFile` holds the whole diary in memory, so a second Zecret open on
-   the same file would otherwise write its copy over the first's entries
-   with no error at all. `save()` compares the file's mtime and size
-   against what they were when it last read or wrote it, and raises
-   `ZecretConflictError` instead. Every screen that saves makes its
-   change inside `DiaryFile.saving(key)`, which puts the in-memory diary
-   back when the save fails, and says so. Don't hand-write that undo in a
-   screen: it needs storage's insides to get right, and the copy that put
-   a deletion back got it wrong. The same failure reaches creating a
-   diary by a different road — two Zecrets started with no diary, both
-   passing the "is one there?" check, both going on to write — and the
-   mtime check cannot see it, since neither has a stamp to compare
-   against. That case is closed by the exclusive create in requirement 5,
-   not here.
+1. **Argon2id only**, with the `KdfParams` defaults (`time_cost=3,
+   memory_cost=65536, parallelism=4`). No PBKDF2, no lower defaults.
+2. **Unique nonce per encryption call.** Generated inside `encrypt()`,
+   never passed in.
+3. **AEAD only.** The cipher is **AES-256-GCM** (`cryptography` does not
+   expose XChaCha20-Poly1305). It is fixed, not negotiated: the format
+   records no cipher id, so changing it needs a version bump and a
+   migration. Decryption fails loudly (`ZecretDecryptError`).
+4. **No plaintext ever touches disk.** No temp files of decrypted content,
+   no logging of entry text or password. A crash counts:
+   `ZecretApp._fatal_error` prints the traceback without locals, and
+   `Entry.body` and `DiaryFile.entries` are out of their reprs.
+   `tests/test_crash.py` guards this.
+5. **Atomic writes only.** `save()` writes a temp file in the same
+   directory, fsyncs, then `os.replace()`s. Creating a diary is the one
+   exception: it writes directly under `O_CREAT|O_EXCL`
+   (`_create_exclusively()`), because the rename is the step that would
+   flatten a diary another process had just created. Stale temp files from
+   a killed save are swept by the next save, only when older than
+   `STALE_TEMP_SECONDS`.
+6. **Per-entry independent encryption.** Editing or deleting one entry
+   never decrypts or re-encrypts another entry's ciphertext.
+7. **Fail closed.** Every failure to read the diary is a refusal: never
+   swallowed, never a diary with days left out, never an empty one. The
+   key verifier is checked first, and its failure is the only one that
+   means a wrong password (`ZecretDecryptError`). A record that fails
+   after it is `ZecretDamagedError`; a newer format is
+   `ZecretVersionError` (both `ValueError`s). Argon2 failing to allocate
+   is `MemoryError`. The unlock screen names each one. The KDF header is
+   parsed strictly: whole numbers and a named algorithm, nothing coerced.
+8. **Never overwrite a diary this session did not last write.** `save()`
+   compares the file's mtime and size with what they were at the last
+   read or write and raises `ZecretConflictError`. Every screen that saves
+   does so inside `DiaryFile.saving(key)`, which restores memory if the
+   save fails. Do not hand-write that undo in a screen.
+   The editor does not stop at a refusal. It re-reads the file
+   (`DiaryFile.reopen`) and, if this day there is still what it opened,
+   files the day into the re-read diary and adopts it. If the other
+   session changed the same day, nothing is written until ctrl+s has asked
+   whose version to keep (`EditorScreen._save_onto_reread`), and nothing
+   is adopted while that question is open.
+
+**The idle lock is checked on the event path as well as on a timer.**
+`ZecretApp.on_event` calls `lock_if_idle()` *before* stamping an activity
+event. The timer sleeps on the monotonic clock, which stops during
+suspend, so the first key after resume arrives before the tick; stamping
+it first would keep the diary open. The event that finds the diary overdue
+locks it and is not delivered.
+
+Known limits are listed in `SECURITY.md` under *Known and accepted*,
+including that integrity is per record, not per file.
 
 ## File format
 
-See the module docstring in `storage.py` for the authoritative JSON shape.
+The module docstring in `storage.py` is the authoritative shape.
 
-**The format is version 1 and that number is now frozen.** It was reset to
-1 while no diary anywhere depended on it — the last moment that was free to
-do. From here the header field is a promise, not a draft: if you change the
-format, bump the version and **write a migration** keyed off it. Renumbering
-again, or quietly widening what version 1 means, is not an option, and
-"nobody is using it yet" is no longer true. `_load_document()` matches the
-version exactly (`type is int`, not `==`, because `True == 1` and
-`1.0 == 1` in Python and neither is a format version) and refuses anything
-else rather than half-reading it.
+**The format is version 1 and that number is frozen.** A change bumps the
+version and adds a migration keyed off it. `_load_document()` matches the
+version exactly (`type is int`) and refuses anything else.
 
 Entries carry `created_at` and `updated_at`, and no screen shows either.
-That is deliberate and settled: the date names the entry, and a diary does
-not need to tell you when you typed it. They stay in the format because
-taking them out would be a format change for no gain — but don't add UI for
-them, and don't take them as licence to add more fields "since they're
-free".
+That is settled: do not add UI for them, and do not add more fields.
 
-Known and accepted: the record dates are outside the ciphertext, so the
-file reveals *which days* have entries, though not a word of what they say.
-That is what lets a record be named without decrypting it, which in turn is
-what the outer-vs-authenticated date check depends on. Don't "fix" it by
-moving the date inside without replacing that check with something equally
-strong.
+Known and accepted: record dates are outside the ciphertext, so the file
+reveals which days have entries. The outer-vs-authenticated date check
+depends on that. Do not move the date inside without replacing that check
+with something equally strong.
 
 ## Working on it
 
-The build order the project was first written in — `crypto.py`, then
-`models.py`, `storage.py`, `app.py` + `unlock.py`, `entry_list.py`,
-`editor.py`, `search.py`, `settings.py`, and `app.tcss` last — is still the
-right order of priorities for a change that spans layers: get storage right
-and tested before touching the UI, and leave visual polish until the
-behavior is settled. Bugs in `crypto.py` and `storage.py` are the ones that
-actually matter.
+For a change that spans layers, the order of priorities is `crypto.py`,
+`models.py`, `storage.py`, then `app.py` and the screens, and `app.tcss`
+last. Get storage right and tested before touching the UI. Bugs in
+`crypto.py` and `storage.py` are the ones that matter most.
 
-**Never develop against a real diary, and never run `uv run zecret` bare.**
-The working tree is the program: an unfinished `storage.py` opening
-someone's own diary is how entries get lost. Use the script instead —
+**Never develop against a real diary, and never run `uv run zecret`
+bare.** Use:
 
 ```
 ./zecret-dev.sh
 ```
 
-— which seeds a throwaway diary if there is not one yet and opens it with
-**both** overrides, `--path` and `--config`. Both are required and only one
-of them fails loudly: forgetting `--path` shows you your own diary, which
-you notice, while forgetting `--config` silently writes the preferences you
-actually use. That is the whole reason the pair is in a script rather than
-in a shell alias someone retypes.
+It seeds a throwaway diary and opens it with **both** `--path` and
+`--config`. Forgetting `--config` silently writes the preferences you
+actually use, which is why the pair is a script. Everything lives in
+`.zecret-dev/`, gitignored and absent from the sdist allowlist.
 
-Everything lives in `.zecret-dev/` inside the checkout — gitignored, and
-absent from the sdist allowlist in `pyproject.toml`, which is what keeps it
-out of a release. Delete it whenever; the next run rebuilds it.
-
-`tools/seed_dev_diary.py` is what does the seeding, and is worth running
-directly when you want different data: a few hundred generated days,
-deterministic per `--seed`, behind the password `dev`. It **refuses to
-write anywhere inside `~/.zecret`**, which is the guard that makes it safe
-to point `--path` somewhere by hand. A few of the seeded days are awkward
-on purpose (very long, one word, emoji, an unbroken line with nothing to
-wrap on) and it prints which dates they landed on. Add to `EDGE_CASES` when
-a new shape breaks something, so the next regeneration still has it.
+`tools/seed_dev_diary.py` does the seeding (password `dev`, deterministic
+per `--seed`). It refuses to write inside `~/.zecret`. Add to `EDGE_CASES`
+when a new shape of entry breaks something.
 
 ## Testing
 
-- Every test file lists its required coverage in its docstring — treat
-  those lists as a checklist, not a suggestion, and extend the list when
-  you add behavior worth guarding.
-- Run `uv run pytest` before considering any module done, and
+- Every test file lists its required coverage in its docstring. Treat the
+  list as a checklist and extend it when adding behaviour.
+- **Test the path the user takes, not only the function behind it.** A
+  test that sets state and calls the check directly can pass while the
+  event path is wrong, which is how the idle lock's suspend hole went
+  unnoticed. Where a behaviour is reached by a key or an event, at least
+  one test drives it that way.
+- Run `uv run pytest` before considering a module done, and
   `uv run ruff check . && uv run ruff format . && uv run mypy` before
-  calling it clean. CI (`.github/workflows/ci.yml`) runs exactly those
-  three, on the single interpreter named in `.python-version`. There is no
-  version matrix: `requires-python` permits newer interpreters, but 3.13 is
-  the one the project stands behind on every push.
-- The suite runs in parallel (`-n auto` in `addopts`, via
-  `pytest-xdist`), which is what keeps it at seconds rather than minutes.
-  The cost is not the code under test: Textual's `Pilot` waits for an app
-  to settle by sleeping in 20 ms steps until it stops using CPU, twice per
-  key pressed, so a screen test is mostly asleep, and serially the suite
-  spent two of its three minutes idle. Parallel workers overlap those
-  sleeps. Every test must therefore stand alone — its own `tmp_path`, no
-  shared state, no reliance on order — which they already do. Use `-n0`
-  to debug a test in one process with breakpoints and readable output.
-- CI runs the suite as `pytest --cov`, with the threshold in
-  `[tool.coverage.report]`. It is set to where the suite stands, so it only
-  ever ratchets up. Coverage is deliberately not in `addopts`: a local
-  `uv run pytest` should stay fast enough to run constantly.
-- Any test that opens a diary must request the `cheap_kdf` fixture
-  (`pytestmark = pytest.mark.usefixtures("cheap_kdf")` at the top of the
-  module). It keeps real Argon2id at test cost factors. It is not autouse
-  on purpose: `tests/test_crypto.py` asserts the real OWASP parameters,
-  and a blanket patch would leave that assertion passing against nothing.
-- `filterwarnings = ["error"]` is set: a deprecation warning fails the
-  suite rather than accumulating silently.
-- CI sets `UV_LOCKED=1`, so `uv.lock` is committed and must be regenerated
-  (and committed) whenever `pyproject.toml` changes. Otherwise every job
-  fails on a stale lockfile.
-- For `storage.py`, use `tmp_path` (pytest fixture) for all file I/O in
-  tests — never touch a real `~/.zecret/` during tests.
-- Textual screens can be tested with Textual's `App.run_test()` /
-  `Pilot` API for basic interaction smoke tests; full UI test coverage
-  is lower priority than crypto/storage correctness.
+  calling it clean. CI runs those on the one interpreter in
+  `.python-version`.
+- The suite runs in parallel (`-n auto`). Every test stands alone: its own
+  `tmp_path`, no shared state. Use `-n0` to debug.
+- CI runs `pytest --cov -m ""`; the threshold in `[tool.coverage.report]`
+  only ratchets up. Coverage and the `slow` tests are not in the default
+  local run.
+- Any test that opens a diary requests the `cheap_kdf` fixture
+  (`pytestmark`). It is not autouse, because `tests/test_crypto.py`
+  asserts the real parameters.
+- `filterwarnings = ["error"]`: a deprecation warning fails the suite.
+- CI sets `UV_LOCKED=1`, so `uv.lock` is regenerated and committed
+  whenever `pyproject.toml` changes.
+- Storage tests use `tmp_path` for all file I/O.
 
 ## Releasing
 
-Zecret is on PyPI as [`zecret`](https://pypi.org/project/zecret/). A release
-is a tag and nothing else: pushing `vX.Y.Z` runs
-`.github/workflows/release.yml`, which publishes to PyPI and opens the
-GitHub release. There is no manual upload step and no `workflow_dispatch` —
-a release should be a tag in the history, not a button someone pressed.
+Zecret is on PyPI as [`zecret`](https://pypi.org/project/zecret/). A
+release is a tag: pushing `vX.Y.Z` runs `.github/workflows/release.yml`.
+No manual upload, no `workflow_dispatch`.
 
-The workflow is four jobs in sequence, each gating the next:
+Four jobs, each gating the next:
 
-1. **check** — the tag must equal `pyproject.toml`'s `version`. They are
-   written by different hands and nothing else compares them; PyPI would
-   accept a `v0.2.0` tag carrying `0.1.0` without complaint, and the wrong
-   number would be public and unrepublishable.
-2. **verify** — ruff, mypy and `pytest --cov -m ""` against the *tagged*
-   commit. CI covers pushes to main, but a tag can point anywhere.
-3. **pypi** — `uv build`, then Trusted Publishing (OIDC). **There is no API
-   token anywhere in this repo or its secrets, and there must not be.**
-   `id-token: write` is granted to this job alone.
-4. **github-release** — `gh release create`, with notes lifted out of
-   `CHANGELOG.md`. It runs after PyPI on purpose: a release pointing at a
-   version that failed to publish is worse than no release yet.
+1. **check** — the tag must equal `pyproject.toml`'s `version`.
+2. **verify** — ruff, mypy and `pytest --cov -m ""` on the tagged commit.
+3. **pypi** — `uv build`, then Trusted Publishing (OIDC). **There is no
+   API token in this repo or its secrets, and there must not be.**
+4. **github-release** — `gh release create` with notes from
+   `CHANGELOG.md`. It fails if it finds no section for the version.
 
-### Before tagging
+Before tagging:
 
-- **`CHANGELOG.md` needs a section for the version.** Rename
-  `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, leave a fresh empty
-  `[Unreleased]` above it, and update the link definitions at the foot of
-  the file. The `github-release` job extracts the section by heading and
-  **fails the release if it finds nothing** rather than publishing empty
-  notes.
-- **Regenerate the screenshots.** The help popup renders
-  `zecret.__version__` in its tagline, so *every version bump makes
-  `assets/help-*.png` stale* — the one documentation item nothing can fail
-  on. `uv run python tools/screenshots.py`; the generator is deterministic,
-  so only genuinely-changed shots show up in `git status`.
-- Bump `version` in `pyproject.toml` — the only place it is written — and
-  re-lock, since `uv.lock` records it too.
-- Let CI go green on main first.
+- Rename `[Unreleased]` in `CHANGELOG.md` to `[X.Y.Z] - YYYY-MM-DD`, add a
+  fresh `[Unreleased]`, update the link definitions.
+- Regenerate the screenshots (`uv run python tools/screenshots.py`). The
+  help popup shows the version, so every bump makes `assets/help-*.png`
+  stale.
+- Bump `version` in `pyproject.toml` (the only place it is written) and
+  re-lock.
+- Let CI go green on main.
 
-### The parts that live outside the repo
-
-Configured once, on PyPI and in the repository settings, and easy to
-misdiagnose from the workflow logs because neither is visible here:
+Outside the repo, configured once:
 
 - **PyPI trusted publisher**: project `zecret`, owner `kfurtak1024`, repo
   `zecret`, workflow `release.yml`, environment `pypi`. Renaming the
-  workflow file or the environment breaks publishing until PyPI is updated
-  to match.
-- **The `pypi` environment's deployment rule** must be **ref type `Tag`**,
-  pattern `v*`. A *branch* rule of the same name silently permits nothing,
-  and the failure lands late — after `check` and `verify` have passed — as
-  a rejected deployment rather than a test failure. Do not add `main`
-  here: the workflow only triggers on tags, so a branch rule would only
-  ever pre-authorise a mistake.
+  workflow or environment breaks publishing.
+- **The `pypi` environment's deployment rule** must be ref type **Tag**,
+  pattern `v*`. A branch rule permits nothing and fails late. Do not add
+  `main`.
 
-### Irreversible
-
-A published version number is consumed permanently. Yanking or deleting a
-PyPI release does not free it for re-upload, so a bad release costs the next
-patch number, not a retry. This is why `check` and `verify` run first.
+A published version number is consumed permanently.
 
 ## Conventions
 
-- Type hints everywhere. `uv run mypy` enforces this; keep it green.
-  Textual's `App`/`Screen` are generic, so subclasses need a parameter —
-  `Screen[None]` unless the screen returns a value via `dismiss()`.
+### Code
+
+- Type hints everywhere; `uv run mypy` stays green. Screens are
+  `Screen[None]` unless they return a value via `dismiss()`.
+- `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`.
+  There is deliberately no way to change an entry's date.
+- `import datetime as dt`; `from __future__ import annotations` in every
+  module.
+- Raise specific exceptions, never a bare `Exception` or silent failure.
+- No print debugging in committed code.
+- **Comments and docstrings say what the code does and the constraint a
+  reader must not break. They do not narrate history.** "X used to do Y
+  and was reported as Z" goes in the commit message. Keep a reason when
+  removing it would invite someone to undo the fix; state it in a
+  sentence. Update a docstring when behaviour changes.
+
+### Locking, quitting and saving
+
 - **Locking by hand saves; the idle timer refuses.** `ctrl+l` in the
-  editor calls `EditorScreen._save()` and locks only if it returned True.
-  The timer does the opposite — `blocks_lock` holds it off entirely — and
-  the two are not inconsistent: a keypress means someone is leaving the
-  room now, so the diary must actually close, and a question left on the
-  screen would keep it open behind that question. A timer has nobody to
-  ask and nothing to promise, so it waits instead. Quitting takes the
-  third road, `ZecretApp.action_quit`, which asks: quitting is not a claim
-  about who can read this.
-  `ctrl+l` is bound on **every** screen once the diary is open -- search,
-  settings, help and each popup bind `app.lock` (`ZecretApp.action_lock`),
-  which saves whatever an editor underneath is holding before it locks,
-  as the editor's own does. The one thing a lock waits for is a screen
-  that is `working` (`ZecretScreen.working`): the password dialog while
-  it re-encrypts. Locking part way through let the re-key finish anyway
-  and hand its new key to an app that had just forgotten the old one, so
-  a lock asked for then sets `lock_pending`, says it is waiting, and the
-  dialog locks when it is done; the idle timer skips the tick. `ctrl+q`
-  waits the same way (`quit_pending`) and leaves the outcome in the
-  terminal through `App.exit(message=...)`: quitting part way through let
-  the re-key save after the app had gone, with nothing said, and the old
-  password was refused at the next start.
-- **Idleness is measured on two clocks, and the longer wait wins.**
-  `Instant` in `app.py` holds a reading of each. `time.monotonic()` is
-  `CLOCK_MONOTONIC`, which does *not* advance while the machine is
-  suspended — so a laptop closed with the diary open came back to a timer
-  that believed the last keystroke had just happened, which is the one
-  case the idle lock is really for. The wall clock sees a suspend and
-  cannot be trusted alone for the opposite reason: it can be set
-  backwards, and a diary that stayed open an extra hour because of an NTP
-  correction is the same failure wearing different clothes. Taking the
-  larger of the two elapsed times is fail-closed in both directions —
-  staying unlocked needs *both* clocks to agree little time has passed.
-  Don't swap it for `CLOCK_BOOTTIME`: that fixes only the suspend half and
-  is not portable. `tests/test_locking.py` fakes each failure separately.
-- **A password being chosen is rated, never refused.** The two screens
-  that choose one (`UnlockScreen` when creating, `PasswordScreen`) call
-  `FormScreen.advise_on_password()` as it is typed. The diary is attacked
-  offline if the file is taken, so the password is the only thing between
-  Argon2id and a guesser — but it is the writer's diary, and Zecret does
-  not stand between them and it.
-  **Rating it honestly needs a dictionary, which is why `zxcvbn` is a
-  dependency.** Length and character classes are what a home-grown meter
-  can see and they are the wrong things to look at: `Password1234` has
-  twelve characters and three classes and is among the first few thousand
-  guesses made, while `correct horse battery staple` has one class and is
-  past anything a guesser reaches. A meter built on what is visible calls
-  the first one strong, which on a diary with no recovery is the worst
-  thing it could say. Don't replace it with a heuristic.
-  `strength.py` is the **only place the master password is handed to
-  third-party code** — one import, one call site — and that chokepoint is
-  the point of the module. Two traps live there: zxcvbn raises
-  `ValueError` past `MAX_SCORED` characters, so a plain call takes the
-  screen down on the next keystroke; and a longer password is rated on its
-  **first** `MAX_SCORED` characters rather than waved through, because a
-  password is never weaker than its own prefix but a hundred of the same
-  letter is not strong.
-  The reading goes on the **error row**, not a row of its own: that row
-  is fixed at `height: 1`, which is what protects the password dialog's
-  fit in a 24-row terminal, and so an over-long sentence is *cut off*
-  rather than wrapped. The create screen's card is the narrower of the two
-  and leaves 54 columns, so `rate()` is handed the row's measured width
-  and drops back to shorter advice rather than truncating;
-  `tests/test_password_screen.py` measures both rows rather than trusting
-  a number, and `tests/test_strength.py` holds the invariant by property.
-  The `-advice` class is styling and bookkeeping at once — it marks the
-  line as withdrawable, so clearing the reading cannot clear an error that
-  a rejected attempt put there a moment before emptying the fields.
-  `-advice-strong` rides with it for a password that needs nothing said.
-  Amber (`$text-warning`) and then green, never `$error`: nothing has gone
-  wrong and nothing is being refused.
-- **The question about unsaved writing has three answers.** `ConfirmScreen`
-  dismisses a `Choice` — `CONFIRM`, `SAVE` or `CANCEL` — and grows a third
-  button whenever it is given a `save_label`. Both ways of leaving a
-  half-written day offer it (escape, and `ctrl+q` through the app), and
-  deleting an entry does not: there is no road between going through with
-  a deletion and leaving the day alone, so that question stays two-answer
-  and keeps its focus on Cancel. Where saving is on offer the focus starts
-  there instead — it is the answer that throws nothing away, which is the
-  same rule as before and not an exception to it. `SAVE` reaches the
-  editor through `ZecretScreen.save_pending()`, the counterpart of
-  `blocks_lock`: a screen that says it is holding something unsaved must
-  be able to write it on request. A refused save never leaves — the error
-  is already on that screen's own line, and leaving would lose exactly
-  what the answer was keeping.
-- **Saving is not leaving.** `ctrl+s` writes the day and stays in it —
-  an entry is written over an evening, and being returned to the list on
-  every save meant pressing `n` and finding your place again to add the
-  next line. `escape` is the only key that leaves the editor, and after a
-  save it has nothing to ask about. `_save()` returns True without writing
-  when nothing has changed since the last one: the key is a reflex, and a
-  write per press would restamp `updated_at` on a day nobody edited and
-  turn another Zecret's saving into a `ZecretConflictError` over an entry
-  this session was not changing.
-- **The mask is drawn, never written.** `ctrl+r` covers every word in the
-  editor but the one the cursor touches. It happens in
-  `DiaryTextArea.get_line`, the hook Textual's own docstring offers for
-  exactly this, on the way to the screen and never in the document.
-  Masking by rewriting the text would file an entry full of blocks, and it
-  is the one mistake here that cannot be taken back.
-  Each covered character is swapped for `BAR`, a three-quarter block: the
-  same number of characters and the same number of cells, so the cursor,
-  the wrapping and the selection all still land where they should, and the
-  quarter-cell it leaves empty is what separates one line of redaction
-  from the next. **Only single-cell characters are swapped.** A bar is one
-  cell, so a two-cell character replaced by one would shorten the line and
-  lose the widget's place in it; those keep their own glyph and are
-  painted in ink the colour of their own background instead — which is
-  why the mask's colour must still be opaque and identical for text and
-  background.
-  Three things paint after `get_line`: TextArea caches rendered lines
-  (cleared in `watch_masked`), the cursor line's highlight (off for good —
-  see the emphasis rule below) and the selection (given a bar of its own
-  in `app.tcss`, keyed on the `-masked` class). Each of them used to hand
-  back what the mask had covered, back when every character was hidden by
-  colour alone — `ctrl+a` laid the whole entry bare. Swapping the glyphs
-  closed that for ordinary text, and the mitigations stay because the
-  wide-character path still depends on colour. Anything else that draws
-  over the editor has to be checked against the same three.
-  The state lives on `ZecretApp.masked` so it survives opening another
-  day, and is deliberately **not** in `config.py`: a diary that opened
-  unreadable would be a puzzle before it was a protection. It is a screen
-  someone can read over your shoulder, not a cipher -- it hides what you
-  wrote earlier, since the word being typed is revealed as it is typed.
-- **Emphasis is drawn, never written, and it is the only markup there
-  is.** A phrase between asterisks (`*like this*`) takes `$text-success`
-  in the editor **and** the bold; the marks around it take the same
-  colour without the weight. Both attributes and never one: bold alone is
-  the least dependable thing a terminal offers, colour alone gives out at
-  sixteen colours and under `NO_COLOR`, and since they are independent
-  parameters of one escape sequence neither can undo the other. The hue
-  was measured rather than chosen, against the words on either side
-  rather than against the page; `app.tcss` has the numbers and the
-  reasoning, including why `$accent` is wrong here, why `$text-primary`
-  is the trap, and why there is no dimmed setting of the marks worth
-  having.
-  It is laid on in `_emphasise`, off the same `get_line` the mask uses,
-  and it only ever colours: no character is swapped, hidden or added, so
-  unlike the mask it cannot put a measurement out of step even in
-  principle. **The asterisks stay on the screen.** Hiding them would draw
-  one character fewer than the document holds and take the cursor with it,
-  and it would be a lie about what is in the file.
-  `strong_spans()` is the whole rule: a run of asterisks opens a phrase if
-  a non-space follows it and closes one if a non-space precedes it, and a
-  run is taken whole so `**bold**` works. One departure from Markdown,
-  and it is deliberate: **a phrase may not open straight after a digit.**
-  Flanking alone leaves `2 * 3` alone but not `3*4 packs and 2*6
-  bottles`, which came out with `4 packs and 2` emphasised in the middle
-  of the sums. Digits only, never letters, so a script with no spaces
-  between its words can still emphasise mid-line. A span never crosses a line. There is no
-  escape for a literal asterisk and none is needed: a mispaired one costs
-  a phrase its colour and nothing else.
-  **The mask wins where they meet** — a masked line is never emphasised,
-  because a coloured phrase over a row of bars would say where the
-  emphasis in a covered day is.
-  This is also why `DiaryTextArea` passes `highlight_cursor_line=False`:
-  TextArea paints that band over the whole line *after* `get_line`, with a
-  foreground as well as a background, so it wiped every colour laid down
-  on the one line that matters most — the one being typed. Anything that
-  colours inside a `TextArea` runs into it.
-  Always on: no key, no setting. A toggle would cost a slot in the key bar
-  and a line in the help popup for something that changes nothing about
-  what is written. Do not grow this into Markdown — headings, lists and
-  italics are all the same slope, and the answer is no. A diary is prose.
-- **Changing the master password is a dialog, not a form field.** It is
-  the one thing in the app that cannot be undone, and as three fields at
-  the foot of the settings form it was something to scroll past or tab
-  into by accident, with `NO_RECOVERY` read as the small print underneath
-  it. A button opens `PasswordScreen`, where the warning is the first
-  thing on the screen and the fields are the only other thing on it. The
-  dialog is sized so that the warning never needs scrolling to: title,
-  warning and three fields come to exactly the eighteen rows a 24-row
-  terminal leaves inside the card, which is why it is 70 columns wide
-  rather than the 62 the other cards use — those eight columns are what
-  bring the warning down from three lines to two. Settings still scrolls;
-  it wants 25 rows and gets 18, which is a shorter card than the 39 it
-  wanted before, not a screenful.
-  `PasswordScreen` inherits `ModalScreen[None]` **and** `FormScreen`, in
-  that order, and both halves of that are load-bearing — see its module
-  docstring and the note in `base.py`.
-- **Zecret's own widgets are its calendars, in `screens/calendar.py`.**
-  Textual ships no calendar, so `MonthCalendar` is one — a month laid out,
-  walked with the arrow keys, marking every day the diary already holds an
-  entry for. That mark is why it exists: a date field answers "which day
-  did I mean", and only a month laid out answers "which days have I
-  missed". `YearCalendar` is twelve months of the same and the whole of
-  the calendar view; it is built from twelve `MonthGrid`s that draw and
-  own nothing, so one cursor walks the year and focus never has to change
-  hands at the end of a month. The two calendars share their keys and
-  their walking through a base class, `WalkableCalendar`, draw a month
-  through the same module functions (`draw_month`, `day_role`), and wear
-  the same `month-calendar--*`
-  component classes, so one set of rules in `app.tcss` paints both. The
-  `CalendarLegend` under each wears the today class as well, and draws
-  today's own date in it, so the legend's sample of how today is marked is
-  the grid's rule and cannot drift from it. How
-  many months sit across is the stylesheet's call, from a `-months-N`
-  class `CalendarScreen.fit_months` sets from the terminal's width, not the
-  widget's — nothing measures the terminal, and three months fit 80
-  columns only because a day there is three columns wide, not four.
-  Set by hand, in `on_mount` and on resize, rather than through Textual's
-  `HORIZONTAL_BREAKPOINTS`: that applies the class from the screen's first
-  Resize event, which lands after the first paint, and the year was seen
-  rearranging itself. For the same reason the screen holds repaints
-  (`App.batch_update`) from mount until it has scrolled to the cursor's
-  month, so the first frame drawn is the finished one — released in a
-  `finally` and on unmount, since a hold left behind freezes the whole app.
-  In the year the arrows are spatial: each moves to the cell drawn in that
-  direction (`spatial_step`, over `year_layout`'s grid of cells), so down
-  from January is whichever month is drawn below it at this width. It
-  was a week at first, on the argument that a key whose meaning changes
-  with the window cannot be learned; in use, a cursor that went sideways
-  on a press of down read as broken, and the reader is looking at a grid.
-  The arrows stop at the edge of the year (the year keys cross it) and
-  refuse a day not yet come rather than clamping to today. The modal's
-  `MonthCalendar` keeps day-and-week arrows: one month has nothing beside
-  it, and spatial arrows there would strand the cursor in it.
-  `MonthCalendar` owns nothing. The date belongs to the field above it; the grid posts
-  `DateChanged` and `DatePicked` for `DatePromptScreen` to act on, which is
-  what lets typing and pointing both work without either being the
-  authority.
-  The two follow each other, and the asymmetry between the directions is
-  what keeps them from fighting: the grid **announces** its moves and the
-  field writes them down, while the field moves the grid **quietly**
-  (`MonthCalendar.show`, which sets the reactive without its watcher). That
-  is not an optimisation. Following happens as the date is typed, from the
-  keystroke that names a month, so an announcement in that direction would
-  come back as "write this date into the field" and finish a date under the
-  cursor of the person still typing it.
-  Both cursors clamp to today rather than refusing to move, so no key is
-  dead where the next day is one the screen would turn down anyway. Which
-  days are written is handed in by the caller (`frozenset(diary.entries)`),
-  not looked up: a widget that reached for storage would be the one place
-  outside a screen that does. `CalendarScreen` hands a fresh set over each
-  time it comes back from the editor.
-  The calendar view is a screen pushed over the list, not a mode beside
-  it: the list stays where the diary opens, and locking pops it with
-  everything else. The list reads the calendar's cursor in its own
-  `on_screen_resume` on the way back — never in a dismiss callback, which
-  nothing orders against the list's rebuild — and lands on that day, or the
-  nearest older one written. It reads `CalendarScreen.date`, a plain copy
-  the screen keeps, and never the widget: Textual tears a popped screen's
-  DOM down in a task of its own, so a query into it from the list's resume
-  can find nothing there. The editor hands its day back the same way —
-  `EntryListScreen.editing`, read in that same handler — so where the list
-  lands is decided in one place for every screen it sends you to. A resume
-  that arrives while another screen is already in front (the which-day
-  dialog opens the editor from its dismiss callback) decides nothing; the
-  next one will.
-- **The editor wraps before it paints.** Textual wraps a `TextArea` when
-  it handles the `Resize` message, which is queued — so the compositor has
-  already drawn the widget at the new size by the time it arrives, and
-  opening a long day showed one frame of unwrapped text before the wrapped
-  one. `DiaryTextArea.render_lines` wraps first if the width has changed
-  since it last did, which is inside the paint rather than after it. It
-  tracks the width alone; everything else that changes the wrapping goes
-  through TextArea's own rewrap at that same width.
-- **Text-editing keys belong to the widget, not to the screen.**
-  `EditorScreen.BINDINGS` holds four keys and they are all about the
-  *diary* — save it, lock it, cover it, go back. Everything about the
-  writing itself lives
-  on `DiaryTextArea`, which is Textual's `TextArea` plus the keys it is
-  missing: `ctrl+home` / `ctrl+end` for the two ends of the entry and
-  `ctrl+shift+home` / `ctrl+shift+end` to select to them, `ctrl+up` /
-  `ctrl+down` for a paragraph at a time with the shift spellings
-  selecting as they go, and `ctrl+a` rebound from readline's "start of
-  line" (which `home` still does) to select-all, where every other editor
-  puts it. A paragraph is a line of the *document*, not of the screen:
-  soft wrap is on, so the row the cursor is drawn on is a fragment of a
-  sentence and the plain arrows already move by one. That split is
-  what keeps them off the help popup and the key bar, both of which are
-  generated from screen `BINDINGS` — and it is the right answer rather
-  than a trick, since the popup does not list `ctrl+z`, `ctrl+k` or the
-  arrow keys either, and a reader who has used an editor knows them.
-  `tests/test_help_screen.py` fails if one of these keys reaches the page.
-  Add the next such key to `DiaryTextArea`; add it to the screen only if
-  it does something to the diary. The same split is why `MonthCalendar`
-  and `YearCalendar` carry the arrow and page keys while `[` and `]` (a
-  year) are on `CalendarScreen` — an arrow in a calendar needs no
-  explaining, a bracket does — and why the date field's `down` lives
-  on a `DateInput` subclass rather than on `DatePromptScreen`.
+  editor saves and locks only if the save succeeded. The idle lock holds
+  off while `blocks_lock` is true. Quitting (`ZecretApp.action_quit`)
+  asks.
+- `ctrl+l` is bound on every screen once the diary is open (`app.lock`),
+  and saves whatever an editor underneath holds first.
+- A screen that is `working` (the password dialog while it re-encrypts)
+  makes a lock or quit wait: `lock_pending` / `quit_pending`. The dialog
+  acts on them when it ends, and a quit leaves the outcome in the
+  terminal through `App.exit(message=...)`.
+- **Idleness is measured on two clocks and the longer wait wins**
+  (`Instant` in `app.py`). `time.monotonic()` stops during suspend; the
+  wall clock can be set backwards. Do not swap this for `CLOCK_BOOTTIME`.
+- **The unsaved-changes question has three answers.** `ConfirmScreen`
+  dismisses a `Choice` (`CONFIRM`, `SAVE`, `CANCEL`) and shows a third
+  button when given a `save_label`. Deleting stays two-answer with focus
+  on Cancel. Where saving is offered, focus starts there. `SAVE` reaches
+  the editor through `ZecretScreen.save_pending()`. A refused save never
+  leaves the screen.
+- **Saving is not leaving.** `ctrl+s` writes and stays; `escape` leaves.
+  `_save()` returns True without writing when nothing changed, so a reflex
+  save does not restamp `updated_at` or cause a conflict.
+
+### Passwords
+
+- **A password being chosen is rated, never refused.** `UnlockScreen`
+  (creating) and `PasswordScreen` call `FormScreen.advise_on_password()`.
+- **Rating needs a dictionary, hence `zxcvbn`.** Do not replace it with a
+  length-and-classes heuristic. `strength.py` is the single call site.
+  zxcvbn raises past `MAX_SCORED` characters, so a longer password is
+  rated on its first `MAX_SCORED`.
+- The reading goes on the **error row**, which is fixed at `height: 1`.
+  `rate()` is given the row's measured width and shortens advice rather
+  than let it be cut off. The `-advice` class marks the line as
+  withdrawable, so clearing a reading cannot clear an error. Amber then
+  green, never `$error`.
+- The same row carries a `-status` line while Argon2id runs
+  (`FormScreen.set_status`), with the fields disabled.
+- **Changing the master password is a dialog, not a form field.** The
+  warning is first on the screen. Title, warning and three fields come to
+  exactly the eighteen rows a 24-row terminal leaves, which is why the
+  card is 70 columns wide. `PasswordScreen` inherits `ModalScreen[None]`
+  **and** `FormScreen`, in that order; both matter (see its docstring).
+
+### The editor
+
+- **The mask is drawn, never written.** `ctrl+r` covers every word but the
+  one the cursor touches, in `DiaryTextArea.get_line`. Each covered
+  one-cell character is swapped for `BAR`. **Only single-cell characters
+  are swapped**; wider ones are painted in ink the colour of their own
+  background, so the mask's colour must be opaque and identical for text
+  and background. The line cache is cleared in `watch_masked`, the
+  cursor-line highlight is off, and the selection has its own bar in
+  `app.tcss`. Anything else that draws over the editor must be checked
+  against those. The state lives on `ZecretApp.masked` and is deliberately
+  not in `config.py`.
+- **Emphasis is drawn, never written, and is the only markup.** A phrase
+  between asterisks takes `$text-success` **and** bold; the marks take the
+  colour alone. The asterisks stay on screen. `strong_spans()` in
+  `prose.py` is the whole rule, including the one departure from
+  Markdown: **a phrase may not open straight after a digit**. A span
+  never crosses a line. **The mask wins**: a masked line is never
+  emphasised. Always on, no setting. Do not grow this into Markdown.
+- `DiaryTextArea` passes `highlight_cursor_line=False`, because TextArea
+  paints that band after `get_line` and would wipe both.
+- **The editor wraps before it paints** (`DiaryTextArea.render_lines`),
+  since TextArea rewraps on a queued `Resize`.
+- **Text-editing keys belong to the widget, not the screen.**
+  `EditorScreen.BINDINGS` holds four keys, all about the diary. Keys about
+  the text go on `DiaryTextArea`, which keeps them out of the help popup
+  and key bar. The same split puts arrows on the calendars and `[` `]` on
+  `CalendarScreen`, and `down` on `DateInput`.
 - **Moving by a word stops at word ends going right and word starts going
-  left.** That asymmetry looks like a bug and is the convention on this
-  platform — VS Code binds the pair as `cursorWordEndRight` and
-  `cursorWordStartLeft`, and GTK, readline's `alt+f` and Firefox on Linux
-  all stop at the end too. Don't "fix" it by making the two retrace each
-  other. What each key does have to be is consistent with itself, and
-  TextArea's own rule is not: it takes the next change of character class,
-  which after a run of punctuation falls at the *start* of the following
-  word rather than at the end of the mark, so `It rained. Then` stopped at
-  `It rained. |Then` and going left over `a *strong*` stopped a cell short
-  of the asterisk. `DiaryTextArea` overrides both
-  `get_cursor_word_right_location` and `get_cursor_word_left_location` to
-  take a run of same-class characters whole, with whitespace as a class of
-  its own — which is the whole of the fix, since it is the third class
-  that stops punctuation swallowing the space beside it.
-- `Entry` is a frozen dataclass. Edits go through `entry.edited(body)`,
-  which returns a new instance; `storage.py` detects changes by comparing
-  entry references across a save, so in-place mutation would break it.
-  There is deliberately no way to change an entry's date: that would be a
-  move, not an edit, and could collide with the day it lands on.
-- `import datetime as dt` rather than `from datetime import date` —
-  `Entry.date` would otherwise shadow the type it is annotated with.
-- `from __future__ import annotations` at the top of every module.
-- Docstrings are load-bearing documentation, not filler — update them if
-  behavior diverges from what's currently written.
-- Prefer raising specific exceptions (`ZecretDecryptError`, etc.) over
-  generic `Exception` or silent failure.
-- No print-based debugging left in committed code; Textual apps can't
-  usefully print to stdout anyway while running.
-- Styling lives entirely in `app.tcss`, which documents its own
-  conventions at the top: theme variables only (never hard-coded colors,
-  so every theme in the picker works), rules grouped by the role a widget
-  plays rather than by screen, and 1 cell of vertical to 2 of horizontal
-  spacing. `$error` is reserved for errors and destructive actions, and
-  two things now share that red without being errors: `.caution`, the
-  warning shown wherever a master password is chosen, and the settings
-  button that opens the dialog where one is. Neither is an exception to
-  the rule so much as a reading of it — choosing a password is the step
-  that makes losing the diary possible, and the button is the only road on
-  that screen to something with no way back. Do not spend that red on
-  anything less final. (It is `.caution` and not `.warning`
-  because Textual's own `Label` reserves that class for a variant of its
-  own and paints `$warning-muted` behind it.) Text starts at the same column on every full-width screen — the
-  gutter lines the *borders* up, and `Input` and `TextArea` pad their
-  insides by different amounts, so lining up what is read takes a rule of
-  its own; `tests/test_chrome.py` fails if the two drift apart again. The
-  one break from that grouping is the `:light` section at the
-  foot of the file, which exists because light and dark stack depth in
-  opposite directions and no theme variable can say so — the reasoning is
-  written there. Adding a card means adding it to that selector list too,
-  or it will look right in dark and vanish in light. The mask's `:light`
-  rule is the exception to *that*, and stays beside the rule it overrides:
-  the two are a matched pair whose colours must be identical for a word to
-  stay covered, so parting them by two hundred lines invites exactly the
-  edit that half-lifts the bars. A `:light` override belongs at the foot
-  unless it is one of a pair like that. Note also that the pseudo-class
-  has to sit on the widget — a component class does not answer to
-  `:light` itself, which is what makes the mask need a widget selector. Screens carry a `SUB_TITLE` so the header says where you are.
-- **Notifications belong to the app, not to the screen that raised one.**
-  Textual holds them for their timeout and redraws the live ones onto
-  whichever screen is current, so in an app that changes screens as often
-  as this one every toast flickered: it vanished with the screen it was
-  raised over and reappeared on the next, out of context — "Saved." over
-  the empty editor you had just opened, "Locked." over the entries you had
-  just unlocked. `ZecretApp.push_screen` calls `clear_notifications()`,
-  and that asymmetry is the rule: **pushing** is starting something new,
-  so what was said about the last thing is finished; **popping** is the
-  end of the thing being spoken about, which is how "Saved." reaches the
-  list the editor returns to. But only **one** pop:
-  `ZecretApp.pop_screen` drops whatever was raised before the previous
-  pop, so a message is carried onto the screen you land on and no
-  further — "Master password changed." used to come up over settings and
-  then again over the list. It goes by `raised_at`, because `notify()`
-  only posts a message and a toast raised just before `dismiss()` is not
-  stored yet when that pop happens. Anything that pushes a screen and then
-  notifies must do it in that order — see `lock()`.
-- **A card is built with `card()`, which keeps it off the tab ring.**
-  Textual makes a scrollable container focusable so it can be scrolled
-  from the keyboard, and on a screen whose fields are all reachable by tab
-  that is one stop with nothing in it: tab past the last field and the
-  focus ring disappears, because it is sitting on the panel. It reads as
-  focus being dropped, and it was on four screens before anyone said so.
-  `screens/base.py`'s `card()` is a `VerticalScroll` with
-  `can_focus=False`, so the next card added inherits the fix instead of
-  repeating the bug. Nothing is lost with it: Textual keeps the focused
-  field in view as tab moves between them, which is the only reason these
-  panels scroll at all. `HelpScreen` builds its own and stays focusable —
-  it holds no fields, so the panel is the only thing to focus and
-  focusing it is what the arrow keys read the page with.
-  `tests/test_chrome.py` fails if a card puts an empty stop back on the
-  ring.
-  Taking the panel off the ring made the *field* the first focusable
-  thing, which is what uncovered the second half of this: Textual's
-  `AUTO_FOCUS` guess runs before a screen's own `on_mount`, and focusing a
-  widget asks for it to be scrolled into view — so settings opened one
-  section down, its heading scrolled off the top. `ZecretScreen.AUTO_FOCUS`
-  is `""` (not `None`, which Textual reads as "ask the app", whose default
-  is `"*"`). Every screen therefore says what it opens focused on, and
-  `tests/test_chrome.py` fails if one forgets.
-- **Every screen carries a `DiaryFooter`, modals included.** A
-  `ModalScreen` renders over the screen it was opened from rather than
-  replacing it, so one without a footer does not show *no* bar -- it shows
-  the bar underneath, whose keys are all dead while the modal has focus.
-  `tests/test_chrome.py` checks that a modal advertises its own key and
-  not the list's. `HelpScreen` was the exception, on the grounds that its
-  box covered the bar -- which held only up to the box's 76 columns; on a
-  wider terminal the list's dead keys showed either side of it. It has
-  its own bar now, and there is no exception.
-- **Every bar reads the same way.** This screen's own actions first, then
-  the way out, then `^l Lock` on every screen once the diary is open, and
-  `? Help` and `q Quit` on the two main views -- so Lock is always in the same place relative to the end of the
-  bar, and the help popup, which lists keys in declaration order, reads
-  the same way. Naming follows three rules: a full screen's way out is
-  **Back**, a popup's is **Cancel** (it dismisses a question) or **Close**
-  (help, which asks nothing), and the two main views name where `c` goes
-  (**Calendar**, **List**). One action has one name wherever it is bound:
-  opening a day in the editor is **Edit** on the list's `enter` and the
-  calendar's `e` alike. Words are the writer's, not the code's — `^r` is
-  **Cover**, as the README and the product page say it, though the code
-  calls it the mask.
-- **`show` is a layout decision, not a documentation one.** A binding's
-  `show=True` puts it in the footer and nothing more; the help popup lists
-  every binding either way (`documented_bindings()` in `screens/help.py`).
-  Keeping a key out of the bar therefore costs nothing, which is what lets
-  the entry list carry eight navigation bindings without a fight over
-  width. Do not couple the two back together — that coupling is what made
-  navigation unaddable and left `enter` documented but invisible.
-- **The key bar fits 80 columns.** `DiaryFooter` (`screens/header.py`) is
-  Textual's `Footer` in its compact spelling. The entry list's eight
-  advertised keys take 69 of the 80 a terminal defaults to, which spends
-  the room that used to be spare: the next key means either shortening a
-  description or dropping one to `show=False`, which costs only its place
-  in the bar. That is how the calendar got in — `a` (another day) went to
-  `show=False` to make room for `c`, since the calendar answers the same
-  question with the year to point at.
-  `tests/test_chrome.py` fails when anything advertised stops fitting.
-  `ctrl+l` is in the bar rather than hidden because being able to find it
-  is a security property — someone stepping away who cannot see it quits,
-  or leaves the diary open — which is the bar earning its width rather
-  than a key winning a popularity contest.
-- **Bindings are declared in reading order**, because the help popup lists
-  them in that order: what you do often, then what you do rarely, then how
-  you move around.
-- The chrome is deliberately minimal. Textual's `Header` is not used —
-  `screens/header.py` replaces it, because Textual's docks an icon that
-  opens the command palette and expands when clicked. The command palette
-  is off (`ENABLE_COMMAND_PALETTE = False`), which also removes `ctrl+p`
-  and the footer's palette entry. Don't reintroduce either; a setting that
-  belongs to the user goes on the settings screen, where it can be saved.
-- **A user-facing change is not done until the documentation matches it.**
-  This is a checklist, not a sentiment. Every change that alters what
-  someone sees or presses goes through it *in the same commit*:
-  - `README.md` — the key table, the feature list, the prose.
-  - `docs/index.html` — the key table, the feature cards, "How it works",
-    and the hand-drawn terminals: the hero's key bar is checked against the
-    app's footer by `tests/test_docs_page.py`, because a drawing of the app
-    goes stale exactly the way a screenshot does and nothing else notices.
-  - `CHANGELOG.md` — under `Unreleased`, in the voice of what changed for
-    the writer, not what changed in the code.
-  - `assets/*.png` — **the screenshots**, if the change touches anything
-    visible. Adding a keybinding changes the footer in five of them. This
-    is the one that gets forgotten, because nothing fails when it is: no
-    test can see that a picture is out of date. Regenerate with
-    `tools/screenshots.py` (`uv run python tools/screenshots.py`).
-  - `CLAUDE.md` — this file, if an interface, layer or rule moved.
-  - The in-app help needs nothing: it builds itself from `BINDINGS`.
-- **The product page is part of the app's surface.** `docs/index.html`
-  describes the keys, the theme count, the Argon2 parameters, the default
-  diary path and the Python version. Change any of those in the code and
-  the page changes in the same commit — it is user-facing documentation
-  that happens to live in HTML, not decoration. `tests/test_docs_page.py`
-  fails if the keys, counts or parameters drift, so this is enforced
-  rather than remembered; the prose around them is on you. The page also
-  promises no third-party requests and no analytics, and that is tested
-  too — keep it a single self-contained file.
-- The help popup (`screens/help.py`) is a `ModalScreen` — Textual's
-  pattern for a dialog, and what the app's other popups already are. It is
-  not Textual's `HelpPanel`, which documents whichever widget has focus
-  rather than the app. Its key list is generated from the screens'
-  `BINDINGS`, so a new binding appears there automatically and a test
-  fails if it does not. Never hand-write a key into it. It is bound to `?`
-  on the two main views only — the entry list and the calendar, which have
-  no text field between them — so `?` stays typeable in every text field.
-  Both bind `app.help` (`ZecretApp.action_help`) rather than an action of
-  their own: one action for two screens, and neither of them can import
-  the popup, which imports them both to list their keys. The calendar's
-  column on the page leaves out rows the list's section has already given
-  (`Section.shares_diary_keys`) -- which is why the calendar's `d` is named
-  **Delete**, as the list's is, and so does not appear twice.
-- **The help popup spends width to buy height.** A section longer than
-  `COLUMN_THRESHOLD` is split down the middle into two columns, read down
-  and then across, and `fit_columns()` stacks them again where the terminal
-  is too narrow to pair them — the same bargain `fit_logo()` already makes.
-  This is what keeps the page to 35 rows rather than 50-odd, with the
-  calendar, the editor and the rest sitting three columns abreast under
-  the list's two. Every set of columns is measured (`note_columns_width`),
-  the three abreast included: the widest need decides when they all
-  stack, and a set left unmeasured is squeezed until its rows wrap. Its full height is
-  coupled to two constants that must move together: `ROWS["help"]` in
-  `tools/screenshots.py` (what the picture is shot at) and `SHOT_ROWS` in
-  `tests/test_help_screen.py` (which fails if the page outgrows it).
-  Nothing else can see a cropped screenshot, so that test is the guard.
-- The version shown in the help popup comes from `zecret.__version__`,
-  which reads the installed distribution metadata. `pyproject.toml` is the
-  only place the version is written; don't add a second copy.
+  left.** That is the platform convention; do not make them symmetric.
+  `DiaryTextArea` overrides both word-location methods to take a run of
+  same-class characters whole, with whitespace as its own class.
+
+### The calendars (`screens/calendar.py`)
+
+- `MonthCalendar` is one month (the date prompt). `YearCalendar` is twelve
+  `MonthGrid`s that draw and own nothing, so one cursor walks the year.
+  They share keys through `WalkableCalendar`, drawing through
+  `draw_month` / `day_role`, and the `month-calendar--*` component
+  classes. `CalendarLegend` uses the today class too.
+- How many months sit across is the stylesheet's call, from the
+  `-months-N` class `CalendarScreen.fit_months` sets by hand in `on_mount`
+  and on resize (Textual's breakpoints apply after the first paint). The
+  screen holds repaints (`App.batch_update`) until it has scrolled to the
+  cursor's month, released in a `finally` and on unmount.
+- In the year the arrows are spatial (`spatial_step`): they stop at the
+  edge of the year and refuse a future day. `MonthCalendar` keeps
+  day-and-week arrows.
+- A calendar owns no date. The grid **announces** its moves
+  (`DateChanged`, `DatePicked`); the field moves the grid **quietly**
+  (`MonthCalendar.show`). That asymmetry keeps a half-typed date from
+  being completed under the writer's cursor.
+- Which days are written is handed in (`frozenset(diary.entries)`), never
+  looked up by a widget.
+- The calendar view is a screen pushed over the list. The list reads
+  `CalendarScreen.date` (a plain copy, never the widget) and
+  `EntryListScreen.editing` in its own `on_screen_resume`, never in a
+  dismiss callback. A resume that arrives while another screen is in
+  front decides nothing.
+
+### Chrome, keys and help
+
+- **Every bar reads the same way**: this screen's actions, the way out,
+  then `^l Lock`, and `? Help` and `q Quit` on the two main views. A full
+  screen's way out is **Back**, a popup's is **Cancel** or **Close**, and
+  the main views name where `c` goes. One action has one name everywhere
+  (**Edit**). Words are the writer's (`^r` is **Cover**).
+- **`show` is a layout decision.** It puts a binding in the footer and
+  nothing more; the help popup lists every binding
+  (`documented_bindings()`).
+- **The key bar fits 80 columns.** The entry list's eight keys take 69.
+  The next key means shortening a description or `show=False`.
+  `tests/test_chrome.py` fails when it stops fitting. `ctrl+l` is shown
+  because finding it is a security property.
+- **Bindings are declared in reading order**: frequent, rare, movement.
+- Textual's `Header` is not used and the command palette is off. Do not
+  reintroduce either.
+- The help popup is a `ModalScreen`, generated from the screens'
+  `BINDINGS`. Never hand-write a key into it. It is bound to `?` on the
+  two main views only, via `app.help`. A section longer than
+  `COLUMN_THRESHOLD` splits into two columns, and `fit_columns()` stacks
+  them on a narrow terminal. Its full height is coupled to `ROWS["help"]`
+  in `tools/screenshots.py` and `SHOT_ROWS` in
+  `tests/test_help_screen.py`.
+- The version shown comes from `zecret.__version__`; `pyproject.toml` is
+  the only place it is written.
+
+### Styling
+
+Styling lives in `app.tcss`, which states its conventions at the top:
+theme variables only, rules grouped by role, 1 cell vertical to 2
+horizontal. `$error` is for errors, destructive actions, `.caution` and
+the change-password button; do not spend it on anything less final. Text
+starts at the same column on every full-width screen
+(`tests/test_chrome.py`). Light themes are handled in the `:light` section
+at the foot of the file; adding a card means adding it to those selector
+lists. The mask's `:light` rule is the exception and stays beside the rule
+it overrides. `:light` must sit on the widget, not on a component class.
+Screens carry a `SUB_TITLE`.
+
+### Documentation
+
+**A user-facing change is not done until the documentation matches**, in
+the same commit:
+
+- `README.md`: the key table, the feature list, the prose.
+- `docs/index.html`: the key table, feature cards, "How it works", and the
+  drawn terminals. `tests/test_docs_page.py` checks keys, counts and
+  parameters; the prose is on you. The page is a single self-contained
+  file with no third-party requests.
+- `CHANGELOG.md`: under `Unreleased`, in terms of what changed for the
+  writer.
+- `assets/*.png`: regenerate with `tools/screenshots.py` if anything
+  visible changed. Nothing fails when this is forgotten.
+- `SECURITY.md`: if a security property or a known limit moved.
+- `CLAUDE.md`: if an interface, layer or rule moved.
+- The in-app help builds itself from `BINDINGS`.
 
 ## Explicit non-goals (do not implement unless asked)
 
-- No cloud sync, no networking of any kind.
-- No tags, mood ratings, or attachments on entries.
-- No Markdown, and no rich text beyond the one emphasis mark described
-  above. No headings, lists, links, italics or code spans.
-- No rendering of an entry anywhere but the editor: the list and the
-  search results show a day's first line as typed, asterisks included.
-- No titles: the date names the entry. Adding one back would put two
-  identities on a thing that only needs one.
+- No cloud sync, no networking.
+- No tags, mood ratings or attachments.
+- No Markdown and no rich text beyond the one emphasis mark.
+- No rendering of an entry anywhere but the editor.
+- No titles.
 - No more than one entry per day, and no future-dated entries.
 - No multi-user support.
-- No password recovery mechanism.
+- No password recovery.
 - No plugin system.
 
-If a task seems to require one of these, stop and ask rather than
-expanding scope.
+If a task seems to require one of these, stop and ask.

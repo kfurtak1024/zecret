@@ -1,27 +1,16 @@
 """The bars every screen wears: the title above, the keys below.
 
-Textual's own Header is deliberately not used. It docks an icon that opens
-the command palette, and clicking anywhere on it toggles a taller variant --
-two behaviours this app does not want and cannot switch off, only style
-around. Zecret's chrome does one thing: say what this is and where you are.
+Textual's Header is not used: it docks an icon that opens the command
+palette and expands when clicked, and neither can be switched off.
+DiaryHeader is a plain Static showing the same title text, through
+App.format_title, and watching the same four reactives.
 
-So DiaryHeader is a plain Static that renders the same title text (deferring
-to App.format_title, so the "Zecret — Search" styling matches what Textual
-would produce) and watches the same four reactives Textual's header does:
-screen title and sub-title, falling back to the app's.
+DiaryFooter is Textual's Footer in its compact form, defined once so every
+screen's bar agrees. Every screen composes one, modals included: a
+ModalScreen renders over the screen beneath, so one without a footer shows
+that screen's bar, with every key on it dead.
 
-DiaryFooter is Textual's Footer in its compact spelling, written once rather
-than on every screen so the bar cannot end up looking different depending
-on which screen you are on. Every screen composes one, the modals
-included: a ModalScreen renders over the screen it was opened from rather
-than replacing it, so one without a footer shows the bar underneath -- whose
-keys are all dead while the modal has focus.
-
-Compact because the entry list advertises eight keys and the roomy spelling
-needs far more than a terminal's eighty columns to lay them out; at eighty
-it stopped mid-word at "? Hel". Compact, those eight come to sixty-nine,
-so this is the setting that gives way if the app ever grows another key --
-see the note in CLAUDE.md.
+Compact because the entry list's eight advertised keys must fit 80 columns.
 """
 
 from __future__ import annotations
@@ -36,7 +25,7 @@ class DiaryHeader(Static):
 
     def on_mount(self) -> None:
         self.show_title()
-        # A screen sets its sub_title in its own on_mount, which may land
+        # A screen sets its sub_title in its own on_mount, which may run
         # after this one, so watch rather than render once.
         for node, attribute in (
             (self.app, "title"),
@@ -59,16 +48,11 @@ class DiaryHeader(Static):
 
 
 class DiaryFooter(Footer):
-    """The key bar, compact so the entry list's keys fit an 80-column terminal.
-
-    A subclass rather than `Footer(compact=True)` written out on every
-    screen: every one of them must agree, and one of them quietly not
-    agreeing is exactly the kind of thing nobody notices.
-    """
+    """The key bar, compact so the entry list's keys fit 80 columns."""
 
     def __init__(self, **kwargs: Any) -> None:
-        # Passed to __init__ rather than set as a class attribute, since
-        # `compact` is a Textual reactive and assigning a plain value over
-        # it in a subclass replaces the descriptor instead of the default.
+        # Passed to __init__, not set as a class attribute: `compact` is a
+        # reactive, and assigning over it in a subclass replaces the
+        # descriptor rather than its default.
         kwargs.setdefault("compact", True)
         super().__init__(**kwargs)

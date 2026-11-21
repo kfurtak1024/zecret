@@ -1,4 +1,4 @@
-"""The Zecret Textual application: screen management and app-level state.
+"""The Zecret Textual application: screen routing and session state.
 
 Screen flow:
     UnlockScreen -> EntryListScreen <-> EditorScreen (one day's entry)
@@ -8,37 +8,26 @@ Screen flow:
                                      -> SettingsScreen (theme, password)
                                      -> HelpScreen
 
-The unlocked DiaryFile and derived key live on the App instance for the
-duration of the session and are never persisted in plaintext. Preferences
-(the theme, and how long the diary may sit idle) are the one thing that
-outlives the session, in a separate plaintext file -- see config.py for why
-they are not in the diary.
+The unlocked DiaryFile and the derived key live on the App for the session
+and are never persisted. Preferences are the one thing that outlives it;
+see config.py.
 
-They do not live there indefinitely, though. A diary left open is a diary
-anyone at that terminal can read, so this module watches for a spell of
-quiet and puts it away again: lock() forgets both, tears the screens down
-and goes back to UnlockScreen. Everything to do with that is here rather
-than in a screen, for the same reason routing is -- it is about the session
-as a whole, not about anything on show.
-
-How long the quiet has lasted is read off two clocks rather than one,
-because a closed laptop stops the monotonic one -- see Instant.
-
-Quitting is guarded from here for the same reason. It is the other way a
-screen full of unsaved writing can vanish, and it arrives by two keys, so
-the question about throwing that writing away is asked once in action_quit
-rather than once per binding. That question offers to save on the way out,
-which is why the app can ask a screen to write what it is holding --
-save_pending() on ZecretScreen, the counterpart of blocks_lock.
+Three things about the session as a whole are decided here rather than in
+a screen: the idle lock (lock_if_idle, on two clocks; see Instant), locking
+by hand (action_lock), and the guarded quit (action_quit), which asks
+before leaving over unsaved writing and offers to save it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal, NamedTuple, Self, overload
 
+import rich
+from rich.traceback import Traceback
 from textual import events
 from textual.app import App
 from textual.await_complete import AwaitComplete
@@ -56,29 +45,16 @@ from zecret.storage import DEFAULT_DIARY_PATH, DiaryFile
 
 
 class Instant(NamedTuple):
-    """A moment, read off both of the clocks that can measure it.
+    """A moment, read off both clocks that can measure it.
 
-    Two readings because neither clock alone can say how long someone has
-    been away, and they fail in opposite directions.
+    Neither clock alone can say how long someone has been away, and they
+    fail in opposite directions. `time.monotonic()` does not advance while
+    the machine is suspended. The wall clock does, but can be set
+    backwards.
 
-    `time.monotonic()` is `CLOCK_MONOTONIC`, which does not advance while
-    the machine is suspended. A laptop closed with the diary open and
-    reopened the next morning therefore came back to a timer that thought
-    no time had passed at all -- and closing the lid is the most ordinary
-    way there is of walking away from a terminal, which is the whole case
-    this feature exists for.
-
-    The wall clock does count a suspend, and cannot be trusted on its own
-    for the opposite reason: it can be set backwards, by hand or by an
-    NTP correction, and a diary that stayed open an extra hour because of
-    one would be the same failure wearing different clothes.
-
-    So elapsed() takes whichever of them reports the longer wait. That is
-    fail-closed in both directions: a suspend shows up in the wall reading
-    while the monotonic one stands still, and a clock shoved backwards
-    leaves a negative wall reading that the monotonic one overrules. The
-    only way to stay unlocked is for both clocks to agree that little time
-    has passed.
+    elapsed() takes whichever reports the longer wait, which is fail-closed
+    both ways: staying unlocked needs both clocks to agree that little
+    time has passed.
     """
 
     monotonic: float
@@ -95,8 +71,8 @@ class Instant(NamedTuple):
         return max(now.monotonic - self.monotonic, now.wall - self.wall)
 
 
-#: What counts as someone being at the diary: a key, a click, or the
-#: wheel. See ZecretApp.on_event for what is left out, and why.
+#: What counts as someone being at the diary: a key, a click, or the wheel.
+#: Mouse movement does not; a mouse nudged on a desk is not a reader.
 ACTIVITY = (
     events.Key,
     events.MouseDown,
@@ -106,21 +82,16 @@ ACTIVITY = (
     events.MouseScrollRight,
 )
 
-#: Said when the diary locks itself, so a screen that suddenly wants a
-#: password is not a mystery.
 LOCKED_BY_TIMEOUT = "Locked after a spell of quiet."
 LOCKED_BY_HAND = "Locked."
 
-#: Said when ctrl+l lands while the password is being changed, which it
-#: waits for.
+#: Said when ctrl+l or ctrl+q lands while the password is being changed,
+#: which both wait for.
 LOCK_WHEN_DONE = "Locking once the new password is saved."
-
-#: And when ctrl+q does, which waits for the same reason.
 QUIT_WHEN_DONE = "Quitting once the new password is saved."
 
 #: The answer to the unsaved-changes question that quits without losing
-#: anything. The editor's own wording for the same button says "go back",
-#: since that is where escape was heading; this one says where ctrl+q was.
+#: anything.
 SAVE_AND_QUIT = "Save and quit"
 
 
@@ -130,16 +101,12 @@ class ZecretApp(App[None]):
     CSS_PATH = "app.tcss"
     TITLE = "Zecret"
 
-    # No command palette. It offers a search over commands this app does
-    # not have, and its one useful entry -- the theme picker -- now lives
-    # on the settings screen where it can be saved. Switching it off also
-    # drops the ctrl+p binding and the footer's "^p palette" entry.
+    # Off: it searches commands this app does not have. This also removes
+    # the ctrl+p binding and the footer's palette entry.
     ENABLE_COMMAND_PALETTE = False
 
-    #: How often to ask whether the diary has been left alone long enough
-    #: to lock. Coarse on purpose: the check costs a subtraction, and
-    #: locking within half a minute of the deadline is close enough for a
-    #: timeout measured in minutes. Tests turn it right down.
+    #: How often the idle check runs. Coarse on purpose: the timeout is in
+    #: minutes, and activity is also checked as it arrives (see on_event).
     IDLE_CHECK_SECONDS = 30.0
 
     def __init__(
@@ -150,50 +117,35 @@ class ZecretApp(App[None]):
         """Store the paths; the diary itself is unlocked via UnlockScreen.
 
         Args:
-            diary_path: Path to the encrypted diary file. Defaults to
-                ~/.zecret/diary.enc, overridable via --path / ZECRET_DIARY_PATH.
-            config_path: Path to the preferences file, defaulting to
-                DEFAULT_CONFIG_PATH. Deliberately a separate argument
-                rather than derived from diary_path: preferences belong to
-                the person, not the file, so pointing --path at a scratch
-                diary must not give it a theme of its own. Resolved here
-                rather than as a default value so the fallback can be
-                redirected in tests, which must never read or write the
-                real one.
+            diary_path: Path to the encrypted diary file.
+            config_path: Path to the preferences file, or None for
+                DEFAULT_CONFIG_PATH. Resolved here rather than as a default
+                value so tests can redirect the fallback. Separate from
+                diary_path: preferences belong to the person, not the file.
         """
         super().__init__()
         self.diary_path = diary_path
         self.config = Config.load(DEFAULT_CONFIG_PATH if config_path is None else config_path)
-        # Both are None until UnlockScreen succeeds, and live only in memory
-        # for the session. Screens reach the diary exclusively through these.
+        # Both None until UnlockScreen succeeds. Screens reach the diary
+        # only through these.
         self.diary: DiaryFile | None = None
         self.key: bytes | None = None
-        # When something last happened, on both clocks -- see Instant for
-        # why one of them is not enough to tell being away from being
-        # suspended.
         self.last_activity = Instant.now()
-        # Whether the editor covers what is written on it -- see
-        # EditorScreen.action_toggle_mask. Session state rather than a
-        # preference: it lives here so that going back to the list and
-        # opening another day keeps it on, and it is deliberately not in
-        # config.py, because a diary that opened unreadable would be a
-        # puzzle before it was a protection.
+        # Whether the editor covers its text. Session state, deliberately
+        # not in config.py: it survives opening another day, and a new
+        # session starts uncovered.
         self.masked = False
-        # A ctrl+l or a ctrl+q that arrived while a screen was working,
-        # waiting for it to finish -- see action_lock and action_quit.
+        # A ctrl+l or ctrl+q that arrived while a screen was working, and
+        # is waiting for it to finish.
         self.lock_pending = False
         self.quit_pending = False
-        # When a screen was last popped, which decides what a notification
-        # has already been carried across -- see pop_screen.
+        # When a screen was last popped; see pop_screen.
         self.last_pop: float | None = None
 
     def on_mount(self) -> None:
-        """Apply the saved theme, then push UnlockScreen, which prompts to
-        unlock or to create a diary depending on whether diary_path exists.
-
-        Routing lives here rather than in the screens: UnlockScreen reports
-        success by dismissing, and this decides what comes next.
-        """
+        """Apply the saved theme and push UnlockScreen, in whichever flow
+        fits whether diary_path exists. UnlockScreen reports success by
+        dismissing; routing from there is _on_unlocked."""
         self.apply_theme(self.config.theme)
         creating = not self.diary_path.exists()
         self.push_screen(UnlockScreen(creating=creating), self._on_unlocked)
@@ -202,33 +154,33 @@ class ZecretApp(App[None]):
     async def on_event(self, event: events.Event) -> None:
         """Every event the app sees, which is where activity is noticed.
 
-        Key events reach here even when a widget goes on to consume them --
-        typing into the editor's TextArea counts, and has to, or writing a
-        long entry would be the one thing that looks like being away.
-
-        The scroll wheel counts for the same reason on the other side:
-        reading a long day with it is someone at the diary as surely as
-        typing is, and it used to be the one way of reading that locked
-        mid-page. Mouse movement does not count -- a mouse nudged on a desk
-        is not a reader, and a diary kept open by one would be kept open
-        by nobody.
+        Key events reach here even when a widget goes on to consume them,
+        so typing in the editor counts.
         """
         if isinstance(event, ACTIVITY):
+            # Checked before the stamp, not only on the timer. The timer
+            # sleeps on the monotonic clock, which stands still through a
+            # suspend, so the first key after a night asleep arrives before
+            # the tick. Stamping it would count whoever opened the lid as
+            # the writer who never left. The event that finds the diary
+            # overdue locks it and is not delivered.
+            was_unlocked = self.is_unlocked
+            self.lock_if_idle()
+            if was_unlocked and not self.is_unlocked:
+                return
             self.last_activity = Instant.now()
         await super().on_event(event)
 
     def apply_theme(self, theme: str) -> None:
-        """Switch to `theme`, or to the default if it is not a real theme.
+        """Switch to `theme`, or to the default if Textual does not know it.
 
-        Config holds whatever string was in the file, which may name a
-        theme this Textual no longer ships; setting it directly would raise
-        and take the app down over a preference.
+        The name comes from a file anyone can edit, and setting an unknown
+        theme raises.
         """
         self.theme = theme if theme in self.available_themes else DEFAULT_THEME
 
-    # Mirrored from App, which overloads on wait_for_dismiss to say which
-    # of the two return types you get. An override has to carry the same
-    # shape or every caller in the app loses that.
+    # Mirrors App's overloads on wait_for_dismiss, so callers keep the
+    # return type that goes with the flag.
     @overload
     def push_screen(
         self,
@@ -259,56 +211,54 @@ class ZecretApp(App[None]):
     ) -> AwaitMount | asyncio.Future[ScreenResultType]:
         """Push a screen, and drop whatever was still being said.
 
-        A notification belongs to the app rather than to the screen that
-        raised one, and Textual keeps it for its timeout and draws the live
-        ones onto whichever screen is current. In an app that changes
-        screens as often as this one, that made every toast flicker: it
-        went away with the screen it was raised over and reappeared on the
-        next, seconds later and out of context -- "Saved." greeting the
-        empty editor you had just opened to write something else.
-
-        Pushing is starting something new, so what was said about the last
-        thing is finished. Popping is not: it is the end of the thing that
-        was being said about, which is how "Saved." reaches the list the
-        editor returns to. That asymmetry is the whole rule, and it is why
-        this is here rather than in a timeout somebody has to tune.
+        Textual keeps a notification for its timeout and redraws it on
+        whichever screen is current. Pushing starts something new, so what
+        was said about the last thing is finished. Popping does not clear:
+        that is how "Saved." reaches the list the editor returns to.
         """
         self.clear_notifications()
-        # Split rather than passed through, so the flag reaches the base as
-        # the literal its overloads are keyed on.
-        #
-        # Textual raises NoActiveWorker if this is awaited outside a
-        # worker, and Zecret runs none -- so the True arm is unreachable
-        # here and stays only because an override may not accept less than
-        # what it overrides. Exercising it would test Textual rather than
-        # this app, so it is excluded instead of covered by a fiction.
+        # Split so the flag reaches the base as the literal its overloads
+        # are keyed on. Textual raises NoActiveWorker if the True form is
+        # awaited outside a worker, and Zecret runs none, so that arm is
+        # unreachable here and excluded from coverage.
         if wait_for_dismiss:  # pragma: no cover
             return super().push_screen(screen, callback, True, mode=mode)
         return super().push_screen(screen, callback, False, mode=mode)
 
     def pop_screen(self) -> AwaitComplete:
-        """Pop a screen, carrying what was just said across -- once.
+        """Pop a screen, carrying what was just said across one pop only.
 
-        Popping keeps the notifications, which is how "Saved." reaches the
-        list the editor returns to. But Textual draws every live one afresh
-        on whichever screen comes into view, so a message carried across
-        one pop was carried across the next as well: "Master password
-        changed." came up over the settings screen the dialog closed onto,
-        and again over the list when settings was left a moment later.
+        Whatever was raised before the previous pop has been carried
+        already and is dropped now. Judged by `raised_at`, because notify()
+        only posts a message: a toast raised just before dismiss() is not
+        stored yet when that pop happens.
 
-        So a notification crosses one pop and no more: whatever was raised
-        before the last pop has been carried already, and goes now. Judged
-        by when it was raised rather than by whether it was there at that
-        pop, because notify() only posts a message -- the dialog's "changed"
-        is raised a moment before it dismisses, and is not among the app's
-        notifications yet when that pop happens.
+        Uses two Textual internals; there is no public way to drop a
+        single notification. Guarded, so that if Textual renames them a
+        message is carried one pop too far instead of every pop raising.
         """
         if self.last_pop is not None:
-            for notification in list(self._notifications):
-                if notification.raised_at < self.last_pop:
-                    self._unnotify(notification, refresh=False)
+            with suppress(AttributeError):
+                for notification in list(self._notifications):
+                    if notification.raised_at < self.last_pop:
+                        self._unnotify(notification, refresh=False)
         self.last_pop = time.time()
         return super().pop_screen()
+
+    def _fatal_error(self) -> None:
+        """Print a crash's traceback without the local variables.
+
+        Textual prints an unhandled exception with show_locals=True into
+        the terminal's scrollback. Here the locals are the secrets: the
+        password, the day's text, the key. The frames and line numbers
+        stay, which is what a bug report needs.
+
+        Overrides a private method, since Textual has no public setting
+        for this. If it is ever renamed the locals come back, and
+        tests/test_crash.py fails.
+        """
+        self.bell()
+        self.panic(Traceback(show_locals=False, width=None, suppress=[rich]))
 
     def _on_unlocked(self, _result: None) -> None:
         """Called once UnlockScreen dismisses, i.e. the diary is open."""
@@ -317,49 +267,30 @@ class ZecretApp(App[None]):
     def action_help(self) -> None:
         """Open the help popup, from whichever main view asked.
 
-        Here rather than on a screen because two screens open it -- the
-        entry list and the calendar -- and one action is one place to
-        change. Neither screen could hold it without importing the popup,
-        which imports them both to list their keys.
-
-        Bound on those two screens only, never app-wide: a '?' typed into
-        the editor, the search box or a password field must stay a '?'.
+        On the app because two screens open it, and neither can import the
+        popup, which imports them both to list their keys. Bound on those
+        screens only, never app-wide, so '?' stays typeable in text fields.
         """
         self.push_screen(HelpScreen())
 
     async def action_quit(self) -> None:
-        """Quit -- but never silently over something half-written.
+        """Quit, but never silently over something half-written.
 
-        Both spellings dispatch this one action: 'q' on the entry list, and
-        ctrl+q, which Textual binds app-wide with priority so that a screen
-        made of text fields still has a way out. They are two keys because
-        a bare 'q' cannot be bound where there is something to type into,
-        not because they are two behaviours, so the question is asked once
-        here rather than per binding.
-
-        Textual's own action_quit exits immediately. That is the right
-        thing everywhere except over an editor holding unsaved text, which
-        would lose it -- without the prompt that backing out of that very
-        screen gives, and without even appearing in the key bar to warn
-        that it might. The test is the one the idle lock already uses: what
-        must not be locked away unasked must not be quit away unasked.
+        Both 'q' on the main views and the app-wide ctrl+q dispatch this
+        one action, so the question is asked in one place.
         """
         if self.is_working():
-            # The password is being changed. Quitting there and then did
-            # not stop it -- the re-key ran on in its thread and saved after
-            # the app had gone, with nothing said, so the old password was
-            # the one anyone would try next and it was refused. Wait for it,
-            # and leave saying how it ended (PasswordScreen.change_password).
+            # The password is being changed. Quitting now would not stop
+            # the re-key, only the telling of it. Wait, and leave saying
+            # how it ended (PasswordScreen.change_password).
             self.quit_pending = True
             self.notify(QUIT_WHEN_DONE)
             return
         if not self.locking_would_lose_work():
             self.exit()
             return
-        # A question is already on the screen -- the editor's own discard
-        # prompt, most likely, since that is what ctrl+q interrupts. Asking
-        # the same thing again on top of it buries the first copy under a
-        # second, so let the one already showing be answered.
+        # A question is already showing, most likely the editor's own
+        # about the same writing. Let that one be answered.
         if isinstance(self.screen, ConfirmScreen):
             return
         self.push_screen(
@@ -368,13 +299,10 @@ class ZecretApp(App[None]):
         )
 
     def _quit_answered(self, choice: Choice | None) -> None:
-        """Leave on Quit, and on Save and quit once the writing is down.
+        """Leave on Quit, and on Save and quit once the writing is saved.
 
-        Anything else -- Cancel, escape, no answer at all -- stays exactly
-        where the question was asked. So does a save that could not
-        happen: the screen holding the text says why on its own error
-        line, and quitting on top of that would lose the very thing the
-        answer was trying to keep.
+        Anything else stays. So does a save that failed: the screen
+        holding the text has said why on its own error line.
         """
         if choice not in (Choice.CONFIRM, Choice.SAVE):
             return
@@ -385,11 +313,8 @@ class ZecretApp(App[None]):
     def save_unsaved_work(self) -> bool:
         """Have every screen holding something unsaved write it out.
 
-        The counterpart of locking_would_lose_work, over the same stack
-        and for the same reason: in practice one editor, but a screen
-        under a modal is still holding what it is holding. Every one of
-        them is asked before the answer is worked out -- short-circuiting
-        would save some of the writing and abandon the rest.
+        Every one is asked before the answer is worked out; a
+        short-circuit would save some of the writing and abandon the rest.
         """
         saved = [
             screen.save_pending()
@@ -401,22 +326,13 @@ class ZecretApp(App[None]):
     def action_lock(self) -> None:
         """ctrl+l from a screen that is not the editor: lock, saving first.
 
-        Bound on every screen the open diary reaches -- search, settings
-        and every popup -- because whether someone stepping away can find
-        the lock key is a security property, and search lays the whole
-        diary out in plain sight. (The list and the calendar have their
-        own; the editor has its own that saves the day it holds.)
+        Bound on every screen the open diary reaches. Saves rather than
+        asks, as the editor's own does, because a popup can be sitting
+        over an editor with writing in it. A save that fails keeps the
+        diary open, with the reason on the editor's error line.
 
-        Saves rather than asks, for the reason the editor's does: a lock
-        is pressed on the way out of the room. That matters here because a
-        popup can be sitting over an editor with writing in it -- the
-        question about unsaved changes, most likely. A save that fails
-        keeps the diary open: the editor has said why, and locking would
-        throw away what the save was keeping.
-
-        While the password is being changed it waits instead, and the
-        dialog locks once the change is over -- see PasswordScreen.rekey for
-        what locking part way through it did. A second or two, and said.
+        While the password is being changed it waits, and the dialog
+        locks when the change is over.
         """
         if self.is_working():
             self.lock_pending = True
@@ -430,25 +346,19 @@ class ZecretApp(App[None]):
     def lock_if_idle(self) -> None:
         """Lock the diary if it has been left alone long enough.
 
-        Runs on a timer whether or not anything is unlocked, since the
-        setting can be changed mid-session and the lock screen itself has
-        nothing to lock.
+        Called on a timer and before each activity event is stamped.
 
-        Not named check_idle: Textual's MessagePump already has one, it
-        means "the message queue has drained" rather than "nobody is
-        there", and it is called from refresh() -- so taking that name
-        replaces a framework method with one that wants attributes the app
-        has not set yet, and every test dies in App.__init__.
+        Not named check_idle: Textual's MessagePump has a method of that
+        name, called from refresh().
         """
         minutes = self.config.lock_after_minutes
         if minutes <= 0 or not self.is_unlocked or self.is_working():
-            # Working: the password is being changed. The next tick will
+            # Working: the password is being changed. The next check will
             # find it done.
             return
         if self.locking_would_lose_work():
-            # Half-written entry on the screen. Treat waiting on the writer
-            # as activity rather than merely postponing: locking the moment
-            # they saved would be the same ambush a beat later.
+            # A half-written entry holds the lock off, and counts as
+            # activity, so the diary does not lock the moment it is saved.
             self.last_activity = Instant.now()
             return
         if self.last_activity.elapsed() >= minutes * 60:
@@ -463,8 +373,8 @@ class ZecretApp(App[None]):
     def locking_would_lose_work(self) -> bool:
         """Whether any screen on the stack is holding something unsaved.
 
-        The whole stack, not just the top one: a confirmation modal over a
-        half-written entry is still a half-written entry.
+        The whole stack: a modal over a half-written entry is still a
+        half-written entry.
         """
         return any(
             isinstance(screen, ZecretScreen) and screen.blocks_lock for screen in self.screen_stack
@@ -473,9 +383,8 @@ class ZecretApp(App[None]):
     def lock(self, message: str = LOCKED_BY_HAND) -> None:
         """Forget the diary and the key, and go back to the lock screen.
 
-        Everything above the lock screen is torn down first, while the
-        diary is still open: screens rebuild themselves as they resume, and
-        one resuming into a locked app has nothing to draw from.
+        The screens are torn down first, while the diary is still open:
+        they redraw as they resume.
         """
         if not self.is_unlocked:
             return
@@ -484,9 +393,7 @@ class ZecretApp(App[None]):
             self.pop_screen()
         self.diary = None
         self.key = None
-        # Pushing clears what the torn-down screens were saying, so this
-        # notify has to come after it -- which is also the order that
-        # reads right: put the diary away, then say so.
+        # Pushing clears notifications, so the notify comes after it.
         self.push_screen(UnlockScreen(creating=False), self._on_unlocked)
         self.notify(message)
 
@@ -499,12 +406,9 @@ class ZecretApp(App[None]):
     def unlocked(self) -> tuple[DiaryFile, bytes]:
         """The open diary and the key it was opened with.
 
-        Every screen after UnlockScreen needs both, and needs them non-None.
-        Reaching here before unlocking is a routing bug, not a user error,
-        so it raises rather than returning a half-open state.
-
         Raises:
-            RuntimeError: if the diary has not been unlocked yet.
+            RuntimeError: if the diary is not unlocked, which is a routing
+                bug rather than a user error.
         """
         if self.diary is None or self.key is None:
             raise RuntimeError("the diary is not unlocked")

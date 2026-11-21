@@ -68,6 +68,19 @@ Required coverage:
     - An empty entry is refused.
     - A save that fails keeps the user on the screen with their text, and
       leaves the diary able to retry.
+    - A save refused because another Zecret saved meanwhile re-reads the
+      diary and files the day on top of what the other session wrote, when
+      it changed only other days -- by ctrl+s, by saving on the way out and
+      by locking alike. Neither session's days are lost. That used to be a
+      dead end: the reload was on the list, and reaching the list meant
+      discarding the day.
+    - When the other session changed this same day, nothing is written:
+      the refusal says so, and ctrl+s asks whose version to keep, focused
+      on Cancel. Mine files over theirs and keeps their other days; theirs
+      puts their version in the editor; Cancel writes nothing. Locking
+      cannot ask, so it is refused instead.
+    - A re-read that cannot be done -- the password changed elsewhere, the
+      file unreadable -- is said, and the text stays.
 """
 
 from __future__ import annotations
@@ -81,16 +94,22 @@ from textual.widgets import Button, Input, Label, OptionList, TextArea
 
 from zecret.app import SAVE_AND_QUIT, ZecretApp
 from zecret.models import Entry
-from zecret.screens.base import DIARY_CHANGED, format_day_long
+from zecret.screens.base import DIARY_CHANGED, REKEYED_ELSEWHERE, format_day_long
 from zecret.screens.confirm import ConfirmScreen
 from zecret.screens.editor import (
+    DAY_CHANGED_ELSEWHERE,
     EMPTY_ENTRY,
     SAVE_AND_GO_BACK,
     SAVED,
-    DiaryTextArea,
+    SAVED_OVER_THEIRS,
+    SAVED_WITH_THEIRS,
+    TOOK_THEIRS,
+    WHOSE_DAY,
     EditorScreen,
 )
 from zecret.screens.entry_list import EntryListScreen
+from zecret.screens.text_area import DiaryTextArea
+from zecret.screens.unlock import UnlockScreen
 from zecret.storage import DiaryFile
 
 PASSWORD = "correct horse battery staple"
@@ -1332,9 +1351,28 @@ async def test_a_failed_save_keeps_you_on_the_editor(diary_path, monkeypatch):
         assert "No space left" in str(app.screen.query_one("#editor-error", Label).content)
 
 
-async def test_a_diary_changed_underneath_refuses_the_save_and_says_so(diary_path):
-    """A second Zecret saved while this one was writing. The text stays on
-    screen, and nothing of the other session's is overwritten."""
+def save_elsewhere(path: Path, *entries: Entry) -> None:
+    """Stand in for another Zecret on the same file: its own DiaryFile,
+    writing these days -- new or replacing -- and saving."""
+    other, other_key = DiaryFile.unlock(path, PASSWORD)
+    for entry in entries:
+        other.entries[entry.date] = entry
+    other.save(other_key)
+
+
+def error_line(app: ZecretApp) -> str:
+    return str(app.screen.query_one("#editor-error", Label).content)
+
+
+def on_disk(path: Path) -> dict[dt.date, str]:
+    reopened, _ = DiaryFile.unlock(path, PASSWORD)
+    return {date: entry.body for date, entry in reopened.entries.items()}
+
+
+async def test_a_save_after_another_zecret_saved_keeps_both(diary_path, notifications):
+    """The other session wrote a different day. Saving here picks that up
+    and files today on top of it, rather than refusing until the day is
+    discarded to reach the list's reload."""
     seed(diary_path)
     app = ZecretApp(diary_path=diary_path)
     async with app.run_test() as pilot:
@@ -1342,22 +1380,287 @@ async def test_a_diary_changed_underneath_refuses_the_save_and_says_so(diary_pat
         await pilot.press("n")
         await pilot.pause()
         await type_body(pilot, "Written here.")
+        save_elsewhere(diary_path, Entry.new(YESTERDAY, "Written by the other session"))
 
-        # Stand in for the other session: same file, its own DiaryFile.
-        other, other_key = DiaryFile.unlock(diary_path, PASSWORD)
-        other.add_entry(Entry.new(YESTERDAY, "Written by the other session"))
-        other.save(other_key)
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen), "saving does not leave"
+        assert error_line(app) == ""
+        assert notifications(app) == [SAVED_WITH_THEIRS]
+        assert set(app.diary.entries) == {TODAY, YESTERDAY}
+        assert not app.screen.modified
+
+        await pilot.press("escape")
+        await pilot.pause()
+        # The list redrew from the re-read diary: both days have rows,
+        # whichever month headings fall between them.
+        rows = row_labels(app)
+        assert f"{TODAY:%a %d}   Written here." in rows
+        assert f"{YESTERDAY:%a %d}   Written by the other session" in rows
+
+    assert on_disk(diary_path) == {
+        TODAY: "Written here.",
+        YESTERDAY: "Written by the other session",
+    }
+
+
+async def test_saving_on_the_way_out_keeps_both_too(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Written here.")
+        save_elsewhere(diary_path, Entry.new(YESTERDAY, "Theirs"))
+
+        await save_and_leave(pilot)
+        assert isinstance(app.screen, EntryListScreen)
+
+    assert on_disk(diary_path) == {TODAY: "Written here.", YESTERDAY: "Theirs"}
+
+
+async def test_locking_after_another_zecret_saved_keeps_both(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Written here.")
+        save_elsewhere(diary_path, Entry.new(YESTERDAY, "Theirs"))
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        assert isinstance(app.screen, UnlockScreen)
+
+    assert on_disk(diary_path) == {TODAY: "Written here.", YESTERDAY: "Theirs"}
+
+
+async def edit_yesterday_while_they_do(pilot, diary_path: Path) -> None:
+    """Open yesterday, change it, and have the other session change it too."""
+    await pilot.press("enter")
+    await pilot.pause()
+    await type_body(pilot, "Mine.")
+    save_elsewhere(
+        diary_path,
+        Entry.new(YESTERDAY, "Theirs."),
+        Entry.new(LAST_WEEK, "Their other day."),
+    )
+
+
+async def test_the_same_day_saved_elsewhere_is_not_written_over(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await edit_yesterday_while_they_do(pilot, diary_path)
         after_other = diary_path.read_bytes()
 
         await pilot.press("ctrl+s")
         await pilot.pause()
 
-        assert isinstance(app.screen, EditorScreen), "must not leave"
-        assert app.screen.body_text == "Written here."
-        assert DIARY_CHANGED in str(app.screen.query_one("#editor-error", Label).content)
-        assert app.diary.entries == {}, "the refused entry must not linger in memory"
+        assert isinstance(app.screen, ConfirmScreen)
+        assert str(app.screen.query_one("#confirm-question", Label).content) == WHOSE_DAY
+        assert app.screen.focused is app.screen.query_one("#confirm-no", Button), (
+            "both other answers throw a version away; a stray Enter must do neither"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Mine."
+        assert DAY_CHANGED_ELSEWHERE in error_line(app)
+        assert diary_path.read_bytes() == after_other
+
+        # Nothing was adopted, so another road to saving is refused too.
+        await save_and_leave(pilot)
+        assert isinstance(app.screen, EditorScreen)
+        assert diary_path.read_bytes() == after_other
+
+
+async def test_save_mine_files_it_over_theirs_and_keeps_their_other_days(diary_path, notifications):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await edit_yesterday_while_they_do(pilot, diary_path)
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.click("#confirm-save")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert notifications(app)[-1] == SAVED_OVER_THEIRS
+        assert error_line(app) == ""
+        assert not app.screen.modified
+
+    assert on_disk(diary_path) == {YESTERDAY: "Mine.", LAST_WEEK: "Their other day."}
+
+
+async def test_take_theirs_puts_their_version_in_the_editor(diary_path, notifications):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await edit_yesterday_while_they_do(pilot, diary_path)
+        after_other = diary_path.read_bytes()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Theirs."
+        assert not app.screen.modified, "what is on screen is what is on disk"
+        assert notifications(app)[-1] == TOOK_THEIRS
+        assert set(app.diary.entries) == {YESTERDAY, LAST_WEEK}
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, EntryListScreen), "nothing left to ask about"
 
     assert diary_path.read_bytes() == after_other
+
+
+async def test_taking_theirs_when_they_deleted_the_day_leaves_it_new(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        await type_body(pilot, "Mine.")
+        other, other_key = DiaryFile.unlock(diary_path, PASSWORD)
+        with other.saving(other_key):
+            other.delete_entry(YESTERDAY)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await pilot.pause()
+
+        assert app.screen.body_text == ""
+        assert app.screen.creating
+        assert app.screen.sub_title.endswith("— new")
+
+
+async def test_a_lock_cannot_ask_whose_day_so_it_is_refused(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await edit_yesterday_while_they_do(pilot, diary_path)
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen), "locking would lose one version"
+        assert app.is_unlocked
+        assert DAY_CHANGED_ELSEWHERE in error_line(app)
+
+
+async def test_a_save_that_fails_after_choosing_mine_keeps_the_text(diary_path, monkeypatch):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await edit_yesterday_while_they_do(pilot, diary_path)
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        def boom(*_args, **_kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(DiaryFile, "save", boom)
+        await pilot.click("#confirm-save")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Mine."
+        assert "No space left" in error_line(app)
+
+
+async def test_a_re_key_elsewhere_is_said_and_the_text_stays(diary_path):
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Written here.")
+        other, _ = DiaryFile.unlock(diary_path, PASSWORD)
+        other.change_password("another one")
+        after_other = diary_path.read_bytes()
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.screen.body_text == "Written here."
+        assert REKEYED_ELSEWHERE in error_line(app)
+
+    assert diary_path.read_bytes() == after_other
+
+
+async def test_an_unreadable_re_read_is_said_and_the_text_stays(diary_path):
+    """Plain, too: the detail can quote the damaged file."""
+    seed(diary_path)
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Written here.")
+        diary_path.write_text("[/bold] not a diary")
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert app.screen.body_text == "Written here."
+        assert "Could not re-read the diary" in error_line(app)
+        assert app.diary.entries == {}, "the refused entry must not linger in memory"
+
+
+async def test_a_diary_changed_again_after_the_re_read_is_refused(diary_path, monkeypatch):
+    """One attempt per keypress: a file that changes between the re-read
+    and the write is refused, and nothing of either is lost."""
+    seed(diary_path)
+    real_reopen = DiaryFile.reopen
+
+    def reopen_then_change(path, key):
+        reopened = real_reopen(path, key)
+        save_elsewhere(path, Entry.new(LAST_WEEK, "Theirs, again."))
+        return reopened
+
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        await type_body(pilot, "Written here.")
+        save_elsewhere(diary_path, Entry.new(YESTERDAY, "Theirs."))
+        monkeypatch.setattr(DiaryFile, "reopen", reopen_then_change)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        assert app.screen.body_text == "Written here."
+        assert DIARY_CHANGED in error_line(app)
+
+    assert on_disk(diary_path) == {YESTERDAY: "Theirs.", LAST_WEEK: "Theirs, again."}
+
+
+async def test_the_refusal_fits_its_row_in_an_80_column_terminal(diary_path):
+    seed(diary_path, Entry.new(YESTERDAY, "Before."))
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await unlock(pilot)
+        await edit_yesterday_while_they_do(pilot, diary_path)
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+        line = app.screen.query_one("#editor-error", Label)
+        assert len(DAY_CHANGED_ELSEWHERE) <= line.content_region.width
 
 
 async def test_saving_again_after_a_failure_succeeds(diary_path, monkeypatch):

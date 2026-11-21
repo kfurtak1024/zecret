@@ -1,32 +1,21 @@
 """A modal asking which day to write about.
 
-The entry list's 'n' goes straight to today, which covers writing in the
-evening about the day you are in. This covers the rest: filling in the day
-you missed, or going back to a day you want to add to. Dismisses the chosen
-date, or None if the user backed out.
+For a day other than today: one that was missed, or one to add to.
+Dismisses the chosen date, or None if the user backed out.
 
-Two ways to answer it, and the typed one comes first. The field has focus
-when the modal opens, so a date that is already known is still four
-keystrokes and enter -- that is the fast path and nothing about the
-calendar is allowed to slow it down. Tab (or down) moves into the grid
-below, which is for the other question: not "which day did I mean" but
-"which days have I missed", which no text field can show you. Whichever
-one is being used, the other follows it, and the field is what the answer
-is finally read from.
+There are two ways to answer. The date field has focus when the modal
+opens, so a known date is typed and entered. Tab or down moves into the
+month grid below, which shows which days are already written. Each
+follows the other, and the field is what the answer is read from.
 
-Following happens as the date is typed rather than when it is finished:
-the month arrives under the cursor at the keystroke that names it, so the
-grid is useful while the date is still going in rather than only once
-there is nothing left to look up. The two directions are not symmetrical,
-though, and that is what keeps them from fighting: the grid announces its
-moves and the field writes them down, while the field moves the grid
-quietly (`MonthCalendar.show`) -- because a field halfway through a date
-must not have that date finished for it.
+The two directions are deliberately asymmetric. The grid announces its
+moves and the field writes them down. The field moves the grid quietly
+(`MonthCalendar.show`), as the date is typed: an announcement that way
+would come back as "write this date into the field" and finish a date
+under the cursor of the person still typing it.
 
-Future days are refused. A diary records what happened, and an entry filed
-under a day that has not arrived would sit at the top of the list ahead of
-everything real. The calendar will not put its cursor on one either, so
-the refusal is only ever met by someone who typed the date out.
+Future days are refused. The calendar will not put its cursor on one, so
+the refusal is only met by a typed date.
 """
 
 from __future__ import annotations
@@ -49,27 +38,21 @@ HINT = "Type a date, or tab to the calendar."
 NOT_A_DATE = "That is not a date. Use YYYY-MM-DD."
 IN_THE_FUTURE = "That day has not happened yet."
 
-#: A date being typed, from the point where it says anything at all. The
-#: mask fills its own separators in, so a field on its way to 2019-04-15
-#: reads '2019-', '2019-0', '2019-04-', '2019-04-1' and then the date --
-#: which is why the day is one digit or two, and why a trailing separator
-#: is stripped before this is matched against.
+#: A date being typed, once it names a month. The mask fills in its own
+#: separators, so the field reads '2019-04-' then '2019-04-1': the day is
+#: one digit or two, and a trailing separator is stripped before matching.
 PART_TYPED = re.compile(r"(?P<year>\d{4})-(?P<month>\d{2})(?:-(?P<day>\d{1,2}))?")
 
 
 def typed_date(raw: str, near: dt.date) -> dt.date | None:
-    """The day a part-typed field points at, if it points anywhere yet.
+    """The day a part-typed field points at, or None if not yet anywhere.
 
-    The calendar follows the typing rather than waiting for it to finish,
-    so this answers as soon as there is a month: someone typing a date
-    from two years ago should see that month arrive under their fingers,
-    not after the last digit. Until then it answers None and the grid
-    stays where it was, rather than flicking through the years 0002, 0020
-    and 0201 on the way to 2019.
+    Answers as soon as there is a month, so the grid follows the typing.
+    Before that it is None, so the grid does not flick through the years
+    0002, 0020 and 0201 on the way to 2019.
 
-    `near` is where the cursor is now, and is what a month with no day yet
-    keeps -- clamped, so typing the month of a February from the 31st
-    lands on the 28th rather than raising.
+    `near` is where the cursor is now. A month with no day yet keeps its
+    day, clamped to the month's length.
     """
     match = PART_TYPED.fullmatch(raw.rstrip("-"))
     if match is None:
@@ -80,8 +63,7 @@ def typed_date(raw: str, near: dt.date) -> dt.date | None:
     if match["day"] is None:
         return day_in(year, month, near.day)
     day = int(match["day"])
-    # A single '0' is on its way to being the 1st through the 9th, and
-    # '2019-04-32' is nowhere at all. Neither is a day to move to.
+    # A single '0' is on its way to 01-09, and day 32 is nowhere.
     try:
         return dt.date(year, month, day)
     except ValueError:
@@ -89,14 +71,10 @@ def typed_date(raw: str, near: dt.date) -> dt.date | None:
 
 
 class DateInput(MaskedInput):
-    """The date field, with one key the calendar underneath is worth.
+    """The date field, with `down` bound to move into the calendar.
 
-    Down goes to the grid, because that is where the eye is already
-    heading -- tab does the same and is what a form is expected to answer
-    to, but nobody looking at a calendar below a field reaches for tab
-    first. Bound on the widget rather than on the screen so it stays out
-    of the help popup and the key bar, which document the diary rather
-    than how to get around one modal. Same rule as DiaryTextArea's keys.
+    Bound on the widget rather than the screen, so it stays out of the
+    help popup and the key bar.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -112,8 +90,6 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", show=True),
-        # The same chord as everywhere the diary is open -- see
-        # ZecretApp.action_lock.
         Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
@@ -123,25 +99,21 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
         written: frozenset[dt.date] = frozenset(),
     ) -> None:
         """Args:
-        default: The date the field starts on. Defaults to today, since
-            the day you most often want is the one you are in.
+        default: The date the field starts on. Today if not given.
         written: The days the diary already holds an entry for, which the
-            calendar marks. Passed in rather than looked up here: the
-            caller has the diary open, and a modal that reached for it
-            would be the one screen in the app that talks to storage
-            without being asked to.
+            calendar marks. Passed in: a modal does not reach for storage.
         """
         super().__init__()
         self.default = today() if default is None else default
         self.written = written
 
     def compose(self) -> ComposeResult:
-        # Scrolls, so that a short terminal loses the bottom of the
-        # calendar rather than hiding the field the answer is typed into.
+        # Scrolls, so a short terminal loses the bottom of the calendar
+        # rather than the field.
         with card("date-box"):
             yield Label(PROMPT, id="date-title")
-            # The mask keeps the field to digits in the right places, so
-            # the only thing left to check is whether the day is real.
+            # The mask keeps the field to digits in the right places; what
+            # is left to check is whether the day is real.
             yield DateInput(
                 template="0000-00-00",
                 value=self.default.isoformat(),
@@ -151,12 +123,6 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
             yield MonthCalendar(self.default, self.written, id="date-calendar")
             yield CalendarLegend(id="date-legend")
             yield Label("", id="date-error")
-        # The screen underneath keeps rendering its own bar, and every
-        # key on it is dead while this question has focus -- so without
-        # one of our own the terminal advertises eight keys that do
-        # nothing and hides the one that does. See CLAUDE.md on `show`
-        # being a layout decision: it is only a decision where there is a
-        # footer for it to decide about.
         yield DiaryFooter()
 
     def on_mount(self) -> None:
@@ -173,38 +139,24 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
         return self.query_one("#date-calendar", MonthCalendar)
 
     def on_input_changed(self, event: MaskedInput.Changed) -> None:
-        """Follow the typing, from the keystroke that names a month.
-
-        Not only on a finished date: someone filling in a day from two
-        years ago wants that month to arrive as they type it, and waiting
-        for the last digit means the grid is only ever right once there is
-        nothing left to look up in it. Before there is a month it stays
-        put -- see typed_date.
-
-        `show` rather than assignment, because this is the half that is
-        being typed into: a move announced here comes back as a DateChanged
-        that writes the date into the field, which would finish a date
-        under the cursor of the person still typing it.
-        """
+        """Move the grid to follow the typing, quietly (see the module
+        docstring for why `show` and not assignment)."""
         date = typed_date(event.value, self.calendar.date)
         if date is not None:
             self.calendar.show(date)
 
     def on_month_calendar_date_changed(self, event: MonthCalendar.DateChanged) -> None:
-        """Write the grid's day into the field, which is what is read.
+        """Write the grid's day into the field.
 
-        Only the grid's own moves arrive here -- what the field puts into
-        the grid goes through `show`, which says nothing -- so this is one
-        way round rather than two chasing each other. The Changed it does
-        raise on the field comes back as a typed_date equal to where the
-        cursor already is, which `show` drops on the spot.
+        Only the grid's own moves arrive here. The Changed this raises on
+        the field comes back as a date equal to the cursor's, which `show`
+        drops.
         """
         self.field.value = event.date.isoformat()
 
     def on_month_calendar_date_picked(self, _event: MonthCalendar.DatePicked) -> None:
-        """Enter on the grid answers the question, the same as enter in the
-        field does -- through accept(), so the one place that decides what
-        is a usable date keeps deciding it."""
+        """Enter on the grid answers through accept(), as enter in the
+        field does."""
         self.accept()
 
     def on_input_submitted(self, _event: MaskedInput.Submitted) -> None:
@@ -216,8 +168,7 @@ class DatePromptScreen(ModalScreen[dt.date | None]):
         """Validate the typed date and dismiss with it, or explain why not."""
         raw = self.field.value
         try:
-            # Rejects a half-typed date as well as an impossible one:
-            # '2026-08-' and '2026-02-30' both fail here.
+            # Rejects a half-typed date as well as an impossible one.
             date = dt.date.fromisoformat(raw)
         except ValueError:
             self.set_error(NOT_A_DATE)

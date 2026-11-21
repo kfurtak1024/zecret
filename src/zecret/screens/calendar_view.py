@@ -1,33 +1,21 @@
 """The calendar view: a year of the diary laid out, the days written marked.
 
-The second way of looking at the diary, beside the entry list -- 'c' on
-the list opens it, and 'c' or escape here goes back. The list answers
-"what did I write"; this answers "when did I write", which no list of the
-days that *were* written can show, since what it is for is the days that
-were not. A whole year at once is the span the gaps in a diary show over:
-a missed week is a hole in a month, and a missed month is a hole in a year.
+The second way of looking at the diary. 'c' on the list opens it, and 'c'
+or escape goes back. The list shows what was written; this shows when,
+and so the days that were missed.
 
-It is a screen pushed over the list rather than a mode beside it, so that
-the list stays where the diary opens and locking pops this along with
-everything else. Which day the cursor is on is read off it by the list on
-the way back -- see EntryListScreen.action_calendar.
+A screen pushed over the list, not a mode beside it: the list stays where
+the diary opens, and locking pops this with everything else. The list
+reads CalendarScreen.date on the way back and lands on that day.
 
-Responsibilities:
-    - Lay out the year the cursor is in, three to six months across as the
-      terminal allows (app.tcss, keyed on the class fit_months sets) --
-      decided, and scrolled to the cursor, before the first frame is drawn.
-    - 'e' or enter opens the day under the cursor in the editor, whether
-      or not it has been written -- the editor decides which it is, as it
-      does from everywhere else.
-    - 'd' deletes the entry under the cursor, after the same question the
-      list asks, and unmarks the day. On a day with nothing written it
-      says so rather than doing nothing.
-    - '[' and ']' go to the same day a year either side. The day, week and
-      month keys are the YearCalendar's own, and cross into the next year
-      by themselves.
-    - On every return from the editor, re-read which days are written, so
-      a day just written has its mark -- and after a deletion, so a day
-      deleted loses it.
+- The year is laid out three to six months across as the terminal allows
+  (app.tcss, keyed on the class fit_months sets), and scrolled to the
+  cursor before the first frame is drawn.
+- 'e' or enter opens the day under the cursor in the editor.
+- 'd' deletes the entry under the cursor after asking, or says there is
+  nothing written.
+- '[' and ']' move a year. Day, week and month keys are YearCalendar's.
+- Returning from the editor or a deletion re-marks the written days.
 """
 
 from __future__ import annotations
@@ -58,25 +46,18 @@ from zecret.screens.confirm import Choice, ConfirmScreen
 from zecret.screens.editor import EditorScreen
 from zecret.screens.header import DiaryFooter, DiaryHeader
 
-#: Columns between two months side by side, matching grid-gutter in
-#: app.tcss.
+#: Columns between two months side by side; matches grid-gutter in app.tcss.
 MONTH_GAP = 2
 
 #: Columns around the year that are not months: the card's margin and
-#: padding (2 a side each, the gutter every full-width screen shares) and
-#: the two its scrollbar takes. Those are counted whether or not the year
-#: needs scrolling, because the card always reserves them -- see
-#: `scrollbar-gutter` on #year-box in app.tcss. A scrollbar that came and
-#: went would make the right count depend on the terminal's height, which
-#: fit_months does not look at, and would nudge the centred year sideways
-#: as it appeared.
+#: padding (2 a side each) and 2 for its scrollbar. The scrollbar's are
+#: always counted, because #year-box reserves them (`scrollbar-gutter`), so
+#: the count does not depend on the terminal's height.
 CHROME = 2 * 2 + 2 * 2 + 2
 
 
-#: How many months may sit side by side. Five is missing: twelve months in
-#: rows of five leave a ragged last row of two, and the extra width is
-#: better spent waiting for six, which is the year in two even rows. Three
-#: is what an 80-column terminal gets.
+#: How many months may sit side by side. No five: rows of five leave a
+#: ragged last row of two.
 ACROSS = (1, 2, 3, 4, 6)
 
 
@@ -93,79 +74,56 @@ def months_across(width: int) -> int:
 class CalendarScreen(ZecretScreen):
     """A year at a time, walked by day, week, month and year."""
 
-    #: In the order every bar keeps: this screen's own actions, the way
-    #: out, then Lock, Help and Quit at the end, where the list has them --
-    #: see CLAUDE.md on the key bar.
+    #: This screen's own actions, the way out, then Lock, Help and Quit, as
+    #: on the list.
     BINDINGS: ClassVar[list[BindingType]] = [
-        # "Edit", as the list's enter is: both open the chosen day in the
-        # editor, whether or not it has been written yet.
+        # "Edit", like the list's enter: both open the day in the editor.
         Binding("e", "edit_day", "Edit"),
-        # The list opens a day with enter, so this one does too. 'e' is the
-        # one in the bar: enter is what a calendar is expected to answer to
-        # and needs no advertising, while 'e' is the key this view adds.
         Binding("enter", "edit_day", "Edit", show=False),
-        # The list's key and the list's name for it, since it is the same
-        # thing done to a day chosen another way -- which also keeps it off
-        # the calendar's column of the help popup, where the list's section
-        # has already said it.
+        # Named as the list's is, which also keeps it from appearing twice
+        # in the help popup.
         Binding("d", "delete_day", "Delete"),
-        # On the screen rather than the widget, unlike the arrows and the
-        # page keys: an arrow key in a calendar needs no explaining, a
-        # bracket does, and the help popup and the bar are built from
-        # screen bindings. In the bar as well, since it has the room --
-        # these make eight keys in 72 columns, against the list's eight in
-        # 69 -- and a year key nobody finds leaves the arrows to walk there
-        # instead.
+        # On the screen, unlike the arrows: a bracket needs explaining, and
+        # the help popup and key bar are built from screen bindings.
         Binding("left_square_bracket", "previous_year", "Previous year", key_display="["),
         Binding("right_square_bracket", "next_year", "Next year", key_display="]"),
-        # The way out. Named for where it goes, as the list's 'c' is.
         Binding("c", "back", "List"),
         Binding("escape", "back", "List", show=False),
-        # Shown, for the same reason as on the list -- see EntryListScreen.
         Binding("ctrl+l", "lock", "Lock"),
-        # The app's rather than this screen's, so the popup is opened from
-        # one place for both main views -- see ZecretApp.action_help.
         Binding("question_mark", "app.help", "Help", key_display="?"),
         Binding("q", "app.quit", "Quit"),
     ]
 
     def __init__(self, date: dt.date | None = None) -> None:
         """Args:
-        date: The day to start on -- the one highlighted in the list, so
-            the view opens on the year being read. Today, if not given.
+        date: The day to start on. Today if not given.
         """
         super().__init__()
-        # Repaints held back until the year is laid out and scrolled to the
-        # cursor -- see on_mount and show_first.
+        # Repaints held until the year is laid out and scrolled to the
+        # cursor; see on_mount and show_first.
         self.first_paint = ExitStack()
         #: The day the cursor is on, which the list lands near on the way
-        #: back. A plain copy rather than a look into the YearCalendar: the
-        #: list reads it as this screen is being torn down, and by then the
-        #: widget may already be gone from the DOM -- Textual removes a
-        #: popped screen in a task of its own, unordered against the list's
-        #: resume. Also the day the year opens on.
+        #: back. A plain copy, not a look into the YearCalendar: the list
+        #: reads it while this screen is being torn down, when the widget
+        #: may already be gone from the DOM.
         #:
-        #: Kept up to date by the widget's DateChanged, which is a message
-        #: and so arrives late: a key in the same burst as an arrow runs
-        #: before it does. Anything that acts on the day therefore takes it
-        #: from the widget first -- see take_date.
+        #: Kept up to date by the widget's DateChanged message, which can
+        #: arrive after a key in the same burst. Anything that acts on the
+        #: day takes it from the widget first; see take_date.
         self.date = reachable(today() if date is None else date)
-        # The year the header was last worded for, so that a move within
-        # it does not recount the diary -- see show_year.
+        # The year the header was last worded for; see show_year.
         self.shown_year: int | None = None
-        # The diary the year was last drawn from -- see on_screen_resume.
+        # The diary the year was last drawn from; see on_screen_resume.
         self.drawn: dict[dt.date, Entry] | None = None
 
     def compose(self) -> ComposeResult:
         diary, _ = self.zecret.unlocked
-        # What the year below is drawn from -- see on_screen_resume.
         self.drawn = dict(diary.entries)
         yield DiaryHeader()
         with card("year-box"):
             yield Label("", id="year-title")
-            # Centred in a container of its own rather than by the card:
-            # Textual does not align the children of a container that
-            # scrolls, and in most terminals this one does.
+            # Centred by a container of its own: Textual does not align
+            # the children of a container that scrolls.
             with Center():
                 yield YearCalendar(self.date, self.written_days, id="year")
             yield CalendarLegend(id="year-legend")
@@ -174,29 +132,17 @@ class CalendarScreen(ZecretScreen):
     def on_mount(self) -> None:
         """Lay the year out for this terminal before anything is drawn.
 
-        Two things used to reach the screen a frame or more late, and the
-        year visibly rearranged itself as the view opened. How many months
-        sit across was a breakpoint class Textual applied on the screen's
-        first Resize event, which arrives after the first paint -- so a wide
-        terminal showed three months across and then jumped to four or six.
-        And scrolling to the cursor's month needs a finished layout to
-        measure, so it ran after the first paint too, and the view jumped
-        from January down to the month the cursor was in. (When the two
-        landed in the wrong order, the scroll was measured against the
-        layout about to be replaced, and the cursor's month was not brought
-        into view at all.)
-
-        So the class is set here, from the terminal's width, which comes
-        before the first layout; and repaints are held from here until
-        show_first has scrolled, after that layout. The first frame drawn
-        is the finished one.
+        The months-across class is set here from the terminal's width,
+        before the first layout. Textual's breakpoints would apply it from
+        the first Resize, after the first paint. Scrolling to the cursor
+        needs a finished layout, so repaints are held from here until
+        show_first has scrolled: the first frame drawn is the finished one.
         """
         self.fit_months(self.app.size.width)
         self.first_paint.enter_context(self.app.batch_update())
-        # Without the scroll: focusing a widget brings it into view, and
-        # the top of the year is the row *under* the year's own title, so
-        # the view opened with its heading scrolled off. Where the view
-        # sits is reveal_cursor's to decide, once the grid has a layout.
+        # Without scrolling: focusing would bring the grid into view and
+        # push the year's title off the top. reveal_cursor decides where
+        # the view sits.
         self.calendar.focus(scroll_visible=False)
         self.date = self.calendar.date
         self.show_year()
@@ -205,9 +151,8 @@ class CalendarScreen(ZecretScreen):
     def show_first(self) -> None:
         """Scroll to the cursor now there is a layout, then let it be drawn.
 
-        The release is in `finally` and on_unmount as well: repaints held
-        are held for the whole app, and a hold that outlived its reason
-        would freeze every screen, not just this one.
+        The hold is released in `finally` and again on unmount: it is
+        app-wide, and one left behind would freeze every screen.
         """
         try:
             self.reveal_cursor()
@@ -217,10 +162,8 @@ class CalendarScreen(ZecretScreen):
     def release_first_paint(self) -> None:
         """Let the screen be drawn, and draw it.
 
-        The explicit refresh is what Textual's own delay_update does after
-        its hold, and for the same reason: a frame rendered while repaints
-        were held was thrown away, and nothing else promises to draw the
-        screen again once they are not.
+        The explicit refresh is needed: a frame rendered while repaints
+        were held was discarded.
         """
         self.first_paint.close()
         self.refresh()
@@ -234,12 +177,7 @@ class CalendarScreen(ZecretScreen):
         self.call_after_refresh(self.reveal_cursor)
 
     def fit_months(self, width: int) -> None:
-        """Wear the class saying how many months fit across -- see app.tcss.
-
-        Set by hand rather than through Textual's HORIZONTAL_BREAKPOINTS,
-        which does the same thing but only from the first Resize event,
-        after the screen has already been drawn once without it.
-        """
+        """Set the class saying how many months fit across; see app.tcss."""
         across = months_across(width)
         for months in ACROSS:
             self.set_class(months == across, f"-months-{months}")
@@ -247,15 +185,9 @@ class CalendarScreen(ZecretScreen):
     def on_screen_resume(self) -> None:
         """Back from the editor: mark whatever was written there.
 
-        Also fires as the screen is first shown, a moment after compose
-        drew the year from this same diary -- so the year is redrawn only
-        when the diary has changed since, judged by identity as the list
-        judges it (base.unchanged). That rules out the first showing and a
-        day opened and left alone without building the set of written days
-        again just to compare it with itself.
-
-        Skipped while locking, which pops this screen with the diary
-        already on its way out -- see EntryListScreen.
+        Also fires when the screen is first shown, where redraw() finds
+        nothing changed. Skipped while locking, which pops this screen
+        with the diary already closing.
         """
         if self.zecret.is_unlocked:
             self.redraw()
@@ -275,10 +207,8 @@ class CalendarScreen(ZecretScreen):
     def show_year(self, recount: bool = False) -> None:
         """Name the year on show, and how much of it is written.
 
-        Counting is a pass over every day the diary holds, and the count
-        only changes with the year or with the diary -- so a move within
-        the year, which is nearly every keypress, leaves the header alone
-        unless `recount` says the diary changed.
+        The count is a pass over the whole diary, so it is redone only
+        when the year changes or `recount` says the diary did.
         """
         year = self.date.year
         if year == self.shown_year and not recount:
@@ -296,13 +226,9 @@ class CalendarScreen(ZecretScreen):
     def reveal_cursor(self) -> None:
         """Scroll the month the cursor is in into sight.
 
-        In a terminal too short for the whole year, walking down out of the
-        months on show would otherwise leave the cursor drawn where nobody
-        can see it. Done here rather than in the widget because the card is
-        this screen's, and so is what sits around the year inside it: in
-        the top row of months the view goes right to the top, so the
-        year's title comes with it, and in the bottom row right to the
-        foot, so the legend does. Anywhere between, just far enough.
+        In the top row of months the view goes right to the top, so the
+        year's title comes with it; in the bottom row right to the foot,
+        so the legend does. Otherwise just far enough.
         """
         months = self.calendar.months
         month = self.calendar.cursor_month
@@ -319,24 +245,21 @@ class CalendarScreen(ZecretScreen):
     def take_date(self) -> dt.date:
         """The day the cursor is on now, copied into self.date.
 
-        From the widget rather than from the copy, which may not have
-        caught up: 'right' and 'enter' arriving together run both keys
-        before the widget's DateChanged reaches this screen, and opened the
-        day the cursor had just left.
+        Read from the widget, since self.date may not have caught up:
+        'right' and 'enter' arriving together both run before the
+        widget's DateChanged reaches this screen.
         """
         self.date = self.calendar.date
         return self.date
 
     def action_edit_day(self) -> None:
-        """Open the day under the cursor -- written or not, the editor knows."""
+        """Open the day under the cursor, written or not."""
         self.app.push_screen(EditorScreen(self.take_date()))
 
     def action_delete_day(self) -> None:
-        """Ask about deleting the day under the cursor -- if it has an entry.
+        """Ask about deleting the day under the cursor, if it has an entry.
 
-        A day with nothing written gets a word rather than silence: on a
-        grid of days, unlike in the list, the cursor can be on one, and a
-        dead key there reads as a broken one.
+        A day with nothing written gets a message rather than a dead key.
         """
         date = self.take_date()
         diary, _ = self.zecret.unlocked
@@ -346,12 +269,10 @@ class CalendarScreen(ZecretScreen):
         self.app.push_screen(ConfirmScreen(delete_question(date)), self.confirm_delete(date))
 
     def confirm_delete(self, date: dt.date) -> Callable[[Choice | None], None]:
-        """Build the callback ConfirmScreen dismisses into -- see the list's.
+        """Build the callback ConfirmScreen dismisses into.
 
         Redraws here as well as on resume: nothing orders a dismiss
-        callback against this screen's resume, and the resume may already
-        have run and found nothing changed. redraw() is idempotent, so
-        whichever comes second does nothing.
+        callback against the resume, and redraw() is idempotent.
         """
 
         def on_answered(choice: Choice | None) -> None:
@@ -362,7 +283,7 @@ class CalendarScreen(ZecretScreen):
         return on_answered
 
     def action_back(self) -> None:
-        """Back to the list, which lands on self.date -- taken fresh here."""
+        """Back to the list, which lands on self.date, taken fresh here."""
         self.take_date()
         self.dismiss()
 

@@ -34,6 +34,12 @@ Required coverage:
       the one case the feature is really for. Idleness is measured on both
       clocks now, and a clock shoved backwards must still not hold the
       lock off, which is why the monotonic one is still read at all.
+    - **The first key after that suspend locks; it does not reset the
+      wait.** The timer sleeps on the monotonic clock too, so the key
+      arrives before the tick. Driven through the app's own event path
+      rather than by calling the check: a key, a click and the wheel each
+      lock an overdue diary, are not delivered to the screen underneath,
+      and still count as activity when the diary is not overdue.
     - Typing puts the wait back to the start, and so does the scroll
       wheel: reading a long day with it is being there, and it used to be
       the one way of reading that got locked mid-page. Moving the mouse
@@ -652,15 +658,17 @@ async def test_typing_puts_the_wait_back_to_the_start(diary_path):
         await unlock(pilot)
         app.config.lock_after_minutes = 15
 
-        # Past the deadline, so only the keypress can be what keeps it
-        # open. At fourteen minutes this passed with or without one.
-        go_quiet(app, 16)
+        # Inside the wait: a key past the deadline locks instead. The
+        # reading itself is what shows the reset, since at fourteen
+        # minutes the diary stays open with or without one.
+        go_quiet(app, 14)
         await pilot.press("down")
         await pilot.pause()
+
+        assert app.last_activity.elapsed() < 60, "a keypress should have reset the clock"
         app.lock_if_idle()
         await pilot.pause()
-
-        assert app.is_unlocked, "a keypress should have reset the clock"
+        assert app.is_unlocked
 
 
 async def test_scrolling_puts_the_wait_back_to_the_start(diary_path):
@@ -671,13 +679,14 @@ async def test_scrolling_puts_the_wait_back_to_the_start(diary_path):
         await unlock(pilot)
         app.config.lock_after_minutes = 15
 
-        go_quiet(app, 16)
+        go_quiet(app, 14)
         app.post_message(events.MouseScrollDown(None, 10, 10, 0, 1, 0, False, False, False))
         await pilot.pause()
+
+        assert app.last_activity.elapsed() < 60, "the wheel should have reset the clock"
         app.lock_if_idle()
         await pilot.pause()
-
-        assert app.is_unlocked, "a turn of the wheel should have reset the clock"
+        assert app.is_unlocked
 
 
 async def test_moving_the_mouse_does_not_hold_the_lock_off(diary_path):
@@ -712,6 +721,83 @@ async def test_a_suspended_machine_counts_as_being_away(diary_path):
         await pilot.pause()
 
         assert not app.is_unlocked, "a night of suspend should have locked the diary"
+
+
+@pytest.mark.parametrize("wake", ["key", "click", "wheel"])
+async def test_the_first_event_after_a_suspend_locks_instead_of_resetting(diary_path, wake):
+    """The timer has not ticked yet when someone opens the lid and touches
+    the machine. That touch must find the diary overdue, not stamp itself
+    as activity and keep it open."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_to_sleep(app, minutes=60 * 8)
+        if wake == "key":
+            await pilot.press("j")
+        elif wake == "click":
+            await pilot.click(offset=(5, 5))
+        else:
+            app.post_message(_wheel())
+        await pilot.pause()
+
+        assert not app.is_unlocked
+        assert isinstance(app.screen, UnlockScreen)
+
+
+async def test_the_key_that_finds_the_diary_overdue_goes_no_further(diary_path):
+    """'n' on the list opens today. Pressed on an overdue diary it must lock
+    and stop there, not reach the lock screen's password field either."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_to_sleep(app, minutes=60 * 8)
+        await pilot.press("n")
+        await pilot.pause()
+
+        assert isinstance(app.screen, UnlockScreen)
+        assert app.screen.query_one("#password", Input).value == ""
+
+
+async def test_a_key_inside_the_wait_is_delivered_and_counts(diary_path):
+    """The check on the event path must not swallow ordinary typing."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+
+        go_quiet(app, minutes=14)
+        await pilot.press("n")
+        await pilot.pause()
+
+        assert isinstance(app.screen, EditorScreen)
+        assert app.last_activity.elapsed() < 60
+
+
+async def test_a_key_does_not_lock_over_unsaved_writing(diary_path):
+    """The event path keeps the timer's rule: a half-written day holds the
+    lock off, and the key is typed into it."""
+    app = ZecretApp(diary_path=diary_path)
+    async with app.run_test() as pilot:
+        await unlock(pilot)
+        app.config.lock_after_minutes = 15
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("a")
+
+        go_to_sleep(app, minutes=60 * 8)
+        await pilot.press("b")
+        await pilot.pause()
+
+        assert app.is_unlocked
+        assert app.screen.query_one(TextArea).text == "ab"
+
+
+def _wheel() -> events.MouseScrollDown:
+    return events.MouseScrollDown(None, 10, 10, 0, 1, 0, False, False, False)
 
 
 async def test_a_short_suspend_does_not_lock(diary_path):

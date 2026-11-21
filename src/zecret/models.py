@@ -1,8 +1,7 @@
 """Data model for diary entries.
 
-One entry per calendar day: the date *is* the entry's identity, so there is
-no separate id and no title -- the day names the entry. Deliberately minimal
-per project scope: a body and timestamps. No tags, mood, or attachments.
+One entry per calendar day: the date is the entry's identity, so there is
+no id and no title. A body and two timestamps, nothing else.
 """
 
 from __future__ import annotations
@@ -17,41 +16,32 @@ from typing import Self
 class Entry:
     """A single day's diary entry.
 
-    Frozen: entries are immutable, and edits go through edited(), which
-    returns a new instance. storage.py relies on this -- it holds entry
-    references to detect which ones changed since the last save, which
-    in-place mutation would defeat.
+    Frozen: an edit goes through edited(), which returns a new instance.
+    storage.py relies on that to tell which entries changed since the last
+    save.
 
     Attributes:
-        date: The calendar day this entry belongs to, and its identity: a
-            diary holds at most one entry per date. Local (the day the
-            writer would name), and stored without a timezone, so entries
-            do not shift around when the writer travels.
+        date: The local calendar day this entry belongs to, and its
+            identity. Stored without a timezone, so entries do not shift
+            when the writer travels.
         body: The entry text (multi-line).
-        created_at: UTC timestamp when the day's entry was first written.
-            Distinct from `date`: a Tuesday entry may be backfilled on
-            Friday, and the diary shows it under Tuesday either way.
+        created_at: UTC timestamp of the first write. Distinct from `date`:
+            Tuesday's entry may be written on Friday.
         updated_at: UTC timestamp of the most recent edit. Equal to
             created_at until the entry is edited.
     """
 
     date: dt.date
-    body: str
+    # Out of the repr, which is what a traceback or a debugger prints. See
+    # ZecretApp._fatal_error.
+    body: str = field(repr=False)
     created_at: dt.datetime
-    # None is a construction-time placeholder that __post_init__ replaces,
-    # so no Entry anyone holds ever has it. Annotated as the datetime it
-    # will be rather than `datetime | None`: the union would be honest for
-    # the microsecond before __post_init__ runs, and would then force a
-    # None check on every reader of a field that is never None. The ignore
-    # keeps the lie to this one line.
+    # None only until __post_init__ replaces it, so it is annotated as the
+    # datetime every reader sees.
     updated_at: dt.datetime = field(default=None)  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
-        """Default updated_at to created_at for a never-edited entry.
-
-        object.__setattr__ because the dataclass is frozen; this runs during
-        construction, before the instance is handed to anyone.
-        """
+        """Default updated_at to created_at for a never-edited entry."""
         if self.updated_at is None:
             object.__setattr__(self, "updated_at", self.created_at)
 
@@ -64,23 +54,16 @@ class Entry:
     def edited(self, body: str) -> Self:
         """Return a new Entry with `body` replaced and updated_at refreshed.
 
-        Entry is treated as immutable; edits produce a new instance rather
-        than mutating in place, matching how storage.py rewrites records.
-
-        The date and created_at are carried over unchanged: an edit must
-        stay the same entry so storage.py replaces its record rather than
-        adding a second one. Moving an entry to a different day is not an
-        edit -- it would collide with whatever already lives there -- so it
-        is deliberately not expressible here.
+        The date and created_at carry over. Moving an entry to another day
+        is not an edit and is deliberately not expressible.
         """
         return replace(self, body=body, updated_at=dt.datetime.now(dt.UTC))
 
     def to_json_bytes(self) -> bytes:
         """Serialize to UTF-8 JSON bytes, ready for crypto.encrypt().
 
-        The date is ISO 8601 (YYYY-MM-DD) and timestamps are ISO 8601 with
-        microsecond precision preserved, so from_json_bytes() reconstructs
-        an equal Entry.
+        ISO 8601 throughout, with microseconds kept, so from_json_bytes()
+        reconstructs an equal Entry.
         """
         payload = {
             "date": self.date.isoformat(),
@@ -95,17 +78,17 @@ class Entry:
         """Reconstruct an Entry from decrypted JSON bytes.
 
         Raises:
-            ValueError: if the JSON is malformed or a field is missing or
-                unparseable. Decryption already authenticated these bytes,
-                so this indicates a version/format problem rather than
-                tampering -- either way it must not produce a half-built
-                Entry.
+            ValueError: if the JSON is malformed, or a field is missing,
+                unparseable or of the wrong type.
         """
         try:
             payload = json.loads(data.decode("utf-8"))
+            body = payload["body"]
+            if not isinstance(body, str):
+                raise TypeError(f"body must be text, got {type(body).__name__}")
             return cls(
                 date=dt.date.fromisoformat(payload["date"]),
-                body=payload["body"],
+                body=body,
                 created_at=dt.datetime.fromisoformat(payload["created_at"]),
                 updated_at=dt.datetime.fromisoformat(payload["updated_at"]),
             )

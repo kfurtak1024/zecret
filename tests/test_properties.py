@@ -44,7 +44,7 @@ from hypothesis import strategies as st
 from zecret.crypto import KEY_SIZE, NONCE_SIZE, KdfParams, ZecretDecryptError, decrypt, encrypt
 from zecret.models import Entry
 from zecret.screens.base import EMPTY_BODY, SNIPPET_CAP, body_snippet
-from zecret.screens.editor import STRONG, strong_spans
+from zecret.screens.prose import STRONG, strong_spans
 from zecret.storage import _load_document, _parse_record
 
 # Zecret stores UTC timestamps and local dates, and a diary may hold any

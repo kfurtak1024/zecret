@@ -1,25 +1,16 @@
 """Settings screen: appearance, locking, and the way to the password dialog.
 
-Appearance is a theme picker over a curated set of Textual's themes. It
-applies as the selection moves, so you see the diary in it rather than a
-swatch, and saves immediately -- there is no "apply" button to forget. The
-list is curated rather than Textual's full set: each name here has been
-rendered against this app's own styling and checked that the month
-headings, the highlighted row and the footer all stay legible. Saving is
-best effort; a preferences file that cannot be written costs you the
-setting next launch, never the session you are in.
+The theme and the idle-lock wait apply as they are chosen and save
+immediately; there is no "apply" button. Saving is best effort: a
+preferences file that cannot be written costs the setting next launch,
+never the session.
 
-Changing the master password is a button here and a dialog of its own
-(screens/password.py). It is the only thing on this screen that cannot be
-undone, and it was three password fields under two dropdowns: something to
-scroll past, or to tab into by accident, with its warning read as the
-small print at the foot of a form. Moving it out also leaves what remains
-short enough to stop scrolling on an ordinary terminal, so the two
-settings people come here to change are the whole screen.
+The themes are a curated subset of Textual's, each checked against this
+app's styling.
 
-Everything else here applies as you choose it and saves immediately --
-there is no "apply" button to forget, and the button below is not one: it
-opens a question rather than committing an answer.
+Changing the master password is a button that opens its own dialog
+(screens/password.py), since it is the one thing here that cannot be
+undone.
 """
 
 from __future__ import annotations
@@ -34,9 +25,8 @@ from zecret.screens.base import ZecretScreen, card
 from zecret.screens.header import DiaryFooter, DiaryHeader
 from zecret.screens.password import PasswordScreen
 
-#: How long the diary may sit untouched, as (what the user reads, minutes).
-#: Zero never locks, which is offered rather than hidden -- someone writing
-#: on a machine only they can reach should be able to say so.
+#: How long the diary may sit untouched, as (label, minutes). Zero never
+#: locks.
 LOCK_TIMEOUTS: list[tuple[str, int]] = [
     ("After 1 minute", 1),
     ("After 5 minutes", 5),
@@ -49,10 +39,9 @@ LOCK_TIMEOUTS: list[tuple[str, int]] = [
 THEME_NOT_SAVED = "Theme applied, but could not be saved for next time."
 LOCK_NOT_SAVED = "Lock timing applied, but could not be saved for next time."
 
-#: The themes offered, as (what the user reads, what Textual calls it).
-#: A shortlist, not all 21 Textual ships: the ansi ones borrow the
-#: terminal's own palette and render this app's accents unpredictably, and
-#: a dropdown is a worse place to browse than a diary is to read.
+#: The themes offered, as (label, Textual's name). A shortlist: the ansi
+#: themes borrow the terminal's palette and render this app's accents
+#: unpredictably.
 THEMES: list[tuple[str, str]] = [
     ("Dark", "textual-dark"),
     ("Light", "textual-light"),
@@ -68,14 +57,9 @@ THEMES: list[tuple[str, str]] = [
 def theme_options(current: str) -> list[tuple[str, str]]:
     """The curated themes, plus the one in use if it is not among them.
 
-    The theme in use can be any Textual ships -- config.json is a file
-    anyone can edit, and a later build may curate a shorter list than the
-    one that saved it -- and Select raises on a value that is none of its
-    options, which took the app down the moment Settings opened. Offering
-    it under its own name shows the truth instead: that is the theme you
-    are looking at, and choosing another is one move away. It has not
-    been checked against this app's styling, which is why it is not simply
-    added to THEMES.
+    config.json can name any theme Textual ships, and Select raises on a
+    value that is none of its options. An uncurated theme is offered under
+    its own name rather than added to THEMES.
     """
     if any(theme == current for _, theme in THEMES):
         return THEMES
@@ -85,15 +69,11 @@ def theme_options(current: str) -> list[tuple[str, str]]:
 def lock_after_options(current: int) -> list[tuple[str, int]]:
     """The offered waits, plus the saved one if it is not among them.
 
-    For the same reason as theme_options, and with more at stake. This
-    used to start the dropdown on the default instead, and Select reports
-    its opening value as a change -- so merely opening Settings replaced a
-    hand-set wait with fifteen minutes, on disk. A diary set to lock after
-    two minutes would quietly start taking fifteen, which is the one
-    direction this setting must never drift in unasked.
+    Select reports its opening value as a change. Starting on the default
+    instead of the saved value would therefore overwrite a hand-set wait
+    on disk just by opening Settings.
 
-    Slotted in by length, ahead of "Never", so the list still reads from
-    soonest to not at all.
+    The extra option is slotted in by length, ahead of "Never".
     """
     if any(minutes == current for _, minutes in LOCK_TIMEOUTS):
         return LOCK_TIMEOUTS
@@ -107,29 +87,21 @@ class SettingsScreen(ZecretScreen):
     """Pick a theme, choose when the diary locks, and reach the password
     dialog.
 
-    Not a FormScreen any more: nothing here is typed into and nothing here
-    can fail in a way that needs a line to explain it. The two dropdowns
-    apply as they are chosen, and a preference that cannot be written to
-    disk is said in a notification, since it costs the setting next launch
-    rather than this screen.
+    Not a FormScreen: nothing here is typed, and a preference that cannot
+    be saved is said in a notification.
     """
 
     SUB_TITLE = "Settings"
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Back", priority=True),
-        # The same chord as everywhere the diary is open -- see
-        # ZecretApp.action_lock.
         Binding("ctrl+l", "app.lock", "Lock", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
         yield DiaryHeader()
-        # Scrolls. Moving the password fields into a dialog took this
-        # card from wanting thirty-nine rows to twenty-six, which is the
-        # difference between needing a tall terminal and needing an
-        # ordinary one -- but twenty-four rows leave eighteen inside the
-        # frame, so it is still a scroll and not a screenful.
+        # Scrolls on a 24-row terminal: the card wants more rows than the
+        # eighteen that leaves inside the frame.
         with card("settings-box"):
             yield Label("Appearance", classes="section-title")
             yield Label(
@@ -162,25 +134,20 @@ class SettingsScreen(ZecretScreen):
                 "re-encrypts every entry under the new one.",
                 classes="section-hint",
             )
-            # Red, like the answer it leads to. Everything else on this
-            # screen is a preference that applies as you choose it and can
-            # be chosen again; this is the one control that opens something
-            # there is no way back from.
+            # The error variant: the one control here that leads to
+            # something with no way back.
             yield Button("Change master password…", variant="error", id="change-password")
         yield DiaryFooter()
 
     def on_mount(self) -> None:
-        # The top of the form, not the password fields at the bottom of it.
-        # This screen scrolls, and focusing the last section would open it
-        # already scrolled past the two settings most people came to
-        # change. Arrow keys on a closed dropdown open it rather than
-        # moving the selection, so landing here changes nothing by itself.
+        # The top of the form, so it does not open scrolled. Arrow keys on
+        # a closed dropdown open it rather than change it.
         self.query_one("#theme", Select).focus()
 
     # --- appearance --------------------------------------------------------
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """Route a dropdown's new value to whichever setting it belongs to."""
+        """Route a dropdown's new value to the setting it belongs to."""
         if event.select.id == "theme":
             self.choose_theme(event.value)
         else:
@@ -188,8 +155,7 @@ class SettingsScreen(ZecretScreen):
 
     def choose_theme(self, theme: object) -> None:
         """Apply the chosen theme and remember it."""
-        # Select is typed as possibly blank; this one is allow_blank=False,
-        # so anything else is not a theme name and there is nothing to do.
+        # Select is typed as possibly blank, hence the isinstance.
         if not isinstance(theme, str) or theme == self.zecret.theme:
             return
 
@@ -198,11 +164,10 @@ class SettingsScreen(ZecretScreen):
         self.remember(THEME_NOT_SAVED)
 
     def choose_lock_after(self, minutes: object) -> None:
-        """Remember how long the diary may sit idle before locking itself.
+        """Remember how long the diary may sit idle before locking.
 
-        Nothing is restarted: the idle check reads the setting each time it
-        runs, so a longer wait takes effect on the next tick and a shorter
-        one applies to the quiet that has already passed.
+        Nothing is restarted: the idle check reads the setting each time
+        it runs.
         """
         if not isinstance(minutes, int) or minutes == self.zecret.config.lock_after_minutes:
             return
@@ -211,11 +176,7 @@ class SettingsScreen(ZecretScreen):
         self.remember(LOCK_NOT_SAVED)
 
     def remember(self, complaint: str) -> None:
-        """Persist the preferences, saying so only if it did not work.
-
-        Best effort by design: a preferences file that cannot be written
-        costs the setting next launch, never the session you are in.
-        """
+        """Persist the preferences, saying so only if it did not work."""
         try:
             self.zecret.config.save()
         except OSError:
@@ -224,15 +185,12 @@ class SettingsScreen(ZecretScreen):
     # --- the master password ------------------------------------------------
 
     def on_button_pressed(self, _event: Button.Pressed) -> None:
-        """The one button here opens the dialog that does the work."""
+        """The one button here opens the password dialog."""
         self.app.push_screen(PasswordScreen())
 
     def action_back(self) -> None:
-        # This screen's escape binding is priority, so it would otherwise
-        # win over the dropdown's own -- closing the whole screen when the
-        # user meant to close the list they just opened. Every dropdown,
-        # not one by name: this used to ask only the theme picker, and
-        # escape on the open lock picker went straight back to the list.
+        # This screen's escape is priority and would win over a dropdown's
+        # own, so an open dropdown is closed first.
         for select in self.query(Select):
             if select.expanded:
                 select.expanded = False

@@ -1,45 +1,28 @@
 """Months laid out, with the days already written marked.
 
-Textual ships no calendar, so these are Zecret's own: a grid of a month
-that can be walked with the arrow keys, pages a month at a time, and draws
-a mark against every day the diary already holds an entry for. That mark is
-the reason it exists. A date typed into a field answers "which day did I
-mean"; only a month laid out can answer "which days have I missed", which
-is the question someone filling a diary in actually has.
+Textual ships no calendar, so these are Zecret's own. The mark against
+each written day is the point: it shows which days were missed.
 
-Two widgets share it. MonthCalendar is one month, inside the which-day
-modal. YearCalendar is twelve of them at once, and is the whole of the
-calendar view: a year is the span over which the gaps in a diary show. They
-draw a month the same way and share every key but the arrows, which is
-why both live here and why the drawing and the walking are functions
-rather than methods of either. The arrows differ on purpose: in the year
-they move to the cell drawn in that direction (spatial_step), and in the
-single month of the modal, which has nothing beside it, by day and week.
+MonthCalendar is one month, inside the which-day modal. YearCalendar is
+twelve of them and is the whole of the calendar view. They draw a month
+through the same module functions and share every key but the arrows. In
+the year the arrows move to the cell drawn in that direction
+(spatial_step); in the single month, by day and week.
 
-They are widgets rather than screens, and their keys are their own for the
-same reason DiaryTextArea's are: the help popup and the key bar are built from
-*screen* bindings, and they document what Zecret does with a diary -- not
-what arrow keys do inside a grid, which anyone who has used a calendar
-already knows. See CLAUDE.md on that split.
+They are widgets, and their keys are their own: the help popup and the key
+bar are built from screen bindings and do not list arrow keys.
 
 Three things neither will do:
 
-- Land on a day that has not happened. Zecret refuses a future entry, so a
-  cursor that could sit on one would be offering something the screen
-  behind it is going to turn down. A move in time clamps to today instead
-  of refusing, so no such key is ever dead: paging into next month lands
-  on today. A move across the year's grid does refuse, and so does a click
-  in either calendar -- clamping there would send the cursor to a cell
-  nobody pointed at. The one exception is a date typed into the field
-  above the month: that is the field's to refuse, and the grid shows the
-  day typed rather than one beside it -- see MonthCalendar.show.
-- Change the month it shows on its own. The month is wherever the cursor
-  is, so the grid only ever moves because someone moved it.
-- Own the date. The field above it does; this posts what it is on and lets
-  the screen decide, which is what keeps typing and pointing from fighting
-  over which of them is right.
+- Land on a day that has not happened. A move in time clamps to today, so
+  no such key is dead. A move across the year's grid, and a click in
+  either calendar, refuses instead: clamping there would send the cursor
+  to a cell nobody pointed at. The exception is MonthCalendar.show, for a
+  date typed into the field, which the field itself refuses.
+- Change the month shown on its own. The month is wherever the cursor is.
+- Own the date. The widget posts what it is on and the screen decides.
 
-Weeks start on Monday, matching the ISO date the field is typed in.
+Weeks start on Monday, matching ISO dates.
 """
 
 from __future__ import annotations
@@ -59,28 +42,22 @@ from textual.widget import Widget
 
 from zecret.screens.base import format_month, today
 
-#: Columns a day takes: three for the number, one for the mark beside it.
-#: The mark rides in the cell rather than between cells so that every day
-#: is the same width whether or not it has been written on.
+#: Columns a day takes: three for the number, one for the mark. The mark
+#: is inside the cell so every day is the same width.
 CELL = 4
 
-#: Rows of days, always six. February from a Monday needs four and a long
-#: month from a Sunday needs six; drawing whichever a month happens to
-#: want would resize the modal under the reader every time they paged.
+#: Rows of days, always six, so the grid does not change height from one
+#: month to the next.
 WEEKS = 6
 
 #: Days in a week, which is also how wide the grid is in cells.
 DAYS = 7
 
-#: Drawn beside a day the diary already holds an entry for. A glyph rather
-#: than colour alone: the marked days are the whole point of the grid, and
-#: a reader who cannot pick the accent out of the foreground would be left
-#: with a plain calendar.
+#: Drawn beside a written day. A glyph, not colour alone, so the marks
+#: survive where the accent colour does not.
 WRITTEN = "•"
 
-#: Said under the grid, because the mark means nothing to someone meeting
-#: it for the first time. CalendarLegend draws it, beside a sample of how
-#: today is marked.
+#: Said under the grid by CalendarLegend, beside a sample of today's mark.
 LEGEND = f"{WRITTEN} a day you have written"
 
 #: Between the two halves of the legend.
@@ -88,29 +65,17 @@ LEGEND_GAP = "   "
 
 
 def day_in(year: int, month: int, day: int) -> dt.date:
-    """That day of that month, or its last day where the month is shorter.
-
-    The clamp every caller here wants: a day of the month carried from
-    somewhere else -- the month before, or a date half typed into a field
-    -- has to land somewhere real, and the end of a short month is where
-    the 31st belongs rather than a day into the next one.
-    """
+    """That day of that month, or the month's last day where it is shorter."""
     return dt.date(year, month, min(day, calendar.monthrange(year, month)[1]))
 
 
 def shift_month(date: dt.date, months: int) -> dt.date:
-    """`date` moved `months` months, keeping the day of the month it can.
-
-    The 31st of a month moved into a shorter one lands on that month's
-    last day rather than overflowing into the next, which is what makes
-    paging through a year from the 31st stay on the end of each month
-    instead of drifting a day forward every February.
-    """
+    """`date` moved `months` months, keeping the day of the month where it
+    can and clamping to the end of a shorter month."""
     index = date.year * 12 + (date.month - 1) + months
     year, month = divmod(index, 12)
     if not dt.MINYEAR <= year <= dt.MAXYEAR:
-        # Paged past the ends of what a date can even be. Nothing sensible
-        # to show, so stay put.
+        # Past the range of a date: stay put.
         return date
     return day_in(year, month + 1, date.day)
 
@@ -118,8 +83,7 @@ def shift_month(date: dt.date, months: int) -> dt.date:
 def month_weeks(year: int, month: int) -> list[list[int]]:
     """A month as six rows of day numbers, 0 where the month is not.
 
-    Padded to six rows so the grid is always the same height -- see
-    WEEKS. Monday first, matching the ISO dates the field takes.
+    Monday first, padded to WEEKS rows.
     """
     rows = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
     return rows + [[0] * DAYS for _ in range(WEEKS - len(rows))]
@@ -128,21 +92,14 @@ def month_weeks(year: int, month: int) -> list[list[int]]:
 def day_role(date: dt.date, cursor: dt.date, written: frozenset[dt.date], now: dt.date) -> str:
     """Which component class a day is drawn in, where `now` is today.
 
-    Most specific first, and the order is the argument: where the cursor is
-    beats everything, because losing it in a month of marked days would
-    leave the arrow keys with nothing to show for themselves, and a day
-    that cannot be chosen beats how interesting it is, because it is not on
-    offer whatever else is true of it.
+    Most specific first: the cursor beats everything, and a day that
+    cannot be chosen beats being written.
 
-    Today is not in this list. It is a fact about a day rather than a way
-    of drawing one -- today is very often also the day the cursor is on and
-    the day you last wrote -- so it is laid over whichever of these applies
-    instead of competing with them. See draw_month.
+    Today is not a role. It is laid over whichever role applies; see
+    draw_month.
 
-    `now` is passed in rather than asked for, so that a month is drawn
-    against one reading of the clock: asked per day, it was two readings a
-    cell and a thousand for a year, and a draw that ran across midnight
-    could call one day both today and not yet happened.
+    `now` is passed in so a whole month is drawn against one reading of
+    the clock.
     """
     if date == cursor:
         return "month-calendar--cursor"
@@ -163,18 +120,14 @@ def draw_month(
 ) -> Text:
     """The month `first` falls in, as the eight lines of text it is drawn as.
 
-    `widget` is what the colours are read from -- it must carry the
-    month-calendar component classes -- and `cell` is how many columns a
-    day takes, the last of them for the mark. The modal has room for four;
-    the year view has three, because four would put a year's twelve months
-    past an eighty-column terminal at any arrangement worth having.
+    `widget` is where the colours are read from and must carry the
+    month-calendar component classes. `cell` is how many columns a day
+    takes, the last of them for the mark.
     """
-    # Looked up once rather than per cell: there are forty-two of them and
-    # six answers between them.
+    # Looked up once, not per cell.
     ink = {name: widget.get_component_rich_style(name) for name in COMPONENT_CLASSES}
-    # Today's is laid over whatever else the day is drawn in rather than
-    # replacing it -- see day_role. Partial, so it contributes only what its
-    # rule actually sets and leaves the colour alone.
+    # Partial, so today's style adds only what its rule sets and leaves the
+    # role's colour alone.
     landmark = widget.get_component_rich_style("month-calendar--today", partial=True)
     digits = cell - 1
     now = today()
@@ -190,10 +143,7 @@ def draw_month(
         line = Text()
         for day in week:
             if day == 0:
-                # A day of the month either side of this one. Left blank
-                # rather than greyed in: the grid is read for which days of
-                # *this* month are marked, and a neighbour's dates in it are
-                # two more things to discount.
+                # A neighbouring month's day: left blank.
                 line.append(" " * cell)
                 continue
             date = first.replace(day=day)
@@ -207,25 +157,15 @@ def draw_month(
 
 
 def reachable(date: dt.date) -> dt.date:
-    """`date`, or today if that is further off.
-
-    Clamped rather than refused, so that no key in a calendar is ever dead:
-    the month after this one is a page away whether or not it has happened,
-    and the honest answer to paging into it is the last day there is.
-    """
+    """`date`, or today if `date` is later."""
     return min(date, today())
 
 
 def stepped(date: dt.date, days: int) -> dt.date:
-    """`date` moved `days` days, stopping at either end of what can be chosen.
+    """`date` moved `days` days, clamped at both ends of what can be chosen.
 
-    The far end is today, which reachable() holds. This end is 1 January of
-    year 1, where a day or a week back is out of range: `date - timedelta`
-    raises OverflowError, and on a key handler that took the app down.
-    Reaching it means typing year 0001 into the date field, or holding a
-    year key down for a very long time, but a key that crashes is worse
-    than a key that stops. Clamped rather than left alone, the same as the
-    far end, so a week back from the 3rd still gets as far as the 1st.
+    The far end is today. The near end is date.min, where subtracting a
+    timedelta raises OverflowError.
     """
     try:
         target = date + dt.timedelta(days=days)
@@ -237,10 +177,8 @@ def stepped(date: dt.date, days: int) -> dt.date:
 def day_at(first: dt.date, x: int, y: int, cell: int) -> dt.date | None:
     """The day drawn at a point in the month `first` falls in, if any.
 
-    `y` counts the two heading rows the month is drawn under, and `x` is in
-    cells of `cell` columns. Padding around the month -- the days of the
-    neighbouring months, which the grid leaves blank -- is not a day and
-    answers None, as does a click on the headings.
+    `y` includes the two heading rows; `x` is in columns, `cell` to a day.
+    The headings and the blank padding answer None.
     """
     row = y - 2
     column = x // cell
@@ -250,8 +188,8 @@ def day_at(first: dt.date, x: int, y: int, cell: int) -> dt.date | None:
     return None if day == 0 else first.replace(day=day)
 
 
-#: How a month is drawn, which both widgets share: the class names are the
-#: same on each, so one set of rules in app.tcss paints them both.
+#: The component classes both calendars share, so one set of rules in
+#: app.tcss paints both.
 COMPONENT_CLASSES: frozenset[str] = frozenset(
     {
         "month-calendar--month",
@@ -266,16 +204,12 @@ COMPONENT_CLASSES: frozenset[str] = frozenset(
 
 
 class WalkableCalendar(Widget, can_focus=True):
-    """What every calendar here shares: a cursor, and the keys that walk it.
+    """What both calendars share: a cursor, and the keys that walk it.
 
-    A day, a week, a month and the ends of a month, each clamped the same
-    way -- see stepped and reachable. Written once, here, rather than once
-    per calendar: two copies of a key map are two places for a fix to miss.
-    YearCalendar takes the four arrows over for moves across its grid and
-    keeps the rest.
-
+    A day, a week, a month and the ends of a month, each clamped by
+    stepped() and reachable(). YearCalendar replaces the four arrows.
     Textual merges BINDINGS down the class hierarchy, so a subclass lists
-    only the keys it adds or replaces.
+    only what it adds or replaces.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -293,12 +227,11 @@ class WalkableCalendar(Widget, can_focus=True):
     date: reactive[dt.date] = reactive(today)
 
     def move_to(self, date: dt.date) -> None:
-        """Put the cursor on `date`, or on today if that is further off --
-        see reachable."""
+        """Put the cursor on `date`, clamped to today."""
         self.date = reachable(date)
 
     def step(self, days: int) -> None:
-        """Move `days` days, stopping at either end -- see stepped."""
+        """Move `days` days, clamped at both ends."""
         self.date = stepped(self.date, days)
 
     def action_previous_day(self) -> None:
@@ -330,12 +263,8 @@ class WalkableCalendar(Widget, can_focus=True):
 class CalendarLegend(Widget):
     """What the marks on a calendar mean: the written days, and today.
 
-    Today is explained by showing it -- its own date, drawn the way the
-    grid draws it -- rather than by naming the style, since "underlined"
-    tells a reader less than an underlined number does. The style is read
-    from the same component class the grids paint today with, so the one
-    rule in app.tcss styles both and the legend cannot describe a mark the
-    grid no longer makes.
+    Today is shown by drawing its own date with the same component class
+    the grids use, so the legend cannot drift from the grid.
     """
 
     COMPONENT_CLASSES: ClassVar[set[str]] = {"month-calendar--today"}
@@ -385,18 +314,16 @@ class MonthCalendar(WalkableCalendar):
     ) -> None:
         """Args:
         date: The day to start on. Today, if not given.
-        written: Every day the diary already holds an entry for. The whole
-            set rather than the month's share of it, because the month on
-            show changes and asking the diary again on every page would
-            put the screen's business inside the widget.
-        id: The widget's id, as for any other widget.
+        written: Every day the diary holds an entry for. The whole set,
+            since the month on show changes and the widget does not ask
+            the diary.
+        id: The widget's id.
         """
         super().__init__(id=id)
         self.written = written
         if date is not None:
-            # set_reactive rather than assignment: this runs before the
-            # widget is mounted, and a watcher firing then would post a
-            # DateChanged nobody is listening for yet.
+            # set_reactive, not assignment: before mounting, a watcher
+            # would post a DateChanged nobody is listening for.
             self.set_reactive(MonthCalendar.date, reachable(date))
 
     # --- what it draws -----------------------------------------------------
@@ -411,20 +338,13 @@ class MonthCalendar(WalkableCalendar):
     def show(self, date: dt.date) -> None:
         """Move the cursor there without announcing it.
 
-        For whoever already knows: the field above posts nothing back to
-        itself, and it is mid-way through being typed into. An echo there
-        would be worse than redundant -- DateChanged is answered by
-        writing the date into the field, which would complete a date
-        someone was still halfway through typing, under their cursor.
-
-        Everything else about it is an ordinary move, and it is drawn the
-        same way; what is skipped is only the telling.
+        For the field above, which is part way through being typed into.
+        DateChanged is answered by writing the date into the field, which
+        would complete a half-typed date under the writer's cursor.
 
         Not clamped, unlike every other move. A future date typed into the
-        field is the field's to refuse, and the cursor shows it so that
-        the day highlighted and the day refused are the same day: clamped
-        to today, the grid highlighted a day it could choose while enter
-        on it read the field and refused the date typed there.
+        field is the field's to refuse, and showing it keeps the day
+        highlighted and the day refused the same day.
         """
         if date == self.date:
             return
@@ -439,13 +359,8 @@ class MonthCalendar(WalkableCalendar):
     def on_click(self, event: events.Click) -> None:
         """A click moves the cursor to the day under it, and no further.
 
-        Not straight through to opening the day, which is what a click on
-        a row of the entry list does: a list row is a thing you asked for,
-        and a calendar cell is one of forty-two an unsteady hand can land
-        on. Enter is what chooses, from either the grid or the field.
-
-        A day not yet come is refused, as the year refuses it: clamping
-        moved the cursor to today, a day nobody clicked.
+        It does not choose the day; Enter does. A day not yet come is
+        refused rather than clamped to today.
         """
         offset = event.get_content_offset(self)
         if offset is None:
@@ -457,14 +372,13 @@ class MonthCalendar(WalkableCalendar):
 
     @property
     def grid_left(self) -> int:
-        """Columns the month is drawn in from the widget's left edge.
+        """Columns from the widget's left edge to where the month is drawn.
 
-        app.tcss centres the 28-column month in a widget as wide as the
-        card, so a click's offset into the widget is not an offset into the
-        month: without this every click landed a few days right of the one
-        clicked. Read from the widget's own alignment rather than assumed,
-        so the arithmetic follows the stylesheet. Textual puts the odd
-        column of a centring on the right, which floor division matches.
+        app.tcss centres the month in a widget as wide as the card, so a
+        click's offset into the widget is not an offset into the month.
+        Read from the widget's own alignment so it follows the stylesheet.
+        Textual puts the odd column of a centring on the right, which
+        floor division matches.
         """
         spare = max(0, self.content_region.width - CELL * DAYS)
         align = self.styles.content_align_horizontal
@@ -473,20 +387,20 @@ class MonthCalendar(WalkableCalendar):
         return spare if align == "right" else 0
 
     def date_at(self, x: int, y: int) -> dt.date | None:
-        """The day drawn at a point in the month -- see day_at. `x` is
-        counted from the month's own left edge, not the widget's."""
+        """The day drawn at a point in the month, `x` counted from the
+        month's own left edge."""
         return day_at(self.date, x, y, CELL)
 
 
 # --- a year ----------------------------------------------------------------
 
 #: Columns a day takes in the year view: two for the number and one for the
-#: mark. One fewer than the modal's, and that column is the whole reason a
-#: year fits an 80-column terminal three months across -- see draw_month.
+#: mark. One fewer than the modal's, which is what fits three months across
+#: an 80-column terminal.
 YEAR_CELL = 3
 
-#: How wide one month is in the year view, which app.tcss sizes the grid
-#: columns to and CalendarScreen counts how many fit across in.
+#: How wide one month is in the year view. app.tcss sizes the grid columns
+#: to it and CalendarScreen counts how many fit across.
 MONTH_WIDTH = YEAR_CELL * DAYS
 
 
@@ -499,15 +413,11 @@ Cell = tuple[int, int]
 def year_layout(year: int, across: int) -> tuple[dict[dt.date, Cell], dict[Cell, dt.date]]:
     """Where every day of `year` sits with `across` months side by side.
 
-    The same arrangement app.tcss draws: months fill rows of `across`, each
-    seven columns wide and always six weeks deep (see WEEKS), so the grid
-    of cells is regular even where a month's own days leave blanks. The
-    gutters between months take no cells: they are space between columns,
-    not a column a cursor could stop in.
+    The arrangement app.tcss draws: months fill rows of `across`, each
+    seven columns wide and WEEKS deep. The gutters between months take no
+    cells.
 
-    Both ways round, since a move starts from a day and looks for a cell.
-    Cached per year and width -- there are at most a handful of each in a
-    session, and every arrow press asks.
+    Returned both ways round. Cached, since every arrow press asks.
     """
     cells: dict[dt.date, Cell] = {}
     for month in range(1, 13):
@@ -525,18 +435,13 @@ def year_layout(year: int, across: int) -> tuple[dict[dt.date, Cell], dict[Cell,
 def spatial_step(date: dt.date, dx: int, dy: int, across: int, now: dt.date) -> dt.date | None:
     """The day in the next cell that way from `date`, as the year is drawn.
 
-    One of `dx` and `dy` is 1 or -1 and the other 0. Blank cells -- the
-    padding around a month, and the gaps where a short month ends -- are
-    passed over, so the move lands on the nearest day there is in that
-    direction: right from the last day of a month continues into the month
-    beside it on the same row, and down from the last week continues into
-    the month below.
+    One of `dx` and `dy` is 1 or -1 and the other 0. Blank cells are passed
+    over, so the move lands on the nearest day in that direction: right
+    from a month's last day continues into the month beside it, and down
+    from its last week into the month below.
 
-    None means there is nowhere to go, and the cursor should stay put:
-    either the edge of the year is in the way (the year keys cross into the
-    next, not the arrows), or the day there has not happened yet. Every
-    cell further on in a direction is later than the one before it, so a
-    future day means everything beyond it is future too.
+    None means stay put: the edge of the year is in the way, or the day
+    there has not happened yet.
     """
     cells, days = year_layout(date.year, across)
     x, y = cells[date]
@@ -556,11 +461,9 @@ def spatial_step(date: dt.date, dx: int, dy: int, across: int, now: dt.date) -> 
 class MonthGrid(Widget):
     """One month of the twelve in a YearCalendar. Draws; owns nothing.
 
-    The cursor, the year and the written days all belong to the
-    YearCalendar around it, which hands them down with show(). That is
-    what lets the cursor walk off the end of one month and into the next
-    without focus changing hands twelve times a year: there is one cursor,
-    and this is where a twelfth of it is drawn.
+    The cursor, the year and the written days belong to the YearCalendar,
+    which hands them down with show(). One cursor walks the year, so focus
+    never changes hands at the end of a month.
     """
 
     COMPONENT_CLASSES: ClassVar[set[str]] = set(COMPONENT_CLASSES)
@@ -584,15 +487,13 @@ class MonthGrid(Widget):
         self.refresh()
 
     def render(self) -> RenderResult:
-        # The month alone, not the year: the year is the screen's heading,
-        # and twelve copies of it would be eleven more than anyone reads.
+        # Titled with the month alone; the year is the screen's heading.
         return draw_month(
             self, self.first, self.cursor, self.written, YEAR_CELL, f"{self.first:%B}"
         )
 
     def on_click(self, event: events.Click) -> None:
-        """Say which day was clicked, if a day was. See MonthCalendar.on_click
-        for why that moves the cursor and stops short of opening the day."""
+        """Say which day was clicked, if a day was."""
         offset = event.get_content_offset(self)
         if offset is None:
             return
@@ -604,40 +505,22 @@ class MonthGrid(Widget):
 class YearCalendar(WalkableCalendar):
     """A year of months, one cursor walking through all of them.
 
-    How many months sit side by side is not this widget's business: it is
-    a grid of twelve MonthGrids, and app.tcss sizes the grid from the
-    `-months-N` class CalendarScreen wears for the terminal's width. Nothing
-    here measures the terminal, so nothing here has to be redone when it
-    changes size.
+    A grid of twelve MonthGrids. How many sit side by side is app.tcss's
+    decision, from the `-months-N` class CalendarScreen sets; nothing here
+    measures the terminal.
 
-    The arrows move to the cell in the direction pressed, as the year is
-    drawn: down from the last week of January is the month below it, not
-    the month after it. That makes what an arrow does depend on how many
-    months sit across, which is a function of the window -- and that is
-    the point: the reader is looking at a grid, and a cursor that goes
-    sideways on a press of down is wrong whatever the reason. Within a
-    month it is the same thing as a day or a week either way; only the
-    edges of a month differ. See spatial_step for the edges of the year and
-    days not yet come, where the cursor stays put.
+    The arrows are spatial: each moves to the cell drawn in that
+    direction, so down from the last week of January is the month drawn
+    below it, whatever month that is at this width. They stop at the edge
+    of the year and refuse a day not yet come; see spatial_step. How many
+    months are across is read from the grid's resolved style, so the
+    arrows walk what the stylesheet drew.
 
-    How many months across is asked of the grid's own resolved style, never
-    measured off the terminal: what the stylesheet drew is what the arrows
-    walk.
-
-    The other keys are WalkableCalendar's and move in time: the page keys a
-    month, home and end the ends of one. The year keys are the screen's,
-    since they are what the help popup has to tell someone about -- see
-    CalendarScreen.
-
-    MonthCalendar does not do this, on purpose. A single month has nothing
-    beside it, so spatial arrows there would stop at every edge and leave
-    no way to arrow into the next month; it walks by day and week instead.
+    The other keys are WalkableCalendar's and move in time. The year keys
+    are CalendarScreen's.
     """
 
-    #: The arrows, replacing the day-and-week moves WalkableCalendar binds
-    #: them to. Textual merges BINDINGS down the class hierarchy with the
-    #: subclass's winning, so these four take the keys over and the rest of
-    #: WalkableCalendar's map stays.
+    #: The arrows, replacing WalkableCalendar's day-and-week moves.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("left", "move_left", "Left", show=False),
         Binding("right", "move_right", "Right", show=False),
@@ -660,9 +543,9 @@ class YearCalendar(WalkableCalendar):
     ) -> None:
         """Args:
         date: The day to start on, clamped to today. Today, if not given.
-        written: Every day the diary holds an entry for -- see
-            MonthCalendar, and set_written for when that changes.
-        id: The widget's id, as for any other widget.
+        written: Every day the diary holds an entry for; see set_written
+            for when that changes.
+        id: The widget's id.
         """
         super().__init__(id=id)
         self.written = written
@@ -670,7 +553,7 @@ class YearCalendar(WalkableCalendar):
         self.set_reactive(YearCalendar.date, reachable(today() if date is None else date))
 
         # Kept rather than queried: the months are fixed for the widget's
-        # life, and every move asks for one or two of them.
+        # life.
         self.months = [
             MonthGrid(self.date.replace(month=month, day=1), self.date, self.written)
             for month in range(1, 13)
@@ -680,27 +563,24 @@ class YearCalendar(WalkableCalendar):
         yield from self.months
 
     def redraw(self, *months: MonthGrid) -> None:
-        """Hand `months` -- every month, if none is named -- what they need
-        to draw themselves now."""
+        """Hand `months` (all of them, if none is named) what they need to
+        draw themselves now."""
         for grid in months or self.months:
             first = self.date.replace(month=grid.first.month, day=1)
             grid.show(first, self.date, self.written)
 
     def set_written(self, written: frozenset[dt.date]) -> None:
-        """Mark a new set of written days -- after an entry was saved, say."""
+        """Mark a new set of written days."""
         self.written = written
         self.redraw()
 
     def watch_date(self, old: dt.date, new: dt.date) -> None:
         """Redraw what the move changed, and say where the cursor is now.
 
-        Within a year that is two months at most -- the one the cursor
-        left and the one it arrived in -- and redrawing all twelve on every
-        arrow press, held down, was ten times the work for nothing. A new
-        year changes every month's dates, so all twelve are redrawn then.
-        A month the cursor is not in keeps whichever cursor it was last
-        handed, which is harmless: that day is in another month, and a
-        month only draws its own days.
+        Within a year only the month the cursor left and the one it
+        entered are redrawn. A new year redraws all twelve. A month the
+        cursor is not in may hold a stale cursor date, which is harmless:
+        a month only draws its own days.
         """
         if old.year != new.year:
             self.redraw()
@@ -721,7 +601,7 @@ class YearCalendar(WalkableCalendar):
         return max(1, self.styles.grid_size_columns)
 
     def move(self, dx: int, dy: int) -> None:
-        """One cell that way, or nowhere -- see spatial_step."""
+        """One cell that way, or nowhere; see spatial_step."""
         target = spatial_step(self.date, dx, dy, self.across, today())
         if target is not None:
             self.date = target
@@ -743,14 +623,13 @@ class YearCalendar(WalkableCalendar):
         self.move_to(shift_month(self.date, -12))
 
     def next_year(self) -> None:
-        """The same day a year later -- or today, if that has not come yet."""
+        """The same day a year later, or today if that has not come yet."""
         self.move_to(shift_month(self.date, 12))
 
     def on_month_grid_day_clicked(self, event: MonthGrid.DayClicked) -> None:
-        """Go to the day clicked -- unless it has not happened yet.
+        """Go to the day clicked, unless it has not happened yet.
 
-        Refused rather than clamped, as the arrows refuse: clamping sent the
-        cursor to today, a cell in another month nobody pointed at.
+        Refused rather than clamped, as the arrows refuse.
         """
         event.stop()
         if event.date > today():

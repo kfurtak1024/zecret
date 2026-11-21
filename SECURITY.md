@@ -33,8 +33,10 @@ In scope is anything that breaks one of these:
 
 - **Confidentiality of entry text.** Nothing you write should be readable
   without your password, anywhere on disk.
-- **Integrity.** A modified or truncated diary file must fail loudly, never
-  decrypt to something plausible and wrong.
+- **Integrity.** A modified or truncated record must fail loudly, never
+  decrypt to something plausible and wrong, and an entry must never be
+  filed under a day other than the one it was written for. (What this does
+  not cover is under *Known and accepted* below.)
 - **Authentication.** A wrong password must never open a diary, including
   an empty one.
 - **Durability.** No sequence of ordinary use should lose entries that were
@@ -56,6 +58,18 @@ that *is* worth reporting.
 - **The diary file reveals which days you wrote on.** Entry dates sit
   outside the ciphertext so a record can be named without decrypting it.
   The file leaks the shape of the habit, never a word of the content.
+- **Someone who can write to the diary file can remove a day, or put an
+  older version of one back.** Each entry is encrypted and authenticated
+  on its own, which is what lets one day be saved without touching any
+  other. Nothing authenticates the file as a whole, so a record deleted
+  from it, or swapped for an earlier ciphertext of the same day, still
+  opens cleanly. They cannot read an entry, forge or alter one, or move one
+  to another day. Anyone with that access can also simply delete the file;
+  a backup is the answer to both.
+- **The key-derivation settings in the file header are not authenticated.**
+  Changing them cannot weaken the diary: a different setting derives a
+  different key, which the key check refuses. It can only make the diary
+  fail to open, or take a long time failing.
 - **There is no password recovery.** Lose the password and the diary is
   gone. This is the point, not a gap.
 - **An unlocked Zecret is unlocked.** While the diary is open, entries are
